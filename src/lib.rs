@@ -1,6 +1,6 @@
 use asr::{
     deep_pointer::DeepPointer,
-    file_format::{elf, pe},
+    file_format::{elf, macho, pe},
     future::{next_tick, retry},
     Address, MemoryRangeFlags, PointerSize, Process,
     signature::Signature,
@@ -11,7 +11,7 @@ asr::async_main!(stable);
 static OPENGL14: Signature<17> =
     Signature::new("68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35");
 
-static LINUX: Signature<21> =
+static MONO64_CTOR: Signature<21> =
     Signature::new("be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00");
 
 const PROCESS_NAMES: &[&str] = &[
@@ -25,11 +25,13 @@ const PROCESS_NAMES: &[&str] = &[
 enum Platform {
     WindowsClr32,
     LinuxMono64,
+    MacMono64,
 }
 
-/// JIT signature and offset from the match to the `Celeste.Instance` static slot.
 struct SignatureHook {
     static_slot_disp: u64,
+    /// Linux: `movl $slot, %eax` (u32 immediate), macOS: `movabsq $slot, %rax` (u64 immediate)
+    static_slot_u64: bool,
     scan: fn(&Process, (Address, u64)) -> Option<Address>,
 }
 
@@ -37,9 +39,9 @@ struct SignatureHook {
 struct SigMatch {
     address: Address,
     static_slot_disp: u64,
+    static_slot_u64: bool,
 }
 
-/// Runtime layout: strings, Title-relative field offsets, pointer width.
 struct Layout {
     ptr: PointerSize,
     field_step: u64,
@@ -57,17 +59,27 @@ enum InstanceSize {
 
 const OPENGL14_HOOK: SignatureHook = SignatureHook {
     static_slot_disp: 99,
+    static_slot_u64: false,
     scan: scan_opengl14,
 };
 
 const LINUX_HOOK: SignatureHook = SignatureHook {
     static_slot_disp: 132,
-    scan: scan_linux,
+    static_slot_u64: false,
+    scan: scan_mono64_ctor,
+};
+
+const MACOS_HOOK: SignatureHook = SignatureHook {
+    static_slot_disp: 167,
+    static_slot_u64: true,
+    scan: scan_mono64_ctor,
 };
 
 const WINDOWS_SIGNATURES: &[SignatureHook] = &[OPENGL14_HOOK];
 
 const LINUX_SIGNATURES: &[SignatureHook] = &[LINUX_HOOK];
+
+const MACOS_SIGNATURES: &[SignatureHook] = &[MACOS_HOOK];
 
 const WINDOWS_CLR32: Layout = Layout {
     ptr: PointerSize::Bit32,
@@ -79,7 +91,7 @@ const WINDOWS_CLR32: Layout = Layout {
     instance_size: InstanceSize::MethodTablePlus4,
 };
 
-const LINUX_MONO64: Layout = Layout {
+const MONO64: Layout = Layout {
     ptr: PointerSize::Bit64,
     field_step: 8,
     string_len: 0x10,
@@ -97,7 +109,7 @@ impl Platform {
     const fn layout(self) -> &'static Layout {
         match self {
             Self::WindowsClr32 => &WINDOWS_CLR32,
-            Self::LinuxMono64 => &LINUX_MONO64,
+            Self::LinuxMono64 | Self::MacMono64 => &MONO64,
         }
     }
 
@@ -105,6 +117,7 @@ impl Platform {
         match self {
             Self::WindowsClr32 => WINDOWS_SIGNATURES,
             Self::LinuxMono64 => LINUX_SIGNATURES,
+            Self::MacMono64 => MACOS_SIGNATURES,
         }
     }
 }
@@ -129,7 +142,6 @@ impl Layout {
         }
     }
 
-    /// Scan backward for `Engine.Title == "Celeste"`, same strategy as upstream.
     fn title_offs(&self, process: &Process, instance: u64) -> Option<u64> {
         let type_size = self.instance_size(process, instance)?;
         if u64::from(type_size) < self.field_step {
@@ -183,8 +195,8 @@ fn scan_opengl14(process: &Process, range: (Address, u64)) -> Option<Address> {
     OPENGL14.scan_process_range(process, range)
 }
 
-fn scan_linux(process: &Process, range: (Address, u64)) -> Option<Address> {
-    LINUX.scan_process_range(process, range)
+fn scan_mono64_ctor(process: &Process, range: (Address, u64)) -> Option<Address> {
+    MONO64_CTOR.scan_process_range(process, range)
 }
 
 fn find_signature(process: &Process, hooks: &[SignatureHook]) -> Option<SigMatch> {
@@ -193,6 +205,7 @@ fn find_signature(process: &Process, hooks: &[SignatureHook]) -> Option<SigMatch
             return Some(SigMatch {
                 address,
                 static_slot_disp: hook.static_slot_disp,
+                static_slot_u64: hook.static_slot_u64,
             });
         }
     }
@@ -204,13 +217,17 @@ async fn wait_attach() -> Process {
 }
 
 fn detect_platform(process: &Process) -> Option<Platform> {
-    let (main_module, _) = process.get_main_module_range().ok()?;
+    let main_module = process.get_main_module_range().ok()?;
 
-    if elf::pointer_size(process, main_module) == Some(PointerSize::Bit64) {
+    if elf::pointer_size(process, main_module.0) == Some(PointerSize::Bit64) {
         return Some(Platform::LinuxMono64);
     }
 
-    if pe::MachineType::read(process, main_module).and_then(|m| m.pointer_size())
+    if macho::pointer_size(process, main_module) == Some(PointerSize::Bit64) {
+        return Some(Platform::MacMono64);
+    }
+
+    if pe::MachineType::read(process, main_module.0).and_then(|m| m.pointer_size())
         == Some(PointerSize::Bit32)
     {
         return Some(Platform::WindowsClr32);
@@ -245,8 +262,11 @@ fn init(
     layout: &Layout,
     sig: SigMatch,
 ) -> Option<GameState> {
-    let static_slot: u32 = process.read(sig.address + sig.static_slot_disp).ok()?;
-    let static_slot = u64::from(static_slot);
+    let static_slot = if sig.static_slot_u64 {
+        process.read(sig.address + sig.static_slot_disp).ok()?
+    } else {
+        u64::from(process.read::<u32>(sig.address + sig.static_slot_disp).ok()?)
+    };
     let instance = layout.read_ptr(process, static_slot)?;
     if instance == 0 {
         return None;
