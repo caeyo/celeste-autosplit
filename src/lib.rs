@@ -1,9 +1,8 @@
 use asr::{
     deep_pointer::DeepPointer,
-    file_format::{elf, macho, pe},
     future::{next_tick, retry},
-    Address, MemoryRangeFlags, PointerSize, Process,
     signature::Signature,
+    Address, MemoryRangeFlags, PointerSize, Process,
 };
 
 asr::async_main!(stable);
@@ -30,7 +29,7 @@ enum Platform {
 
 struct SignatureHook {
     static_slot_disp: u64,
-    /// Linux: `movl $slot, %eax` (u32 immediate), macOS: `movabsq $slot, %rax` (u64 immediate)
+    // Linux: `movl $slot, %eax` (u32 immediate), macOS: `movabsq $slot, %rax` (u64 immediate)
     static_slot_u64: bool,
     scan: fn(&Process, (Address, u64)) -> Option<Address>,
 }
@@ -43,7 +42,7 @@ struct SigMatch {
 }
 
 struct Layout {
-    ptr: PointerSize,
+    ptr_size: PointerSize,
     field_step: u64,
     string_len: u64,
     string_chars: u64,
@@ -82,7 +81,7 @@ const LINUX_SIGNATURES: &[SignatureHook] = &[LINUX_HOOK];
 const MACOS_SIGNATURES: &[SignatureHook] = &[MACOS_HOOK];
 
 const WINDOWS_CLR32: Layout = Layout {
-    ptr: PointerSize::Bit32,
+    ptr_size: PointerSize::Bit32,
     field_step: 4,
     string_len: 4,
     string_chars: 8,
@@ -92,7 +91,7 @@ const WINDOWS_CLR32: Layout = Layout {
 };
 
 const MONO64: Layout = Layout {
-    ptr: PointerSize::Bit64,
+    ptr_size: PointerSize::Bit64,
     field_step: 8,
     string_len: 0x10,
     string_chars: 0x14,
@@ -124,7 +123,7 @@ impl Platform {
 
 impl Layout {
     fn read_ptr(&self, process: &Process, address: u64) -> Option<u64> {
-        match self.ptr {
+        match self.ptr_size {
             PointerSize::Bit32 => process.read::<u32>(address).ok().map(u64::from),
             PointerSize::Bit64 => process.read(address).ok(),
             PointerSize::Bit16 => None,
@@ -167,11 +166,7 @@ impl Layout {
             title_offs + self.autosplitter_from_title,
             self.file_strawberries,
         ];
-        Some(match self.ptr {
-            PointerSize::Bit32 => DeepPointer::new_32bit(static_slot, &path),
-            PointerSize::Bit64 => DeepPointer::new_64bit(static_slot, &path),
-            PointerSize::Bit16 => return None,
-        })
+        Some(DeepPointer::new(static_slot, self.ptr_size, &path))
     }
 
     fn read_string_at(&self, process: &Process, instance: u64, field_offs: u64) -> Option<String> {
@@ -216,24 +211,13 @@ async fn wait_attach() -> Process {
     retry(|| PROCESS_NAMES.iter().find_map(|&name| Process::attach(name))).await
 }
 
-fn detect_platform(process: &Process) -> Option<Platform> {
-    let main_module = process.get_main_module_range().ok()?;
-
-    if elf::pointer_size(process, main_module.0) == Some(PointerSize::Bit64) {
-        return Some(Platform::LinuxMono64);
+fn detect_platform() -> Option<Platform> {
+    match asr::get_os().ok()?.as_str() {
+        "windows" => Some(Platform::WindowsClr32),
+        "linux" => Some(Platform::LinuxMono64),
+        "macos" => Some(Platform::MacMono64),
+        _ => None,
     }
-
-    if macho::pointer_size(process, main_module) == Some(PointerSize::Bit64) {
-        return Some(Platform::MacMono64);
-    }
-
-    if pe::MachineType::read(process, main_module.0).and_then(|m| m.pointer_size())
-        == Some(PointerSize::Bit32)
-    {
-        return Some(Platform::WindowsClr32);
-    }
-
-    None
 }
 
 fn scan_executable(
@@ -284,7 +268,7 @@ async fn main() {
 
         process
             .until_closes(async {
-                let platform = retry(|| detect_platform(&process)).await;
+                let platform = retry(detect_platform).await;
                 let layout = platform.layout();
                 let sig = retry(|| find_signature(&process, platform.signatures())).await;
                 let state = retry(|| init(&process, layout, sig)).await;
@@ -292,7 +276,7 @@ async fn main() {
 
                 loop {
                     if let Ok(count) = state.strawberries.deref::<i32>(&process) {
-                        asr::timer::set_variable("Strawberries", &count.to_string());
+                        asr::timer::set_variable_int("Strawberries", count);
                     }
                     next_tick().await;
                 }

@@ -9,6 +9,7 @@ edition = "2021"
 asr = { git = "https://github.com/LiveSplit/asr", features = [
     "alloc",
     "flags",
+    "integer-vars",
     "signature",
     # "wasi-no-std", # Support for no_std on WASI.
     # "unity", # Accessing games using the Unity engine.
