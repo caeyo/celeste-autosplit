@@ -14,22 +14,17 @@ version = "0.1.0"
 source = "git+https://github.com/LiveSplit/asr#a7ecee85abad7263bfa2150d3821f3d2ea69fe84"
 dependencies = [
  "arrayvec",
- "asr-derive",
+ "bitflags",
  "bytemuck",
  "time",
  "wasi",
 ]
 
 [[package]]
-name = "asr-derive"
-version = "0.1.0"
-source = "git+https://github.com/LiveSplit/asr#a7ecee85abad7263bfa2150d3821f3d2ea69fe84"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn",
-]
+name = "bitflags"
+version = "2.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 
 [[package]]
 name = "bytemuck"
@@ -56,7 +51,6 @@ name = "celeste-autosplit"
 version = "0.1.0"
 dependencies = [
  "asr",
- "bytemuck",
 ]
 
 [[package]]
@@ -64,12 +58,6 @@ name = "deranged"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
-
-[[package]]
-name = "heck"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
 
 [[package]]
 name = "num-conv"
