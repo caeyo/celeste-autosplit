@@ -7,13 +7,9 @@ edition = "2021"
 
 [dependencies]
 asr = { git = "https://github.com/LiveSplit/asr", features = [
-    "alloc", # Working with allocations.
-    "derive", # Defining your own settings structs, converting endianness, and binding to .NET classes.
-    # "flags", # Working with bit flags.
-    # "float-vars", # Setting floating point variables.
-    # "float-vars-small", # Setting floating point variables (small binary size).
-    # "integer-vars", # Setting integer variables.
-    # "signature", # Scanning signatures.
+    "alloc",
+    "flags",
+    "signature",
     # "wasi-no-std", # Support for no_std on WASI.
     # "unity", # Accessing games using the Unity engine.
     # "gba", # Accessing Game Boy Advance emulators.
@@ -24,9 +20,6 @@ asr = { git = "https://github.com/LiveSplit/asr", features = [
     # "sms", # Accessing SEGA Master System / GameGear emulators.
     # "wii", # Accessing Wii emulators.
 ] }
-
-# Bytemuck can be used to define structs that are being read from the game's process.
-bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
 
 [lib]
 crate-type = ["cdylib"]
