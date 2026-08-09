@@ -47,7 +47,6 @@ struct Layout {
     string_chars: u64,
     autosplitter_from_title: u64,
     file_strawberries: u64,
-    title_fallback: u64,
     instance_size: InstanceSize,
 }
 
@@ -77,7 +76,6 @@ const WINDOWS_CLR32: Layout = Layout {
     string_chars: 8,
     autosplitter_from_title: 0x1c,
     file_strawberries: 0x24,
-    title_fallback: 0x84,
     instance_size: InstanceSize::MethodTablePlus4,
 };
 
@@ -88,7 +86,6 @@ const LINUX_MONO64: Layout = Layout {
     string_chars: 0x14,
     autosplitter_from_title: 0x30,
     file_strawberries: 0x40,
-    title_fallback: 0xe8,
     instance_size: InstanceSize::KlassPlus1c,
 };
 
@@ -136,7 +133,7 @@ impl Layout {
     fn title_offs(&self, process: &Process, instance: u64) -> Option<u64> {
         let type_size = self.instance_size(process, instance)?;
         if u64::from(type_size) < self.field_step {
-            return Some(self.title_fallback);
+            return None;
         }
 
         let mut offs = u64::from(type_size) - self.field_step;
@@ -149,7 +146,7 @@ impl Layout {
             }
             offs -= self.field_step;
         }
-        Some(self.title_fallback)
+        None
     }
 
     fn strawberries_ptr(&self, static_slot: u64, title_offs: u64) -> Option<DeepPointer<3>> {
