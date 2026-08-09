@@ -7,6 +7,45 @@ use asr::{
 
 asr::async_main!(stable);
 
+#[derive(Copy, Clone)]
+enum Platform {
+    WindowsClr32,
+    LinuxMono64,
+    MacMono64,
+}
+
+enum InstanceSize {
+    MethodTablePlus4,
+    KlassPlus1c,
+}
+
+struct Layout {
+    ptr_size: PointerSize,
+    field_step: u64,
+    string_len: u64,
+    string_chars: u64,
+    autosplitter_from_title: u64,
+    file_strawberries: u64,
+    instance_size: InstanceSize,
+}
+
+struct SignatureHook {
+    static_slot_disp: u64,
+    static_slot_u64: bool,
+    scan: fn(&Process, (Address, u64)) -> Option<Address>,
+}
+
+#[derive(Copy, Clone)]
+struct SigMatch {
+    address: Address,
+    static_slot_disp: u64,
+    static_slot_u64: bool,
+}
+
+struct GameState {
+    strawberries: DeepPointer<3>,
+}
+
 static OPENGL14: Signature<17> =
     Signature::new("68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35");
 
@@ -20,40 +59,12 @@ const PROCESS_NAMES: &[&str] = &[
     "Celeste",
 ];
 
-#[derive(Copy, Clone)]
-enum Platform {
-    WindowsClr32,
-    LinuxMono64,
-    MacMono64,
+fn scan_opengl14(process: &Process, range: (Address, u64)) -> Option<Address> {
+    OPENGL14.scan_process_range(process, range)
 }
 
-struct SignatureHook {
-    static_slot_disp: u64,
-    // Linux: `movl $slot, %eax` (u32 immediate), macOS: `movabsq $slot, %rax` (u64 immediate)
-    static_slot_u64: bool,
-    scan: fn(&Process, (Address, u64)) -> Option<Address>,
-}
-
-#[derive(Copy, Clone)]
-struct SigMatch {
-    address: Address,
-    static_slot_disp: u64,
-    static_slot_u64: bool,
-}
-
-struct Layout {
-    ptr_size: PointerSize,
-    field_step: u64,
-    string_len: u64,
-    string_chars: u64,
-    autosplitter_from_title: u64,
-    file_strawberries: u64,
-    instance_size: InstanceSize,
-}
-
-enum InstanceSize {
-    MethodTablePlus4,
-    KlassPlus1c,
+fn scan_mono64_ctor(process: &Process, range: (Address, u64)) -> Option<Address> {
+    MONO64_CTOR.scan_process_range(process, range)
 }
 
 const OPENGL14_HOOK: SignatureHook = SignatureHook {
@@ -75,9 +86,7 @@ const MACOS_HOOK: SignatureHook = SignatureHook {
 };
 
 const WINDOWS_SIGNATURES: &[SignatureHook] = &[OPENGL14_HOOK];
-
 const LINUX_SIGNATURES: &[SignatureHook] = &[LINUX_HOOK];
-
 const MACOS_SIGNATURES: &[SignatureHook] = &[MACOS_HOOK];
 
 const WINDOWS_CLR32: Layout = Layout {
@@ -99,10 +108,6 @@ const MONO64: Layout = Layout {
     file_strawberries: 0x40,
     instance_size: InstanceSize::KlassPlus1c,
 };
-
-struct GameState {
-    strawberries: DeepPointer<3>,
-}
 
 impl Platform {
     const fn layout(self) -> &'static Layout {
@@ -186,40 +191,6 @@ impl Layout {
     }
 }
 
-fn scan_opengl14(process: &Process, range: (Address, u64)) -> Option<Address> {
-    OPENGL14.scan_process_range(process, range)
-}
-
-fn scan_mono64_ctor(process: &Process, range: (Address, u64)) -> Option<Address> {
-    MONO64_CTOR.scan_process_range(process, range)
-}
-
-fn find_signature(process: &Process, hooks: &[SignatureHook]) -> Option<SigMatch> {
-    for hook in hooks {
-        if let Some(address) = scan_executable(process, |range| (hook.scan)(process, range)) {
-            return Some(SigMatch {
-                address,
-                static_slot_disp: hook.static_slot_disp,
-                static_slot_u64: hook.static_slot_u64,
-            });
-        }
-    }
-    None
-}
-
-async fn wait_attach() -> Process {
-    retry(|| PROCESS_NAMES.iter().find_map(|&name| Process::attach(name))).await
-}
-
-fn detect_platform() -> Option<Platform> {
-    match asr::get_os().ok()?.as_str() {
-        "windows" => Some(Platform::WindowsClr32),
-        "linux" => Some(Platform::LinuxMono64),
-        "macos" => Some(Platform::MacMono64),
-        _ => None,
-    }
-}
-
 fn scan_executable(
     process: &Process,
     mut scan: impl FnMut((Address, u64)) -> Option<Address>,
@@ -241,11 +212,33 @@ fn scan_executable(
     None
 }
 
-fn init(
-    process: &Process,
-    layout: &Layout,
-    sig: SigMatch,
-) -> Option<GameState> {
+fn find_signature(process: &Process, hooks: &[SignatureHook]) -> Option<SigMatch> {
+    for hook in hooks {
+        if let Some(address) = scan_executable(process, |range| (hook.scan)(process, range)) {
+            return Some(SigMatch {
+                address,
+                static_slot_disp: hook.static_slot_disp,
+                static_slot_u64: hook.static_slot_u64,
+            });
+        }
+    }
+    None
+}
+
+fn detect_platform() -> Option<Platform> {
+    match asr::get_os().ok()?.as_str() {
+        "windows" => Some(Platform::WindowsClr32),
+        "linux" => Some(Platform::LinuxMono64),
+        "macos" => Some(Platform::MacMono64),
+        _ => None,
+    }
+}
+
+async fn wait_attach() -> Process {
+    retry(|| PROCESS_NAMES.iter().find_map(|&name| Process::attach(name))).await
+}
+
+fn init(process: &Process, layout: &Layout, sig: SigMatch) -> Option<GameState> {
     let static_slot = if sig.static_slot_u64 {
         process.read(sig.address + sig.static_slot_disp).ok()?
     } else {
