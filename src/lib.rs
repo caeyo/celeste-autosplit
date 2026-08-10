@@ -46,10 +46,10 @@ struct GameState {
     strawberries: DeepPointer<3>,
 }
 
-static OPENGL14: Signature<17> =
+static WINDOWS_CLR32_SIG: Signature<17> =
     Signature::new("68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35");
 
-static MONO64_CTOR: Signature<21> =
+static MONO64_SIG: Signature<21> =
     Signature::new("be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00");
 
 const PROCESS_NAMES: &[&str] = &[
@@ -59,35 +59,35 @@ const PROCESS_NAMES: &[&str] = &[
     "Celeste",
 ];
 
-fn scan_opengl14(process: &Process, range: (Address, u64)) -> Option<Address> {
-    OPENGL14.scan_process_range(process, range)
+fn scan_windows_clr32(process: &Process, range: (Address, u64)) -> Option<Address> {
+    WINDOWS_CLR32_SIG.scan_process_range(process, range)
 }
 
-fn scan_mono64_ctor(process: &Process, range: (Address, u64)) -> Option<Address> {
-    MONO64_CTOR.scan_process_range(process, range)
+fn scan_mono64(process: &Process, range: (Address, u64)) -> Option<Address> {
+    MONO64_SIG.scan_process_range(process, range)
 }
 
-const OPENGL14_HOOK: SignatureHook = SignatureHook {
+const WINDOWS_CLR32_HOOK: SignatureHook = SignatureHook {
     static_slot_disp: 99,
     static_slot_u64: false,
-    scan: scan_opengl14,
+    scan: scan_windows_clr32,
 };
 
-const LINUX_HOOK: SignatureHook = SignatureHook {
+const LINUX_MONO64_HOOK: SignatureHook = SignatureHook {
     static_slot_disp: 132,
     static_slot_u64: false,
-    scan: scan_mono64_ctor,
+    scan: scan_mono64,
 };
 
-const MACOS_HOOK: SignatureHook = SignatureHook {
+const MACOS_MONO64_HOOK: SignatureHook = SignatureHook {
     static_slot_disp: 167,
     static_slot_u64: true,
-    scan: scan_mono64_ctor,
+    scan: scan_mono64,
 };
 
-const WINDOWS_SIGNATURES: &[SignatureHook] = &[OPENGL14_HOOK];
-const LINUX_SIGNATURES: &[SignatureHook] = &[LINUX_HOOK];
-const MACOS_SIGNATURES: &[SignatureHook] = &[MACOS_HOOK];
+const WINDOWS_CLR32_SIGNATURES: &[SignatureHook] = &[WINDOWS_CLR32_HOOK];
+const LINUX_MONO64_SIGNATURES: &[SignatureHook] = &[LINUX_MONO64_HOOK];
+const MACOS_MONO64_SIGNATURES: &[SignatureHook] = &[MACOS_MONO64_HOOK];
 
 const WINDOWS_CLR32: Layout = Layout {
     ptr_size: PointerSize::Bit32,
@@ -119,9 +119,9 @@ impl Platform {
 
     const fn signatures(self) -> &'static [SignatureHook] {
         match self {
-            Self::WindowsClr32 => WINDOWS_SIGNATURES,
-            Self::LinuxMono64 => LINUX_SIGNATURES,
-            Self::MacMono64 => MACOS_SIGNATURES,
+            Self::WindowsClr32 => WINDOWS_CLR32_SIGNATURES,
+            Self::LinuxMono64 => LINUX_MONO64_SIGNATURES,
+            Self::MacMono64 => MACOS_MONO64_SIGNATURES,
         }
     }
 }
