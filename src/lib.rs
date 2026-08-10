@@ -7,11 +7,27 @@ use asr::{
 
 asr::async_main!(stable);
 
-#[derive(Copy, Clone)]
-enum Platform {
-    WindowsClr32,
-    LinuxMono64,
-    MacMono64,
+enum GameState {
+    Vanilla {
+        strawberries: DeepPointer<3>,
+    },
+    Everest {
+        info: Address,
+    },
+}
+
+const EVEREST_MAGIC: [u8; 20] = *b"EVERESTAUTOSPLIT\xf0\xf1\xf2\xf3";
+const EVEREST_INFO_MIN_VERSION: u8 = 3;
+const EVEREST_INFO_VERSION_OFF: u64 = 0x17;
+const EVEREST_FILE_STRAWBERRIES_OFF: u64 = 0x58;
+
+impl GameState {
+    fn strawberries(&self, process: &Process) -> Option<i32> {
+        match self {
+            Self::Vanilla { strawberries } => strawberries.deref(process).ok(),
+            Self::Everest { info } => process.read(*info + EVEREST_FILE_STRAWBERRIES_OFF).ok(),
+        }
+    }
 }
 
 enum InstanceSize {
@@ -28,66 +44,6 @@ struct Layout {
     file_strawberries: u64,
     instance_size: InstanceSize,
 }
-
-struct SignatureHook {
-    static_slot_disp: u64,
-    static_slot_u64: bool,
-    scan: fn(&Process, (Address, u64)) -> Option<Address>,
-}
-
-#[derive(Copy, Clone)]
-struct SigMatch {
-    address: Address,
-    static_slot_disp: u64,
-    static_slot_u64: bool,
-}
-
-struct GameState {
-    strawberries: DeepPointer<3>,
-}
-
-static WINDOWS_CLR32_SIG: Signature<17> =
-    Signature::new("68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35");
-
-static MONO64_SIG: Signature<21> =
-    Signature::new("be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00");
-
-const PROCESS_NAMES: &[&str] = &[
-    "Celeste.bin.x86_64",
-    "Celeste.bin.x86",
-    "Celeste.exe",
-    "Celeste",
-];
-
-fn scan_windows_clr32(process: &Process, range: (Address, u64)) -> Option<Address> {
-    WINDOWS_CLR32_SIG.scan_process_range(process, range)
-}
-
-fn scan_mono64(process: &Process, range: (Address, u64)) -> Option<Address> {
-    MONO64_SIG.scan_process_range(process, range)
-}
-
-const WINDOWS_CLR32_HOOK: SignatureHook = SignatureHook {
-    static_slot_disp: 99,
-    static_slot_u64: false,
-    scan: scan_windows_clr32,
-};
-
-const LINUX_MONO64_HOOK: SignatureHook = SignatureHook {
-    static_slot_disp: 132,
-    static_slot_u64: false,
-    scan: scan_mono64,
-};
-
-const MACOS_MONO64_HOOK: SignatureHook = SignatureHook {
-    static_slot_disp: 167,
-    static_slot_u64: true,
-    scan: scan_mono64,
-};
-
-const WINDOWS_CLR32_SIGNATURES: &[SignatureHook] = &[WINDOWS_CLR32_HOOK];
-const LINUX_MONO64_SIGNATURES: &[SignatureHook] = &[LINUX_MONO64_HOOK];
-const MACOS_MONO64_SIGNATURES: &[SignatureHook] = &[MACOS_MONO64_HOOK];
 
 const WINDOWS_CLR32: Layout = Layout {
     ptr_size: PointerSize::Bit32,
@@ -108,23 +64,6 @@ const MONO64: Layout = Layout {
     file_strawberries: 0x40,
     instance_size: InstanceSize::KlassPlus1c,
 };
-
-impl Platform {
-    const fn layout(self) -> &'static Layout {
-        match self {
-            Self::WindowsClr32 => &WINDOWS_CLR32,
-            Self::LinuxMono64 | Self::MacMono64 => &MONO64,
-        }
-    }
-
-    const fn signatures(self) -> &'static [SignatureHook] {
-        match self {
-            Self::WindowsClr32 => WINDOWS_CLR32_SIGNATURES,
-            Self::LinuxMono64 => LINUX_MONO64_SIGNATURES,
-            Self::MacMono64 => MACOS_MONO64_SIGNATURES,
-        }
-    }
-}
 
 impl Layout {
     fn read_ptr(&self, process: &Process, address: u64) -> Option<u64> {
@@ -191,6 +130,55 @@ impl Layout {
     }
 }
 
+struct SignatureHook {
+    static_slot_disp: u64,
+    static_slot_u64: bool,
+    scan: fn(&Process, (Address, u64)) -> Option<Address>,
+}
+
+#[derive(Copy, Clone)]
+struct SigMatch {
+    address: Address,
+    static_slot_disp: u64,
+    static_slot_u64: bool,
+}
+
+static WINDOWS_CLR32_SIG: Signature<17> =
+    Signature::new("68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35");
+
+static MONO64_SIG: Signature<21> =
+    Signature::new("be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00");
+
+fn scan_windows_clr32(process: &Process, range: (Address, u64)) -> Option<Address> {
+    WINDOWS_CLR32_SIG.scan_process_range(process, range)
+}
+
+fn scan_mono64(process: &Process, range: (Address, u64)) -> Option<Address> {
+    MONO64_SIG.scan_process_range(process, range)
+}
+
+const WINDOWS_CLR32_HOOK: SignatureHook = SignatureHook {
+    static_slot_disp: 99,
+    static_slot_u64: false,
+    scan: scan_windows_clr32,
+};
+
+const LINUX_MONO64_HOOK: SignatureHook = SignatureHook {
+    static_slot_disp: 132,
+    static_slot_u64: false,
+    scan: scan_mono64,
+};
+
+const MACOS_MONO64_HOOK: SignatureHook = SignatureHook {
+    static_slot_disp: 167,
+    static_slot_u64: true,
+    scan: scan_mono64,
+};
+
+const WINDOWS_CLR32_SIGNATURES: &[SignatureHook] = &[WINDOWS_CLR32_HOOK];
+const LINUX_MONO64_SIGNATURES: &[SignatureHook] = &[LINUX_MONO64_HOOK];
+const MACOS_MONO64_SIGNATURES: &[SignatureHook] = &[MACOS_MONO64_HOOK];
+
 fn scan_executable(
     process: &Process,
     mut scan: impl FnMut((Address, u64)) -> Option<Address>,
@@ -225,6 +213,30 @@ fn find_signature(process: &Process, hooks: &[SignatureHook]) -> Option<SigMatch
     None
 }
 
+#[derive(Copy, Clone)]
+enum Platform {
+    WindowsClr32,
+    LinuxMono64,
+    MacMono64,
+}
+
+impl Platform {
+    const fn layout(self) -> &'static Layout {
+        match self {
+            Self::WindowsClr32 => &WINDOWS_CLR32,
+            Self::LinuxMono64 | Self::MacMono64 => &MONO64,
+        }
+    }
+
+    const fn signatures(self) -> &'static [SignatureHook] {
+        match self {
+            Self::WindowsClr32 => WINDOWS_CLR32_SIGNATURES,
+            Self::LinuxMono64 => LINUX_MONO64_SIGNATURES,
+            Self::MacMono64 => MACOS_MONO64_SIGNATURES,
+        }
+    }
+}
+
 fn detect_platform() -> Option<Platform> {
     match asr::get_os().ok()?.as_str() {
         "windows" => Some(Platform::WindowsClr32),
@@ -234,11 +246,39 @@ fn detect_platform() -> Option<Platform> {
     }
 }
 
+const PROCESS_NAMES: &[&str] = &[
+    "Celeste.bin.x86_64",
+    "Celeste.bin.x86",
+    "Celeste.exe",
+    "Celeste",
+];
+
 async fn wait_attach() -> Process {
     retry(|| PROCESS_NAMES.iter().find_map(|&name| Process::attach(name))).await
 }
 
-fn init(process: &Process, layout: &Layout, sig: SigMatch) -> Option<GameState> {
+fn init_everest(process: &Process) -> Option<GameState> {
+    for region in process.memory_ranges() {
+        let Ok(base) = region.address() else {
+            continue;
+        };
+        let mut magic = [0u8; 20];
+        if process.read_into_slice(base, &mut magic).is_err() {
+            continue;
+        }
+        if magic != EVEREST_MAGIC {
+            continue;
+        }
+        let version: u8 = process.read(base + EVEREST_INFO_VERSION_OFF).ok()?;
+        if version < EVEREST_INFO_MIN_VERSION {
+            continue;
+        }
+        return Some(GameState::Everest { info: base });
+    }
+    None
+}
+
+fn init_vanilla(process: &Process, layout: &Layout, sig: SigMatch) -> Option<GameState> {
     let static_slot = if sig.static_slot_u64 {
         process.read(sig.address + sig.static_slot_disp).ok()?
     } else {
@@ -250,7 +290,17 @@ fn init(process: &Process, layout: &Layout, sig: SigMatch) -> Option<GameState> 
     }
     let title_offs = layout.title_offs(process, instance)?;
     let strawberries = layout.strawberries_ptr(static_slot, title_offs)?;
-    Some(GameState { strawberries })
+    Some(GameState::Vanilla { strawberries })
+}
+
+fn init(process: &Process) -> Option<GameState> {
+    if let Some(state) = init_everest(process) {
+        return Some(state);
+    }
+    let platform = detect_platform()?;
+    let layout = platform.layout();
+    let sig = find_signature(process, platform.signatures())?;
+    init_vanilla(process, layout, sig)
 }
 
 async fn main() {
@@ -261,14 +311,11 @@ async fn main() {
 
         process
             .until_closes(async {
-                let platform = retry(detect_platform).await;
-                let layout = platform.layout();
-                let sig = retry(|| find_signature(&process, platform.signatures())).await;
-                let state = retry(|| init(&process, layout, sig)).await;
+                let state = retry(|| init(&process)).await;
                 asr::print_message("Init OK");
 
                 loop {
-                    if let Ok(count) = state.strawberries.deref::<i32>(&process) {
+                    if let Some(count) = state.strawberries(&process) {
                         asr::timer::set_variable_int("Strawberries", count);
                     }
                     next_tick().await;
