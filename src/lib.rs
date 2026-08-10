@@ -269,7 +269,9 @@ fn init_everest(process: &Process) -> Option<GameState> {
         if magic != EVEREST_MAGIC {
             continue;
         }
-        let version: u8 = process.read(base + EVEREST_INFO_VERSION_OFF).ok()?;
+        let Ok(version) = process.read::<u8>(base + EVEREST_INFO_VERSION_OFF) else {
+            continue;
+        };
         if version < EVEREST_INFO_MIN_VERSION {
             continue;
         }
