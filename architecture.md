@@ -64,7 +64,7 @@ flowchart LR
     end
 
     subgraph Win["LiveSplit (Windows)"]
-        wrapper["Wrapper component (C#)<br/>settings editor, legacy migration,<br/>game process priority"]
+        wrapper["Wrapper component (C#)<br/>settings editor, legacy migration,<br/>game priority, Game Time switch"]
         asr["ASR component"]
         wasmW["Wasm module"]
         wrapper -- "creates and delegates to" --> asr
@@ -101,11 +101,11 @@ flowchart LR
 | Rich settings editing | | ✅ | ✅ | |
 | Native fallback UI (website pointer) | ✅ | | | renders it |
 | Legacy `LiveSplit.Celeste` migration | | ✅ | legacy import | |
-| Game process priority | | ✅ (§7.7) | | |
+| Game process priority, Game Time switch | | ✅ (§7.7, §7.8) | | |
 | Persist the settings map in `.lss` | | via the ASR component | writes the file directly | ✅ |
 | Download and update files | | own update XML | | list, updater |
 
-**Rule:** editors only edit data, and no splitting behaviour lives outside the wasm module. The single exception is the Windows-only game process priority (§7.7). It never affects start, split, reset or timing decisions.
+**Rule:** editors only edit data, and no splitting behaviour lives outside the wasm module. The only exceptions are the Windows-only game process priority (§7.7) and the switch to Game Time (§7.8). Neither affects start, split, reset or timing decisions.
 
 ---
 
@@ -153,36 +153,109 @@ Every host stores the settings map in the `.lss` inside `<AutoSplitterSettings>`
 
 Widget keys and map keys share one namespace, which is why the `_ui_` prefix is reserved.
 
-### 5.3 `cfg` schema
-
-> **Illustrative only.** This sketch shows the intended shape and the fields the legacy migration needs. It is to be fleshed out into the real schema once implementation of the wasm module begins.
+### 5.3 `cfg` schema (version 1)
 
 ```text
 cfg: map
-  auto_reset:        bool    default true
-  set_game_time:     bool    default true
-  file_time_offset:  bool    default false
-  high_priority:     bool    default true    (applied by the Windows component only; §7.7)
-  mode:              string  "full_game" | "il"           (made explicit; see §11.4)
-  splits:            list<map>
-    kind:            string  e.g. "chapter_complete", "checkpoint", "heart_gem",
-                             "cassette", "level_enter", "level_exit", "manual", "unknown"
-    chapter:         i64     (where applicable)
-    side:            string  "a" | "b" | "c"              (where applicable)
-    checkpoint:      i64     (where applicable)
-    room:            string  (level_enter / level_exit)
-    raw:             string  (kind == "unknown": original legacy "Type,Value")
+  start:          trigger        default {kind: "manual"}
+  splits:         list<trigger>  default []
+  timing_method:  string         default "file"
+                  "file" | "chapter" | "file_since_start" | "chapter_since_start"
+  reset:          string         default "never"
+                  "never" | "leave_chapter"
+  everest:        bool           default false
+  high_priority:  bool           default true    LiveSplit (Windows) only (§7.7)
+  set_game_time:  bool           default true    LiveSplit (Windows) only (§7.8)
 ```
+
+| Key | Meaning |
+|---|---|
+| `start` | The trigger that starts the timer. |
+| `splits` | `splits[i]` is the trigger that ends segment `i`. Bound by position to the timer's current split index (`asr::timer::current_split_index`, supported by ASR 0.0.12), so manual splits, skips and undos keep it aligned. Segments past the end of the list are split by hand. Extra entries are ignored. |
+| `timing_method` | Which game time the module reports. `file` is the save file's time. `chapter` is the chapter time, held while outside a chapter so a save and quit doesn't drop it to zero. `*_since_start` subtracts the value at the moment the start trigger fired. |
+| `reset` | `leave_chapter` resets the timer whenever the game is outside a chapter (return to map, save and quit, restart), **including after the run has ended**. That reset is how an IL attempt is committed. |
+| `everest` | Turns on the Everest-only fields (rule 9). |
+| `high_priority` | The wrapper sets the Celeste process's priority. |
+| `set_game_time` | The wrapper switches LiveSplit's timing method to Game Time. |
+
+**An empty `cfg` does nothing.** It has no automatic start, reset or splits; the module only reports game time.
+
+Editors offer **presets** that set `start`, `timing_method`, `reset` and the `timing` of every `chapter_complete` split together:
+
+| Preset | `start` | `timing_method` | `reset` | `chapter_complete` `timing` |
+|---|---|---|---|---|
+| Full game | `new_file` | `file` | `never` | `chapter_exit` |
+| Individual level | `chapter_start` | `chapter` | `leave_chapter` | `chapter_complete` |
+
+Presets exist only in the UI and nothing about them is stored. A configuration that matches no preset is shown as "Custom".
+
+#### Triggers
+
+A trigger is a map with a `kind` and kind-specific fields. Every kind is valid in both `start` and `splits`. `sid` is accepted wherever `chapter` is, except on `checkpoint`, whose rooms are only known for vanilla chapters (rule 9).
+
+| `kind` | Required | Optional | Fires when |
+|---|---|---|---|
+| `manual` | — | — | never |
+| `unknown` | `raw` | — | never. Produced only by migration, and flagged by editors. |
+| `new_file` | — | — | a new save file is started |
+| `chapter_start` | — | `chapter`, `side` | the chapter timer starts (`ChapterStarted` rises) |
+| `chapter_enter` | `chapter` | `side` | the chapter ID changes to `chapter` |
+| `chapter_exit` | `chapter` | `side` | the chapter ID changes from `chapter` |
+| `chapter_complete` | — | `chapter`, `side`, `timing` | the chapter is completed (`timing: "chapter_complete"`, the default), or the game leaves the completed chapter (`timing: "chapter_exit"`) |
+| `checkpoint` | `chapter`, `checkpoint` | `side` | the checkpoint's room is entered |
+| `heart` | — | `chapter`, `side` | a crystal heart is collected |
+| `cassette` | — | `chapter`, `side` | a cassette is collected |
+| `room_enter` | `room` | `chapter`, `side` | the room changes to `room` |
+| `room_exit` | `room` | `chapter`, `side` | the room changes from `room` |
+
+#### Fields
+
+| Field | Type | Values |
+|---|---|---|
+| `kind` | string | the table above |
+| `chapter` | i64 | The game's chapter ID, as the memory reader reports it, not the chapter number (table below). Higher IDs are modded chapters. `-1` means "not in a chapter", which is only meaningful for `chapter_enter` and `chapter_exit`. |
+| `side` | i64 | The game's side value: `0` = A, `1` = B, `2` = C |
+| `timing` | string | `"chapter_complete"` or `"chapter_exit"`, only on `chapter_complete` |
+| `checkpoint` | i64 | 1-based checkpoint number within the chapter (chapter data below) |
+| `room` | string | Room name exactly as the game reports it, matched case-sensitively |
+| `sid` | string | Everest only. A chapter's SID, for example `Celeste/1-ForsakenCity` |
+| `raw` | string | The original legacy `Type[,Value]` text |
+
+| ID | Chapter | | ID | Chapter |
+|---|---|---|---|---|
+| 0 | Prologue | | 6 | Reflection |
+| 1 | Forsaken City | | 7 | The Summit |
+| 2 | Old Site | | 8 | Epilogue |
+| 3 | Celestial Resort | | 9 | **Core** (Chapter 8) |
+| 4 | Golden Ridge | | 10 | **Farewell** (Chapter 9) |
+| 5 | Mirror Temple | | | |
+
+#### Chapter data
+
+`checkpoint` triggers fire on entering a room that depends on the side being played. The names and rooms for every vanilla checkpoint live in the `chapters` section of `schema/settings-schema.json`, taken from the legacy component.
+
+C-sides have no checkpoints, but legacy also checks the B-side rooms on C-sides, so the C-side entries repeat B for parity.
 
 ### 5.4 Rules
 
 1. **Missing key means default.** The wasm module never requires a key to be present. `gui::add_bool` returns a default without writing it into the map, so the map only ever holds values someone explicitly set.
-2. **Additive changes** (a new optional key with a default) don't bump `schema_version`. Renames, removals and changes of meaning do.
-3. **Editors preserve unknown keys** inside `cfg`, so an older editor doesn't delete newer settings.
+2. **Additive changes** don't bump `schema_version`. These are a new optional key with a default, a new trigger kind, or a new optional field. Renames, removals and changes of meaning do bump it.
+3. **Editors preserve unknown keys** inside `cfg`, including inside trigger maps, so an older editor doesn't delete newer settings.
 4. **Editors refuse newer schemas.** If `schema_version` is higher than an editor understands, it opens read-only and tells the user to update.
-5. **One schema definition.** A shared schema description, for example `settings-schema.json` shipped with each release, drives both the C# editor and the website, so field lists aren't maintained three times.
+5. **One schema definition.** `schema/settings-schema.json` describes the keys, trigger kinds, fields, presets and chapter data. It ships with each release.
+   - The C# editor and the website render from it.
+   - The wasm module generates its settings types and checkpoint rooms from it at build time.
+   - Field lists and room tables are never maintained by hand in three places.
+   - It's plain JSON with its own vocabulary rather than JSON Schema. The format is documented in `schema/README.md`.
 6. **Writing from the wasm module** (only for schema migrations) uses `Map::store_if_unchanged` and retries on `false`, never `Map::store`.
-7. **Host-specific keys** such as `high_priority` are ignored by the wasm module. The website shows them labelled "LiveSplit (Windows) only".
+7. **Host-specific keys** (`high_priority`, `set_game_time`) are ignored by the wasm module. The website shows them labelled "LiveSplit (Windows) only".
+8. **Triggers:**
+   - An absent optional field matches anything, so `{kind: "heart"}` is any heart.
+   - An invalid trigger behaves like `manual`. That covers a missing required field, a wrong type, an out-of-range value and an unknown `kind`, so an older module treats a newer kind as `manual`. The module logs the problem, and editors flag the entry.
+9. **Everest-only fields** count only when `everest` is `true`. Otherwise the module ignores them as if absent, and editors hide them but keep them.
+   - **v1 has one such field: `sid`.** It's accepted wherever `chapter` is, except on `checkpoint`. When present and `everest` is on, it replaces `chapter`. The reason is that Everest assigns modded chapter IDs at load time, so they change when the installed mods change, while SIDs don't.
+   - **If the game isn't running Everest,** the module can't evaluate these fields. It logs that, and the affected triggers don't fire.
+   - **Later candidates**, each additive: a level set filter, and a "golden grabbed" trigger from Everest's chapter flags.
 
 ---
 
@@ -229,6 +302,24 @@ fn register_native_ui() {
 
 Use only `asr` crate APIs available in every host's runtime. Assume nothing host-specific.
 
+### 6.5 Trigger behaviour
+
+These rules for implementing the §5.3 triggers keep parity with the legacy component (§11.1). None of them is a user choice, so none has a setting.
+
+- **`chapter_complete`** works in two phases:
+  - It arms on the rising edge of `ChapterComplete` in the matching chapter.
+  - With `timing: "chapter_complete"` it fires as soon as it arms. With `timing: "chapter_exit"` it fires when `ChapterComplete` falls again, in any chapter. That's the flag falling, not the chapter ID changing as for the `chapter_exit` kind. The two may land on different frames, so keep the legacy signal.
+  - For chapter 7, it only arms when the current room doesn't start with `credits`. Legacy skips this check for "any chapter" (no `chapter` filter); keep that.
+  - Side matching uses the side from the previous tick, as legacy does.
+- **`heart` and `cassette`** fire on the rising edge of the chapter's heart or cassette flag, in every setup.
+  - Legacy also split when the file's total count went up by one, and used the flag only in IL and file-time-offset setups.
+  - Counting breaks ILs on a file that already has the heart. Reacting to the flag while it stays set double-splits consecutive heart splits. The rising edge avoids both.
+- **`checkpoint`** fires on entering the room, including spawning into it from the menu. Legacy fired whenever the current room matched. The two only differ when the previous split fired in that same room.
+- **`chapter_start`** ignores the first 3 s after attaching, as legacy does.
+- **`chapter_enter` and `chapter_exit` with a `side`** require the side to change too, as legacy does.
+- **`room_enter` and `room_exit`** fire only inside a chapter.
+- **Game time** is paused whenever its value doesn't change.
+
 ---
 
 ## 7. Wrapper component (LiveSplit, Windows)
@@ -267,7 +358,7 @@ Use only `asr` crate APIs available in every host's runtime. Assume nothing host
 | Constructor | Resolve `wasmPath = Path.GetFullPath(Path.Combine(ComponentManager.BasePath ?? "", "Components", "celeste-autosplit.wasm"))`. If LiveSplit runs as a 32-bit process or the wasm is missing, enter the error state (§7.5). Otherwise create the inner component in a try/catch: `inner = new ASRComponent(state, wasmPath)`, the same constructor `ASRFactory.Create(state, script)` uses. Then check that ASR actually loaded the module (§7.6). If it didn't, dispose `inner` and enter the error state. Then run the layout check (§11.6). |
 | `Update(...)` | Forward to `inner.Update(...)`. LiveSplit calls this on the active auto splitter every frame. The ASR component's `Update` is currently empty: it steps the runtime on its own timer, marshalled to the UI thread through `state.Form`. The timer starts at 15 ms and then follows the module's tick rate (8.33 ms for the `asr` crate's default 120 Hz). Forwarding keeps the wrapper correct if a future ASR does work there. Also drives the throttled priority check (§7.7). |
 | `GetSettings(doc)` | `inner.GetSettings(doc)`, unchanged. This is what `XMLRunSaver` writes into the `.lss`. In the error state, return the held settings (§7.5). |
-| `SetSettings(node)` | If the node is in the legacy format, migrate it (§11). Then call `inner.SetSettings(node)` and refresh the wrapper's cached `cfg.high_priority`. **Never** pass legacy XML through: the ASR component replaces the map with an empty one (verified). ASR ignores an empty element (`<AutoSplitterSettings/>`) and keeps its current map. In the error state, hold a copy of the node (§7.5). |
+| `SetSettings(node)` | If the node is in the legacy format, migrate it (§11). Then call `inner.SetSettings(node)` and refresh the wrapper's cached `cfg.high_priority`. On the first call, apply `cfg.set_game_time` (§7.8). **Never** pass legacy XML through: the ASR component replaces the map with an empty one (verified). ASR ignores an empty element (`<AutoSplitterSettings/>`) and keeps its current map. In the error state, hold a copy of the node (§7.5). |
 | `GetSettingsControl(mode)` | The wrapper's own editor control. Must not be null, or LiveSplit disables the Settings button. |
 | `Dispose()` | Restore the game's priority if the wrapper raised it (§7.7). Then `inner.Dispose()`, which stops its update timer and disposes the runtime. **Required.** LiveSplit calls `Dispose` on deactivation or a game change. Without forwarding it, the inner timer keeps running and the old module keeps controlling the timer. |
 | `ContextMenuControls` | Optional: forward `inner.ContextMenuControls`. LiveSplit adds the active auto splitter's entries to its Control menu. ASR currently provides none. |
@@ -348,6 +439,17 @@ The legacy component's `SetHighPriority` setting sets the **Celeste game process
   - Dispose `Process` objects after use.
   - Never block the UI thread on this.
 - **Scope:** affects only performance, never splitting decisions, so it's consistent with the rule in §4.
+
+### 7.8 Windows-only: switch to Game Time
+
+The legacy component's `SetGameTime` setting was meant to switch LiveSplit's timing method to Game Time when it activated. It read the setting in its constructor, before LiveSplit called `SetSettings`, so it always saw the default `true`. Every legacy user was switched, whatever the checkbox said.
+
+Neither the ASR component nor the `asr` crate can set the timing method, so the wrapper takes this over, and this time the stored value is honoured:
+
+- **Setting:** `cfg.set_game_time`. Default `true`. Migrated from `<SetGameTime>` (§11.4).
+- **When:** on the first `SetSettings` after the wrapper is created, not in the constructor. That's the first moment the real settings are known.
+- **What:** if the setting is on, set `state.CurrentTimingMethod = TimingMethod.GameTime`. If it's off, leave the timing method alone.
+- **Scope:** display only, never splitting decisions.
 
 ---
 
@@ -475,9 +577,11 @@ Rules:
 
 ## 11. Migration from `LiveSplit.Celeste`
 
-### 11.1 Legacy format
+### 11.1 Legacy format and behaviour
 
-The legacy component (v1.4.6) saves flat children under `<AutoSplitterSettings>`:
+Audited at [ShootMe/LiveSplit.Celeste `5c5bcb2`](https://github.com/ShootMe/LiveSplit.Celeste/tree/5c5bcb2c1456ee04a241575608febb9d35f69084), v1.4.6, the last release.
+
+**Format.** The legacy component saves flat children under `<AutoSplitterSettings>`:
 
 ```xml
 <AutoSplitterSettings>
@@ -493,7 +597,58 @@ The legacy component (v1.4.6) saves flat children under `<AutoSplitterSettings>`
 </AutoSplitterSettings>
 ```
 
-Each `<Split>` is `Type[,Value]`, where `Type` is a `SplitType` enum name (about 70 values) and `Value` is optional (for example a room name).
+- **Splits:** each `<Split>` is `Type[,Value]`. `Type` is one of the 71 `SplitType` enum names, and `Value` is optional (for example a room name).
+- **Reading:** the reader finds each element as the first descendant with that name.
+- **Booleans:** parsed with `bool.Parse`. When absent, `AutoReset`, `SetHighPriority` and `SetGameTime` default to `true` and `FileTimeOffset` to `false`.
+
+**Hidden modes.** The legacy component infers its behaviour from the split list. It counts types by enum name:
+
+| Count | Types |
+|---|---|
+| chapter | any name exactly 8 characters long: `Prologue`, `Epilogue`, `ChapterA`, `Chapter1`–`Chapter9` |
+| heart | name contains `HeartGem` |
+| area | `AreaComplete` |
+| cassette | name contains `Cassette` |
+
+From the counts it sets two flags:
+- `ILSplits = splits empty || every count <= 1`
+- `ChapterSplits = any count > 0`
+
+Together they produce four cases:
+
+| Case | Condition | Start | Segment `i` split by | Game time | Chapter complete splits | `AutoReset` |
+|---|---|---|---|---|---|---|
+| **E: empty** | no splits | any room change | 1-segment run: next room change, unless the start room is re-entered within 2.5 s, which moves the start. Otherwise never. | chapter time − chapter time at start | — | applies |
+| **F: full game** | `ChapterSplits && !ILSplits` | new file | `splits[i]` | file time | when the complete flag falls again | ignored |
+| **I: IL** | `ChapterSplits && ILSplits` | chapter started | `splits[i]` | chapter time, held in the menu | when the complete flag rises | applies |
+| **C: custom start** | splits present, none counted | **`splits[0]`** | `splits[i+1]`. 1-segment run with only `splits[0]`: next room change. | chapter time − chapter time at start | — | applies |
+
+`FileTimeOffset` makes game time "file time − file time at start" in every case. It also lets heart and cassette splits use the chapter's own collected flag, which they otherwise do only in IL modes. When `AutoReset` applies, the timer resets whenever the game is outside a chapter.
+
+**Per-type behaviour:**
+
+| Legacy types | Fires when |
+|---|---|
+| `Manual` | never |
+| `Prologue`, `Chapter1`–`Chapter9`, `Epilogue` | `ChapterComplete` rises in that chapter, on any side. In case F the split waits until the flag falls again. Chapter 7 additionally needs a room not starting with `credits`. |
+| `ChapterA` | as above for any chapter, without the `credits` check |
+| `AreaComplete,<chapter>[-<side>]` | as above for that chapter, optionally only on that side |
+| `AreaOnEnter` / `AreaOnExit,<chapter>[-<side>]` | the chapter ID changes to / from that chapter. With a side, the side must also change to / from it. |
+| `ChapterNCheckpointK` | in chapter N, whenever the current room is that checkpoint's room for the current side (§5.3 chapter data) |
+| `HeartGemAny`, `ChapterNHeartGem` | the file's heart count goes up by 1, or the chapter heart flag is set (IL or `FileTimeOffset` only). The chapter versions also require that chapter. |
+| `ChapterNCassette` | as hearts, with cassettes. There is no "any cassette". |
+| `LevelEnter` / `LevelExit,<room>` | inside a chapter, the room changes, and the new / previous room equals `<room>`, ignoring case |
+
+**Defects** the migration has to account for:
+1. **`SetGameTime` never worked** (§7.8).
+2. **Unknown types silently become `Manual`.** `Type` is parsed with a case-sensitive `Enum.TryParse` that falls back to the default value. Integers are accepted too, so `"5"` is `HeartGemAny` and `"200"` is an undefined type that never fires.
+3. **Case C's final split gets the wrong game time.** Its game time is the absolute chapter time, not the time since start.
+4. **`FileTimeOffset` in cases C and E mixes clocks.** It reports (file time − file time at start) − chapter time at start.
+5. **`Value` stops at the first comma.** Anything after a second comma is dropped.
+6. **Some values never fire.** These are a `LevelEnter`/`LevelExit` without a room, and an `Area*` value whose chapter or side doesn't parse. An `Area*` split with no value at all throws in `Update`.
+7. **Turning high priority off forces `Normal`,** even if the wrapper didn't raise it (§7.7 deliberately differs).
+
+Other legacy Windows-only behaviour is a debug log, `_Celeste.txt`, written only when that file exists in the working directory. It isn't ported, because ASR's log replaces it.
 
 ### 11.2 Rollout path: new file name
 
@@ -506,15 +661,83 @@ Each `<Split>` is `Type[,Value]`, where `Type` is a `SplitType` enum name (about
 
 In `SetSettings`, the node is legacy when `CustomSettings` is absent **and** `Splits` or `AutoReset` is present. Nodes that are empty or have no recognisable children are passed through unchanged.
 
-### 11.4 Mapping rules
+### 11.4 Mapping
 
-1. **Use the legacy defaults for absent elements.** When an element was missing, the legacy component treated `AutoReset`, `SetHighPriority` and `SetGameTime` as `true` and `FileTimeOffset` as `false`. Apply those, not the new defaults.
-2. **Make inferred behaviour explicit.** The legacy component derives `ILSplits` and `ChapterSplits` from split counts: it's an IL setup if there are no splits, or at most one each of chapter, heart, area and cassette splits. Compute this during migration and store it as `cfg.mode` so the wasm module doesn't have to copy the heuristic.
-3. **Split types:** a table maps every `SplitType` to a `cfg.splits` entry, carrying `Value` where it applies (room names for `LevelEnter` and `LevelExit`). A table-driven test enforces full coverage. The final table depends on the real `cfg` schema.
-4. **Unknown or unparseable splits** become `{kind: "unknown", raw: "<original>"}`. The editor flags these for the user to fix, and nothing is dropped.
-5. **`SetHighPriority`** maps to `cfg.high_priority`, applied by the wrapper on Windows (§7.7).
-6. **Keep the original:** write the original values into `legacy` (bools, plus a list of raw split strings) for re-migration if a mapping bug is found.
-7. **Output:** `<Version>1.0</Version><CustomSettings>…</CustomSettings>` with `schema_version` set, in the exact §5.1 format.
+The legacy node is the migration's only input. It never looks at the run.
+
+**1. Global settings and mode.**
+- Parse the four booleans like `bool.Parse`: `True` or `False`, any case, trimmed. If an element is absent or doesn't parse, use the legacy default (§11.1).
+- Classify the split list exactly as legacy does (§11.1), using the parsed type's enum name. An unknown type counts as `Manual`. An undefined integer type is counted by its digits, which never matches.
+
+| | E: empty | F: full game | I: IL | C: custom start |
+|---|---|---|---|---|
+| `start` | `{manual}` | `{new_file}` | `{chapter_start}` | map(`splits[0]`) |
+| `splits` | `[]` | map(each); every `chapter_complete` gets `timing: "chapter_exit"` | map(each); every `chapter_complete` gets `timing: "chapter_complete"` | map(`splits[1..]`) |
+| `timing_method` | `file` | `file` | `chapter` | `chapter_since_start` |
+| `reset` | `never` | `never` | `AutoReset ? leave_chapter : never` | `AutoReset ? leave_chapter : never` |
+
+- **Case E becomes an empty configuration.** The legacy behaviour (start on any room change, auto reset, split one-segment runs on room changes) is dropped.
+- **Case C's room-change fallback is dropped too.** It came from the same code path as case E, without E's grace logic. The segment is split by hand.
+- **Case C has no `chapter_complete` splits,** because any of them would have made the list case F or I.
+- **`FileTimeOffset = True`** sets `timing_method` to `file_since_start` in every column. It doesn't trigger anything, so it's kept even in E.
+- **Always:** `everest = false`, `high_priority = SetHighPriority` and `set_game_time = SetGameTime`.
+- **Every top-level key is written explicitly,** in §5.3 order, and so is `timing` on every `chapter_complete`. A later change of default can't change a migrated user's behaviour, and the output stays byte-identical between runs.
+
+**2. Split types.** `id(N)` maps a chapter number in a type name to its chapter ID: 1–7 map to themselves, 8 → 9 (Core) and 9 → 10 (Farewell).
+
+| Legacy type | Trigger |
+|---|---|
+| `Manual` | `{kind: "manual"}` |
+| `ChapterA` | `{kind: "chapter_complete"}` |
+| `Prologue` | `{kind: "chapter_complete", chapter: 0}` |
+| `Chapter1`–`Chapter7` | `{kind: "chapter_complete", chapter: N}` |
+| `Epilogue` | `{kind: "chapter_complete", chapter: 8}` |
+| `Chapter8` | `{kind: "chapter_complete", chapter: 9}` |
+| `Chapter9` | `{kind: "chapter_complete", chapter: 10}` |
+| `ChapterNCheckpointK` (36 values) | `{kind: "checkpoint", chapter: id(N), checkpoint: K}` |
+| `HeartGemAny` | `{kind: "heart"}` |
+| `ChapterNHeartGem` (N = 1–8) | `{kind: "heart", chapter: id(N)}` |
+| `ChapterNCassette` (N = 1–8) | `{kind: "cassette", chapter: id(N)}` |
+| `AreaComplete,V` | `{kind: "chapter_complete", chapter, side?}` from V |
+| `AreaOnEnter,V` | `{kind: "chapter_enter", chapter, side?}` from V |
+| `AreaOnExit,V` | `{kind: "chapter_exit", chapter, side?}` from V |
+| `LevelEnter,V` | `{kind: "room_enter", room: V}` |
+| `LevelExit,V` | `{kind: "room_exit", room: V}` |
+| anything else, or a value that never fires (§11.1 defect 6) | `{kind: "unknown", raw: "<original text>"}` |
+
+Every `chapter_complete` row also gets `timing` from the case table. That is 71 enum values. A table-driven test lists every one of them explicitly, not the patterns above.
+
+**3. Parsing**, which replicates legacy exactly:
+- **Split text:** split on `,`. Field 0 is the type and field 1 (if present) is `Value`. Further fields are dropped.
+- **Type:** `Enum.TryParse` semantics: case-sensitive, surrounding whitespace allowed, integers accepted. An integer that isn't a defined value becomes `unknown`.
+- **Area values** (`AreaComplete`, `AreaOnEnter`, `AreaOnExit`): split `V` on `-`.
+  - Part 0, trimmed and case-insensitive, is a chapter name or any integer. The names are `Menu` (-1), `Prologue`, `ForsakenCity`, `OldSite`, `CelestialResort`, `GoldenRidge`, `MirrorTemple`, `Reflection`, `TheSummit`, `Epilogue`, `Core` and `Farewell`.
+  - Part 1, if present, is `ASide`/`BSide`/`CSide` or `0`/`1`/`2`, which become side `0`/`1`/`2`.
+  - Further parts are ignored.
+  - Any parse failure becomes `unknown`. So does side `None`/`-1` or any other integer, which can never match.
+- **Room values:** kept verbatim, including case. An empty or missing room becomes `unknown`.
+
+**4. The `legacy` map** keeps the originals for re-migration:
+
+```text
+legacy: map
+  AutoReset, SetHighPriority, SetGameTime, FileTimeOffset:  string   verbatim inner text; absent if the element was absent
+  Splits:  list<string>   verbatim inner text of each <Split>, in order
+```
+
+**5. Deliberate deviations from legacy:**
+
+| Legacy | Now | Who notices |
+|---|---|---|
+| Always switches to Game Time | Honours `SetGameTime` (§7.8) | Users who unchecked "Game Time" stop being switched. |
+| Unknown types silently manual | `unknown`: still never fires, but flagged | Nobody, timing-wise. |
+| Case C final split time is absolute | Consistent with the rest of the run | Custom-start runners, whose final time was wrong. |
+| `FileTimeOffset` in cases C and E mixes clocks | `file_since_start` | Rare combination. |
+| No splits (case E): start on any room change, auto reset, split one-segment runs on room changes | Nothing automatic | Users who never configured splits, and single-room timers. |
+| Case C with only a start trigger and one segment: split on the next room change | Split by hand | Custom-start single-room timers. |
+| Room names match ignoring case | Exact match | Users whose saved room name differs in case from the game's. Migration can't fix this without the map's room list. |
+| Heart and cassette splits use count increments, or the flag only in some setups | Rising edge of the chapter flag (§6.5) | Nobody, if it works as intended. |
+| Checkpoints fire while in the room | Fire on entering it (§6.5) | Only lists where the previous split fired in the same room. |
 
 ### 11.5 Persistence
 
@@ -541,14 +764,14 @@ Not supported. The legacy component reads flat elements, which the new format do
 | # | Item | Notes and mitigation |
 |---|---|---|
 | 1 | Component display name | Celeste Autosplitter |
-| 2 | Real `cfg` schema and split mapping table | To be fleshed out once implementation begins. |
+| 2 | Real `cfg` schema and split mapping table | Resolved: schema in §5.3 and §5.4, mapping in §11.4. Format in `schema/README.md`. |
 | 3 | Changes to the ASR component's API | `ASRComponent` constructor, `ComponentSettings.runtime`, XML format. Mitigated by §7.6. Verified with LiveSplit 1.8.37 (ASR 0.0.12). |
 | 4 | Druid fork and MVP persistence | MVP map persistence is unverified. |
 | 5 | Double splitting | Legacy component in layout (§11.6). The wrapper itself is hidden from the layout editor (§7.2). |
 | 6 | Assembly identity collision | Addressed by assembly name `celeste-autosplit` (§7.1). |
 | 7 | Strict `CustomSettings` parsing | A single bad element wipes the map. Covered by round-trip tests (§13). |
-| 8 | Legacy "Auto add enter/exit splits" | The legacy component adds two Control-menu entries that record room transitions while playing and append `LevelEnter`/`LevelExit` splits. This isn't covered yet. A possible port: the wasm publishes the current room as a custom variable via `asr::timer::set_variable`, which LiveSplit stores in the run's custom variables, and the wrapper's `ContextMenuControls` watches it and appends splits to `cfg`. Decide whether to port it. |
-| 9 | Other legacy Windows-only behaviour | Priority is handled (§7.7). Finish auditing the legacy component for anything else. |
+| 8 | Legacy "Auto add enter/exit splits" | The legacy component adds two Control-menu entries that record room transitions while playing and append `LevelEnter`/`LevelExit` splits. The schema already covers the result: `room_enter`/`room_exit` triggers. A possible port: the wasm publishes the current room as a custom variable via `asr::timer::set_variable`, which LiveSplit stores in the run's custom variables, and the wrapper's `ContextMenuControls` watches it and appends splits to `cfg`. Decide whether to port it. |
+| 9 | Other legacy Windows-only behaviour | Resolved. Priority is handled (§7.7) and Game Time (§7.8). The audit (§11.1) found only a debug log otherwise, which isn't ported. |
 | 10 | 32-bit Windows users | Once the list entry points at the wrapper, they lose auto splitting. Only the wrapper's settings tell them why, pointing them to the legacy component (§7.5). |
 
 ---
@@ -558,9 +781,11 @@ Not supported. The legacy component reads flat elements, which the new format do
 **Unit**
 - **Migration corpus:** real community `.lss` files (full game, ILs, Category Extensions, collabs, `LevelEnter` room splits) run through `Migrate`. Snapshot the output and check it by hand.
 - **Repeatability:** migrating the same legacy XML twice gives byte-identical output.
-- **`SplitType` coverage:** a table-driven test fails if any enum value has no mapping.
+- **`SplitType` coverage:** a table-driven test lists all 71 enum values, plus integer and garbage inputs, and fails if any maps differently from §11.4.
+- **Mode table:** one golden test per legacy case (§11.4), crossed with `FileTimeOffset` and `AutoReset`. Checks that `timing` is set on every `chapter_complete` in cases F and I.
+- **Value parsing:** `Area*` values with names, integers, mixed case, whitespace, a missing side, a bad side, `Menu` and three `-` parts. Room values that are empty, contain commas, or are mixed case (kept as written).
 - **Round-trip:** wrapper serialiser, then ASR's parser, then ASR's writer, gives identical XML. The same XML parses with livesplit-core's `StoredAutoSplitterSettings`.
-- **Wasm module:** missing keys, wrong types, newer `schema_version`, empty map.
+- **Wasm module:** missing keys, wrong types, newer `schema_version`, empty map (does nothing), invalid and unknown triggers (behave as `manual`), `sid` ignored when `everest` is off and replacing `chapter` when on.
 - **ASR compatibility:** the real wasm module runs inside the pinned LiveSplit's ASR component, without LiveSplit's UI. A hidden form on an STA thread stands in for LiveSplit's UI thread.
   - Checks that ASR loads the module, settings round-trip exactly through the native runtime (and a second `SetSettings` replaces them rather than merging), and `Dispose` stops the runtime.
   - Checks that a missing wasm, a wasm ASR can't load, and a missing ASR assembly (in a separate AppDomain) each reach the error state with the settings kept.
@@ -577,8 +802,9 @@ Build LiveSplit from source with `AutoSplitterFactory.AutoSplittersXmlUrl` point
 6. Wasm deleted: clear error or self-repair.
 7. Settings dialog Cancel: changes reverted.
 8. Game priority: High applied when the game starts with the setting on; Normal restored when toggled off and on deactivation; no errors when the game exits.
+9. Game Time switch: with `set_game_time` on, LiveSplit switches to Game Time when Celeste splits are loaded; with it off, the timing method is left alone.
 
-Scenarios that don't download anything can also run on a dev copy of stock LiveSplit. Save the DLL as `Components\LiveSplit.Celeste.dll`. LiveSplit derives that file name from the first URL of the official list's Celeste entry, finds the file present, and activates the wrapper for any "Celeste" splits file. This covers 6–8 and the non-download parts of 1 and 2.
+Scenarios that don't download anything can also run on a dev copy of stock LiveSplit. Save the DLL as `Components\LiveSplit.Celeste.dll`. LiveSplit derives that file name from the first URL of the official list's Celeste entry, finds the file present, and activates the wrapper for any "Celeste" splits file. This covers 6–9 and the non-download parts of 1 and 2.
 - Never do this in a LiveSplit install you run with, because it replaces the legacy component.
 - LiveSplit run from a new folder asks through UAC to point the `.lss` and `.lsl` file associations at itself. Delete `LiveSplit.Register.exe` from the dev copy to skip that.
 

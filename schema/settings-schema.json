@@ -1,3 +1,234 @@
 {
-  "schema_version": 1
+  "schema_version": 1,
+
+  "settings": [
+    {
+      "key": "start",
+      "type": "trigger",
+      "default": { "kind": "manual" },
+      "label": "Start",
+      "description": "What starts the timer."
+    },
+    {
+      "key": "splits",
+      "type": "list",
+      "items": "trigger",
+      "default": [],
+      "label": "Splits",
+      "description": "One trigger per segment, in order. Segments without one are split by hand."
+    },
+    {
+      "key": "timing_method",
+      "type": "string",
+      "default": "file",
+      "label": "Timing method",
+      "values": [
+        { "value": "file", "label": "File time" },
+        { "value": "chapter", "label": "Chapter time" },
+        { "value": "file_since_start", "label": "File time since start" },
+        { "value": "chapter_since_start", "label": "Chapter time since start" }
+      ]
+    },
+    {
+      "key": "reset",
+      "type": "string",
+      "default": "never",
+      "label": "Auto reset",
+      "values": [
+        { "value": "never", "label": "Never" },
+        {
+          "value": "leave_chapter",
+          "label": "On leaving a chapter",
+          "description": "Return to map, save and quit, or restart. Also after the run has ended, which commits an IL attempt."
+        }
+      ]
+    },
+    {
+      "key": "everest",
+      "type": "bool",
+      "default": false,
+      "label": "Everest",
+      "description": "Use data only Everest provides, such as matching chapters by SID."
+    },
+    {
+      "key": "high_priority",
+      "type": "bool",
+      "default": true,
+      "host": "livesplit",
+      "label": "High priority",
+      "description": "Set the Celeste process's priority to High."
+    },
+    {
+      "key": "set_game_time",
+      "type": "bool",
+      "default": true,
+      "host": "livesplit",
+      "label": "Switch to Game Time",
+      "description": "Switch LiveSplit's timing method to Game Time when the splits are loaded."
+    }
+  ],
+
+  "fields": {
+    "chapter": {
+      "type": "i64",
+      "label": "Chapter",
+      "values_from": "chapters",
+      "no_chapter": { "value": -1, "label": "Not in a chapter" }
+    },
+    "side": {
+      "type": "i64",
+      "label": "Side",
+      "values": [
+        { "value": 0, "label": "A-Side" },
+        { "value": 1, "label": "B-Side" },
+        { "value": 2, "label": "C-Side" }
+      ]
+    },
+    "timing": {
+      "type": "string",
+      "label": "Split on",
+      "default": "chapter_complete",
+      "values": [
+        { "value": "chapter_complete", "label": "Chapter complete" },
+        { "value": "chapter_exit", "label": "Chapter exit" }
+      ]
+    },
+    "checkpoint": {
+      "type": "i64",
+      "label": "Checkpoint",
+      "values_from": "checkpoints"
+    },
+    "room": {
+      "type": "string",
+      "label": "Room",
+      "description": "Exactly as the game names it, including case."
+    },
+    "sid": {
+      "type": "string",
+      "label": "Chapter SID",
+      "everest": true,
+      "replaces": "chapter"
+    },
+    "raw": {
+      "type": "string",
+      "label": "Legacy split",
+      "read_only": true
+    }
+  },
+
+  "triggers": [
+    { "kind": "manual", "label": "Manual", "required": [], "optional": [], "offer": ["start", "splits"] },
+    { "kind": "unknown", "label": "Unrecognised legacy split", "required": ["raw"], "optional": [], "offer": [] },
+    { "kind": "new_file", "label": "New file", "required": [], "optional": [], "offer": ["start"] },
+    { "kind": "chapter_start", "label": "Chapter start", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "splits"] },
+    { "kind": "chapter_enter", "label": "Enter chapter", "required": ["chapter"], "optional": ["side", "sid"], "offer": ["start", "splits"], "allow_no_chapter": true },
+    { "kind": "chapter_exit", "label": "Exit chapter", "required": ["chapter"], "optional": ["side", "sid"], "offer": ["start", "splits"], "allow_no_chapter": true },
+    { "kind": "chapter_complete", "label": "Chapter complete", "required": [], "optional": ["chapter", "side", "sid", "timing"], "offer": ["splits"] },
+    { "kind": "checkpoint", "label": "Checkpoint", "required": ["chapter", "checkpoint"], "optional": ["side"], "offer": ["start", "splits"] },
+    { "kind": "heart", "label": "Crystal heart", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["splits"] },
+    { "kind": "cassette", "label": "Cassette", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["splits"] },
+    { "kind": "room_enter", "label": "Enter room", "required": ["room"], "optional": ["chapter", "side", "sid"], "offer": ["start", "splits"] },
+    { "kind": "room_exit", "label": "Exit room", "required": ["room"], "optional": ["chapter", "side", "sid"], "offer": ["start", "splits"] }
+  ],
+
+  "presets": [
+    {
+      "id": "full_game",
+      "label": "Full game",
+      "settings": { "start": { "kind": "new_file" }, "timing_method": "file", "reset": "never" },
+      "trigger_fields": { "chapter_complete": { "timing": "chapter_exit" } }
+    },
+    {
+      "id": "il",
+      "label": "Individual level",
+      "settings": { "start": { "kind": "chapter_start" }, "timing_method": "chapter", "reset": "leave_chapter" },
+      "trigger_fields": { "chapter_complete": { "timing": "chapter_complete" } }
+    }
+  ],
+
+  "chapters": [
+    { "id": 0, "name": "Prologue", "sides": [0], "checkpoints": [] },
+    {
+      "id": 1, "name": "Forsaken City", "sides": [0, 1, 2],
+      "checkpoints": [
+        { "names": ["Crossing", "Contraption"], "rooms": ["6", "04", "04"] },
+        { "names": ["Chasm", "Scrap Pit"], "rooms": ["9b", "08", "08"] }
+      ]
+    },
+    {
+      "id": 2, "name": "Old Site", "sides": [0, 1, 2],
+      "checkpoints": [
+        { "names": ["Intervention", "Combination Lock"], "rooms": ["3", "03", "03"] },
+        { "names": ["Awake", "Dream Altar"], "rooms": ["end_3", "08b", "08b"] }
+      ]
+    },
+    {
+      "id": 3, "name": "Celestial Resort", "sides": [0, 1, 2],
+      "checkpoints": [
+        { "names": ["Huge Mess", "Staff Quarters"], "rooms": ["08-a", "06", "06"] },
+        { "names": ["Elevator Shaft", "Library"], "rooms": ["09-d", "11", "11"] },
+        { "names": ["Presidential Suite", "Rooftop"], "rooms": ["00-d", "16", "16"] }
+      ]
+    },
+    {
+      "id": 4, "name": "Golden Ridge", "sides": [0, 1, 2],
+      "checkpoints": [
+        { "names": ["Shrine", "Stepping Stones"], "rooms": ["b-00", "b-00", "b-00"] },
+        { "names": ["Old Trail", "Gusty Canyon"], "rooms": ["c-00", "c-00", "c-00"] },
+        { "names": ["Cliff Face", "Eye of the Storm"], "rooms": ["d-00", "d-00", "d-00"] }
+      ]
+    },
+    {
+      "id": 5, "name": "Mirror Temple", "sides": [0, 1, 2],
+      "checkpoints": [
+        { "names": ["Depths", "Central Chamber"], "rooms": ["b-00", "b-00", "b-00"] },
+        { "names": ["Unravelling", "Through the Mirror"], "rooms": ["c-00", "c-00", "c-00"] },
+        { "names": ["Search", "Mix Master"], "rooms": ["d-00", "d-00", "d-00"] },
+        { "names": ["Rescue"], "rooms": ["e-00", "e-00", "e-00"] }
+      ]
+    },
+    {
+      "id": 6, "name": "Reflection", "sides": [0, 1, 2],
+      "checkpoints": [
+        { "names": ["Lake", "Reflection"], "rooms": ["00", "b-00", "b-00"] },
+        { "names": ["Hollows", "Rock Bottom"], "rooms": ["04", "c-00", "c-00"] },
+        { "names": ["Reflection", "Reprieve"], "rooms": ["b-00", "d-00", "d-00"] },
+        { "names": ["Rock Bottom"], "rooms": ["boss-00", "boss-00", "boss-00"] },
+        { "names": ["Resolution"], "rooms": ["after-00", "after-00", "after-00"] }
+      ]
+    },
+    {
+      "id": 7, "name": "The Summit", "sides": [0, 1, 2],
+      "checkpoints": [
+        { "names": ["500 M", "500 M"], "rooms": ["b-00", "b-00", "b-00"] },
+        { "names": ["1000 M", "1000 M"], "rooms": ["c-00", "c-01", "c-01"] },
+        { "names": ["1500 M", "1500 M"], "rooms": ["d-00", "d-00", "d-00"] },
+        { "names": ["2000 M", "2000 M"], "rooms": ["e-00b", "e-00", "e-00"] },
+        { "names": ["2500 M", "2500 M"], "rooms": ["f-00", "f-00", "f-00"] },
+        { "names": ["3000 M", "3000 M"], "rooms": ["g-00", "g-00", "g-00"] }
+      ]
+    },
+    { "id": 8, "name": "Epilogue", "sides": [0], "checkpoints": [] },
+    {
+      "id": 9, "name": "Core", "sides": [0, 1, 2],
+      "checkpoints": [
+        { "names": ["Into the Core", "Into the Core"], "rooms": ["a-00", "a-00", "a-00"] },
+        { "names": ["Hot and Cold", "Burning or Freezing"], "rooms": ["c-00", "b-00", "b-00"] },
+        { "names": ["Heart of the Mountain", "Heartbeat"], "rooms": ["d-00", "c-01", "c-01"] }
+      ]
+    },
+    {
+      "id": 10, "name": "Farewell", "sides": [0],
+      "checkpoints": [
+        { "names": ["Singular"], "rooms": ["a-00"] },
+        { "names": ["Power Source"], "rooms": ["c-00"] },
+        { "names": ["Remembered"], "rooms": ["e-00z"] },
+        { "names": ["Event Horizon"], "rooms": ["f-door"] },
+        { "names": ["Determination"], "rooms": ["h-00b"] },
+        { "names": ["Stubbornness"], "rooms": ["i-00"] },
+        { "names": ["Reconciliation"], "rooms": ["j-00"] },
+        { "names": ["Farewell"], "rooms": ["j-16"] }
+      ]
+    }
+  ]
 }
