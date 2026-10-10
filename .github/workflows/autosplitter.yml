@@ -1,19 +1,26 @@
-name: Build
+name: Autosplitter
 
 on:
   pull_request:
+    paths:
+      - 'autosplitter/**'
+      - '.github/workflows/autosplitter.yml'
   push:
     branches:
       - 'master'
-    tags:
-      - '*'
+    paths:
+      - 'autosplitter/**'
+      - '.github/workflows/autosplitter.yml'
+  workflow_call:
+
+defaults:
+  run:
+    working-directory: autosplitter
 
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout Commit
         uses: actions/checkout@v4
@@ -27,15 +34,14 @@ jobs:
       - name: Build
         run: |
           cargo b --release --locked
+          cp target/wasm32-unknown-unknown/release/celeste_autosplit.wasm celeste-autosplit.wasm
 
-      - name: Release
-        if: github.ref == 'refs/heads/master'
-        uses: softprops/action-gh-release@v2
+      - name: Upload
+        uses: actions/upload-artifact@v4
         with:
-          files: target/wasm32-unknown-unknown/release/celeste_autosplit.wasm
-          name: Latest
-          tag_name: latest
-          body: This contains the latest version of the auto splitter.
+          name: autosplitter
+          path: autosplitter/celeste-autosplit.wasm
+          if-no-files-found: error
 
   clippy:
     name: Check clippy lints

@@ -1,0 +1,52 @@
+name: Component
+
+on:
+  pull_request:
+    paths:
+      - 'component/**'
+      - 'schema/**'
+      - '.github/workflows/component.yml'
+  push:
+    branches:
+      - 'master'
+    paths:
+      - 'component/**'
+      - 'schema/**'
+      - '.github/workflows/component.yml'
+  workflow_call:
+
+defaults:
+  run:
+    working-directory: component
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v4
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: component/global.json
+
+      - name: Cache LiveSplit reference
+        uses: actions/cache@v4
+        with:
+          path: component/.deps
+          key: livesplit-${{ hashFiles('component/Directory.Build.props') }}
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Test
+        run: dotnet test -c Release --no-build
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: component
+          path: component/CelesteAutosplit/bin/Release/net4.8.1/celeste-autosplit.dll
+          if-no-files-found: error

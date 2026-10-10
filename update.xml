@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  LiveSplit update manifest for celeste-autosplit.dll.
+  Newest version first. Commit a new entry only after its release assets are
+  published, and keep it equal to the <Version> in CelesteAutosplit.csproj.
+-->
+<updates>
+</updates>

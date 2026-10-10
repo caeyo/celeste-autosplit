@@ -2,8 +2,11 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"type": "cargo",
-			"command": "b",
+			"type": "shell",
+			"command": "cargo b",
+			"options": {
+				"cwd": "${workspaceFolder}/autosplitter"
+			},
 			"problemMatcher": [
 				"$rustc",
 				"$rust-panic"
@@ -12,11 +15,11 @@
 			"label": "Build Auto Splitter (Debug)"
 		},
 		{
-			"type": "cargo",
-			"command": "b",
-			"args": [
-				"--release"
-			],
+			"type": "shell",
+			"command": "cargo b --release",
+			"options": {
+				"cwd": "${workspaceFolder}/autosplitter"
+			},
 			"problemMatcher": [
 				"$rustc",
 				"$rust-panic"
@@ -25,19 +28,47 @@
 			"label": "Build Auto Splitter (Release)"
 		},
 		{
-			"type": "cargo",
+			"type": "shell",
 			// Install the `cargo watch` subcommand from here:
 			// https://github.com/watchexec/cargo-watch?tab=readme-ov-file#install
-			"command": "watch",
-			"args": [
-				"-x",
-				"b"
-			],
+			"command": "cargo watch -x b",
+			"options": {
+				"cwd": "${workspaceFolder}/autosplitter"
+			},
 			"problemMatcher": [
 				"$rustc",
 				"$rust-panic"
 			],
 			"label": "Watch Auto Splitter"
 		},
+		{
+			"type": "shell",
+			"command": "dotnet build",
+			"options": {
+				"cwd": "${workspaceFolder}/component"
+			},
+			"problemMatcher": "$msCompile",
+			"group": "build",
+			"label": "Build Component"
+		},
+		{
+			"type": "shell",
+			"command": "dotnet test",
+			"options": {
+				"cwd": "${workspaceFolder}/component"
+			},
+			"problemMatcher": "$msCompile",
+			"group": "test",
+			"label": "Test Component"
+		},
+		{
+			"type": "shell",
+			"command": "node serve.mjs",
+			"options": {
+				"cwd": "${workspaceFolder}/site"
+			},
+			"problemMatcher": [],
+			"label": "Serve Site"
+		}
 	]
 }

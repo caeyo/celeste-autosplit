@@ -10,7 +10,7 @@
             "program": "..${pathSeparator}asr-debugger${pathSeparator}asr-debugger",
             "args": [
                 "--debug",
-                "target${pathSeparator}wasm32-unknown-unknown${pathSeparator}debug${pathSeparator}celeste_autosplit.wasm"
+                "autosplitter${pathSeparator}target${pathSeparator}wasm32-unknown-unknown${pathSeparator}debug${pathSeparator}celeste_autosplit.wasm"
             ],
             "cwd": "${workspaceFolder}"
         }

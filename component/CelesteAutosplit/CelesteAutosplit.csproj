@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Must differ from the legacy LiveSplit.Celeste assembly. -->
+    <AssemblyName>celeste-autosplit</AssemblyName>
+    <RootNamespace>CelesteAutosplit</RootNamespace>
+
+    <!-- Must equal the newest version in update.xml. -->
+    <Version>0.1.0</Version>
+
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <!--
+    Compile-time only: LiveSplit already loads these, so they are never copied to
+    the output. Never ship LiveSplit.AutoSplittingRuntime.dll.
+  -->
+  <ItemGroup>
+    <Reference Include="LiveSplit.Core" HintPath="$(LiveSplitDir)LiveSplit.Core.dll" Private="false" />
+    <Reference Include="UpdateManager" HintPath="$(LiveSplitDir)UpdateManager.dll" Private="false" />
+    <Reference Include="LiveSplit.AutoSplittingRuntime" HintPath="$(LiveSplitDir)Components/LiveSplit.AutoSplittingRuntime.dll" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="$(SchemaPath)" LogicalName="CelesteAutosplit.settings-schema.json" Link="settings-schema.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CelesteAutosplit.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,23 @@
+<Project>
+
+  <!--
+    Downloads and extracts the pinned LiveSplit release into .deps/ the first time
+    any project resolves its references. Delete .deps/ (or bump LiveSplitVersion)
+    to fetch again.
+  -->
+  <Target Name="FetchLiveSplit"
+          BeforeTargets="ResolveAssemblyReferences"
+          Condition="!Exists('$(LiveSplitDir).complete')">
+    <Message Importance="high" Text="Fetching LiveSplit $(LiveSplitVersion) from $(LiveSplitUrl)" />
+    <RemoveDir Directories="$(LiveSplitDir)" />
+    <DownloadFile SourceUrl="$(LiveSplitUrl)"
+                  DestinationFolder="$(LiveSplitDepsDir)"
+                  DestinationFileName="LiveSplit_$(LiveSplitVersion).zip"
+                  Retries="3" />
+    <Unzip SourceFiles="$(LiveSplitDepsDir)LiveSplit_$(LiveSplitVersion).zip"
+           DestinationFolder="$(LiveSplitDir)" />
+    <Delete Files="$(LiveSplitDepsDir)LiveSplit_$(LiveSplitVersion).zip" />
+    <Touch Files="$(LiveSplitDir).complete" AlwaysCreate="true" />
+  </Target>
+
+</Project>

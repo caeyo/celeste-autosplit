@@ -416,7 +416,7 @@ At startup LiveSplit checks the `XMLURL` of every loaded component factory. If a
 
 | Factory member | Value |
 |---|---|
-| `XMLURL` | `https://raw.githubusercontent.com/<owner>/<repo>/main/update.xml` |
+| `XMLURL` | `https://raw.githubusercontent.com/<owner>/<repo>/master/update.xml` |
 | `UpdateURL` | `https://github.com/<owner>/<repo>/releases/` |
 
 `update.xml`, newest first:
@@ -438,7 +438,7 @@ At startup LiveSplit checks the `XMLURL` of every loaded component factory. If a
 Rules:
 - **Use the same `path` in every version entry.** The updater gathers file changes from every newer version into a dictionary keyed by `path`. Identical `latest/download/...` paths collapse into a single download of the latest release. Version-tagged paths (`download/v1.0.1/...`) would download several versions onto the same local file in an unspecified order.
 - **Keep the assembly version and `update.xml` in sync.** The DLL's assembly version must equal the newest `version` in `update.xml`. Otherwise LiveSplit offers the same update on every start.
-- **Commit after publishing.** Commit `update.xml` to `main` only **after** the release assets are published, so it never advertises files that aren't live yet.
+- **Commit after publishing.** Commit `update.xml` to `master` only **after** the release assets are published, so it never advertises files that aren't live yet.
 - **Release both files together.** Always release the DLL and the wasm together.
 
 **livesplit-core hosts:** livesplit-core only parses the list and downloads files. Caching and re-downloading belong to each host app.

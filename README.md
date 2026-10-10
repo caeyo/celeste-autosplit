@@ -1,48 +1,38 @@
 # celeste-autosplit
 
-An auto splitter for Celeste.
+An auto splitter for Celeste that runs on every LiveSplit host.
 
-## Compilation
+## Repository layout
 
-This auto splitter is written in Rust. In order to compile it, you need to
-install the Rust compiler: [Install Rust](https://www.rust-lang.org/tools/install).
+| Folder | What | Built with |
+|---|---|---|
+| [`autosplitter/`](autosplitter/) | The auto splitter itself, compiled to `celeste-autosplit.wasm`. The only splitting engine on every host. | Rust (`cargo`) |
+| [`component/`](component/) | `celeste-autosplit.dll`, the LiveSplit (Windows) component that wraps the wasm module and provides the settings editor and legacy migration. | .NET SDK (`dotnet`) |
+| [`schema/`](schema/) | `settings-schema.json`, the shared settings schema consumed by the component and the website. | — |
+| [`site/`](site/) | The GitHub Pages settings editor for `.lss` files, for livesplit-core hosts. | Static HTML/CSS/JS |
+| [`update.xml`](update.xml) | LiveSplit's update manifest for the component. | — |
 
-Afterwards install the WebAssembly target:
+## Building
+
 ```sh
-rustup target add wasm32-unknown-unknown --toolchain stable
+cd autosplitter && cargo b --release    # wasm module
+cd component && dotnet build            # LiveSplit component (+ dotnet test)
+node site/serve.mjs                     # website at http://localhost:8000
 ```
 
-The auto splitter can now be compiled:
-```sh
-cargo b --release
-```
+See each folder's README for details.
 
-The auto splitter is then available at:
-```
-target/wasm32-unknown-unknown/release/celeste_autosplit.wasm
-```
+## CI and releases
 
-Make sure to look into the [API documentation](https://livesplit.org/asr/asr/) for the `asr` crate.
+| Workflow | Runs |
+|---|---|
+| `autosplitter.yml` | Build, clippy and fmt on changes to `autosplitter/`. |
+| `component.yml` | Build and test on Windows on changes to `component/` or `schema/`. |
+| `site.yml` | Deploys `site/` (plus the schema) to GitHub Pages on pushes to `master`. |
+| `release.yml` | On a `v*` tag: builds both, then publishes `celeste-autosplit.dll` and `celeste-autosplit.wasm` together. |
 
-## Development
+Releasing:
 
-You can use the [debugger](https://github.com/LiveSplit/asr-debugger) while
-developing the auto splitter to more easily see the log messages, statistics,
-dump memory, step through the code and more.
-
-The repository comes with preconfigured Visual Studio Code tasks. During
-development it is recommended to use the `Debug Auto Splitter` launch action to
-run the `asr-debugger`. You need to install the `CodeLLDB` extension to run it.
-
-You can then use the `Build Auto Splitter (Debug)` task to manually build the
-auto splitter. This will automatically hot reload the auto splitter in the
-`asr-debugger`.
-
-Alternatively you can install the [`cargo
-watch`](https://github.com/watchexec/cargo-watch?tab=readme-ov-file#install)
-subcommand and run the `Watch Auto Splitter` task for it to automatically build
-when you save your changes.
-
-The debugger is able to step through the code. You can set breakpoints in VSCode
-and it should stop there when the breakpoint is hit. Inspecting variables may
-not work all the time.
+1. Set `<Version>` in `component/CelesteAutosplit/CelesteAutosplit.csproj`.
+2. Push a matching tag, for example `v1.0.0`.
+3. After the release is published, add the version to `update.xml` and commit it.

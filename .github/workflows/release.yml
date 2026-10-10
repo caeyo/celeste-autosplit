@@ -1,0 +1,58 @@
+name: Release
+
+# Pushing a tag vX.Y.Z publishes celeste-autosplit.dll and celeste-autosplit.wasm
+# together as one release. The tag must match <Version> in CelesteAutosplit.csproj.
+# Add the update.xml entry only after this succeeds.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  autosplitter:
+    uses: ./.github/workflows/autosplitter.yml
+
+  component:
+    uses: ./.github/workflows/component.yml
+
+  release:
+    name: Publish release
+    needs: [autosplitter, component]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v4
+
+      - name: Check version
+        run: |
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' component/CelesteAutosplit/CelesteAutosplit.csproj)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match component version $version"
+            exit 1
+          fi
+          livesplit=$(sed -n 's:.*<LiveSplitVersion>\(.*\)</LiveSplitVersion>.*:\1:p' component/Directory.Build.props)
+          echo "LIVESPLIT_VERSION=$livesplit" >> "$GITHUB_ENV"
+
+      - name: Download
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/celeste-autosplit.dll
+            dist/celeste-autosplit.wasm
+          fail_on_unmatched_files: true
+          make_latest: true
+          generate_release_notes: true
+          body: |
+            Built against LiveSplit ${{ env.LIVESPLIT_VERSION }}.
