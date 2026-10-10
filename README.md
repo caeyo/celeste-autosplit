@@ -16,7 +16,7 @@ An auto splitter for Celeste that runs on every LiveSplit host.
 
 ```sh
 cd autosplitter && cargo b --release    # wasm module
-cd component && dotnet build            # LiveSplit component (+ dotnet test)
+cd component && dotnet build            # LiveSplit component (+ dotnet test, after the wasm)
 node site/serve.mjs                     # website at http://localhost:8000
 ```
 
@@ -27,7 +27,7 @@ See each folder's README for details.
 | Workflow | Runs |
 |---|---|
 | `autosplitter.yml` | Build, clippy and fmt on changes to `autosplitter/`. |
-| `component.yml` | Build and test on Windows on changes to `component/` or `schema/`. |
+| `component.yml` | Build and test on Windows on changes to `component/`, `schema/` or `autosplitter/` (the tests run the wasm module). |
 | `site.yml` | Deploys `site/` (plus the schema) to GitHub Pages on pushes to `master`. |
 | `release.yml` | On a `v*` tag: builds both, then publishes `celeste-autosplit.dll` and `celeste-autosplit.wasm` together. |
 

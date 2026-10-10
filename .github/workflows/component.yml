@@ -1,10 +1,13 @@
 name: Component
 
+# The tests run the wasm module inside LiveSplit's ASR component, so changes to the
+# auto splitter run them too.
 on:
   pull_request:
     paths:
       - 'component/**'
       - 'schema/**'
+      - 'autosplitter/**'
       - '.github/workflows/component.yml'
   push:
     branches:
@@ -12,6 +15,7 @@ on:
     paths:
       - 'component/**'
       - 'schema/**'
+      - 'autosplitter/**'
       - '.github/workflows/component.yml'
   workflow_call:
 
@@ -37,6 +41,17 @@ jobs:
         with:
           path: component/.deps
           key: livesplit-${{ hashFiles('component/Directory.Build.props') }}
+
+      - name: Install Rust
+        uses: hecrj/setup-rust-action@v2
+        with:
+          rust-version: stable
+          targets: wasm32-unknown-unknown
+
+      # Before the solution build, which copies the wasm module next to the tests.
+      - name: Build wasm module
+        working-directory: autosplitter
+        run: cargo b --release --locked
 
       - name: Build
         run: dotnet build -c Release

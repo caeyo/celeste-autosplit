@@ -1,5 +1,7 @@
 # Celeste Auto Splitter: Cross-Platform Architecture Spec
 
+This document is not to be cited.
+
 ---
 
 ## 1. Summary
@@ -32,6 +34,7 @@ On Windows, the component also **migrates existing `LiveSplit.Celeste` settings*
 - Native settings editors inside livesplit-core hosts. The website covers these for now.
 - Migrating legacy settings on non-Windows hosts, which have no prior standard. The website's legacy import covers runners moving old `.lss` files to other hosts (§8).
 - Downgrading from the new component back to the legacy component.
+- 32-bit Windows. ASR only runs wasm modules in 64-bit processes (§7.5), so 32-bit users have to keep using the legacy component.
 - Any change to LiveSplit, livesplit-core, ASR or the list format.
 
 ---
@@ -136,6 +139,7 @@ Every host stores the settings map in the `.lss` inside `<AutoSplitterSettings>`
   - `bool`, `i64` and `f64` values go in the element text, using invariant culture (`True`/`False` for bools).
   - `string` values go in a `value` attribute.
   - Maps and lists nest `<Setting>` children. List items have no `id`.
+- **Key order is preserved:** maps keep insertion order, so parsing and re-writing a map gives byte-identical XML, including escaped strings and empty maps and lists (verified against the C# ASR component).
 - **The parser is strict:** if any element in `CustomSettings` fails to parse, the C# ASR component discards the **whole** map. Generated XML must be exact (see §13 round-trip tests).
 
 ### 5.2 Top-level keys
@@ -243,14 +247,14 @@ Use only `asr` crate APIs available in every host's runtime. Assume nothing host
   - **Why it binds at runtime:**
     - LiveSplit loads component DLLs with `Assembly.UnsafeLoadFrom`, and .NET Framework resolves their dependencies from the folder they were loaded from.
     - The wrapper and `LiveSplit.AutoSplittingRuntime.dll` both live in `Components\`, so the reference resolves to the ASR assembly LiveSplit already loaded.
-    - ASR is not strong-named, so binding is by name only, and a newer ASR shipped with LiveSplit still binds.
+    - ASR is not strong-named, so binding is by name only, and a newer ASR shipped with LiveSplit still binds. Its assembly identity is `LiveSplit.AutoSplittingRuntime, Version=1.0.0.0, PublicKeyToken=null`; `0.0.x` is only its factory's `Version`.
 - **Factory attribute:** `[assembly: ComponentFactory(typeof(CelesteAutosplitFactory))]`.
 
 ### 7.2 Factory (`IComponentFactory` / `IUpdateable`)
 
 | Member | Value |
 |---|---|
-| `ComponentName` | **To be decided** |
+| `ComponentName` | Celeste Autosplitter |
 | `Category` | `Control`. The category doesn't affect visibility. LiveSplit's layout editor (`LayoutEditorDialog.LoadAllComponentsAvailable`) leaves out any component factory whose DLL is the first URL of an auto splitter list entry without `<ShowInLayoutEditor/>`. `celeste-autosplit.dll` is that first URL (§10.1), so users can't add the wrapper to a layout and it only runs as the auto splitter. |
 | `Create(state)` | returns a new wrapper |
 | `UpdateName`, `Version` | from the assembly version, which must match the latest version in `update.xml` (§10.4) |
@@ -260,10 +264,10 @@ Use only `asr` crate APIs available in every host's runtime. Assume nothing host
 
 | Member | Behaviour |
 |---|---|
-| Constructor | Resolve `wasmPath = Path.Combine(ComponentManager.BasePath ?? "", "Components", "celeste-autosplit.wasm")`. If it's missing, enter an error state (§7.5). Otherwise create the inner component in a try/catch: `inner = new ASRComponent(state, wasmPath)`, the same constructor `ASRFactory.Create(state, script)` uses. Then run the layout check (§11.6). |
-| `Update(...)` | Forward to `inner.Update(...)`. LiveSplit calls this on the active auto splitter every frame. The ASR component's `Update` is currently empty: it steps the runtime on its own timer (15 ms, adjusted to the module's tick rate), marshalled to the UI thread through `state.Form`. Forwarding keeps the wrapper correct if a future ASR does work there. Also drives the throttled priority check (§7.7). |
-| `GetSettings(doc)` | `inner.GetSettings(doc)`, unchanged. This is what `XMLRunSaver` writes into the `.lss`. |
-| `SetSettings(node)` | If the node is in the legacy format, migrate it (§11). Then call `inner.SetSettings(node)` and refresh the wrapper's cached `cfg.high_priority`. **Never** pass legacy XML through: the ASR component would replace the map with an empty one. |
+| Constructor | Resolve `wasmPath = Path.GetFullPath(Path.Combine(ComponentManager.BasePath ?? "", "Components", "celeste-autosplit.wasm"))`. If LiveSplit runs as a 32-bit process or the wasm is missing, enter the error state (§7.5). Otherwise create the inner component in a try/catch: `inner = new ASRComponent(state, wasmPath)`, the same constructor `ASRFactory.Create(state, script)` uses. Then check that ASR actually loaded the module (§7.6). If it didn't, dispose `inner` and enter the error state. Then run the layout check (§11.6). |
+| `Update(...)` | Forward to `inner.Update(...)`. LiveSplit calls this on the active auto splitter every frame. The ASR component's `Update` is currently empty: it steps the runtime on its own timer, marshalled to the UI thread through `state.Form`. The timer starts at 15 ms and then follows the module's tick rate (8.33 ms for the `asr` crate's default 120 Hz). Forwarding keeps the wrapper correct if a future ASR does work there. Also drives the throttled priority check (§7.7). |
+| `GetSettings(doc)` | `inner.GetSettings(doc)`, unchanged. This is what `XMLRunSaver` writes into the `.lss`. In the error state, return the held settings (§7.5). |
+| `SetSettings(node)` | If the node is in the legacy format, migrate it (§11). Then call `inner.SetSettings(node)` and refresh the wrapper's cached `cfg.high_priority`. **Never** pass legacy XML through: the ASR component replaces the map with an empty one (verified). ASR ignores an empty element (`<AutoSplitterSettings/>`) and keeps its current map. In the error state, hold a copy of the node (§7.5). |
 | `GetSettingsControl(mode)` | The wrapper's own editor control. Must not be null, or LiveSplit disables the Settings button. |
 | `Dispose()` | Restore the game's priority if the wrapper raised it (§7.7). Then `inner.Dispose()`, which stops its update timer and disposes the runtime. **Required.** LiveSplit calls `Dispose` on deactivation or a game change. Without forwarding it, the inner timer keeps running and the old module keeps controlling the timer. |
 | `ContextMenuControls` | Optional: forward `inner.ContextMenuControls`. LiveSplit adds the active auto splitter's entries to its Control menu. ASR currently provides none. |
@@ -286,22 +290,46 @@ So `GetSettings`/`SetSettings` must round-trip losslessly.
 
 ### 7.5 Error handling
 
-- LiveSplit reports activation failures only as a generic "could not be activated" message. The wrapper logs details itself and shows a clear status inside its editor control: wasm missing, or runtime failed to load.
+- LiveSplit reports activation failures only as a generic "could not be activated" message. The wrapper logs details itself and shows the cause inside its editor control.
+- **Failures the wrapper detects:**
+
+  | Failure | Detected by | Typical cause |
+  |---|---|---|
+  | 32-bit process | `Environment.Is64BitProcess`, checked first | 32-bit Windows |
+  | Wasm missing | `File.Exists(wasmPath)` before creating the ASR component | Incomplete download (see below) |
+  | ASR component can't be created | An exception from `new ASRComponent(...)`: `FileNotFoundException`, `MissingMethodException` or `TypeLoadException` | No ASR in this LiveSplit, or its API changed (§7.6) |
+  | ASR can't run the module | `ComponentSettings.runtime` is null after construction (§7.6) | A corrupt wasm, or a module using wasm features or `asr` functions the bundled ASR doesn't support |
+
+- **ASR doesn't fail on 32-bit, so the wrapper checks first.** There is no separate 32-bit LiveSplit: every release is one zip, and `LiveSplit.exe` runs as a 32-bit process only on 32-bit Windows.
+  - ASR's 32-bit native library is a stub. Creating a runtime succeeds with a dummy, stepping does nothing, and every settings map is empty.
+  - Without the check, the wrapper would report "Running" while nothing runs, and `GetSettings` would return an empty `CustomSettings`. Saving the splits would then wipe the user's settings.
+  - The wrapper's status reads: "This autosplitter requires 64-bit Windows. If you need a 32-bit version, download the legacy LiveSplit.Celeste component and add it to your layout."
+- **ASR hides load failures.** `ComponentSettings.ReloadRuntime` catches the load exception, logs it and leaves `runtime` null, so `new ASRComponent(...)` succeeds with nothing running. Without the check, the wrapper would look active and never split.
+- **Error state:** in all these cases the wrapper has no inner component. `Update` and `Dispose` do nothing. `SetSettings` keeps a copy of the node and `GetSettings` returns it unchanged. This matters because an ASR component without a runtime discards `SetSettings` and writes an empty `CustomSettings`, which LiveSplit would save into the `.lss`, wiping the user's settings.
+- **Where details go:** LiveSplit's `Log` writes through `System.Diagnostics.Trace`. Only warnings and errors reach the Windows Event Log, and only if the `LiveSplit` event source exists (creating it needs admin once). Info messages go only to the debug output, which Sysinternals DebugView shows. That includes everything the wasm module prints and ASR's explanation of why a module failed to load.
 - **Missing wasm:** LiveSplit checks only that the **first** URL in the list entry (the DLL) exists, so a missing wasm is never re-downloaded by LiveSplit. The wrapper either shows a repair message or downloads `celeste-autosplit.wasm` itself from `https://github.com/<owner>/<repo>/releases/latest/download/celeste-autosplit.wasm`.
 
 ### 7.6 Dependency on ASR internals
 
-The wrapper depends on two things owned by `LiveSplit.AutoSplittingRuntime`, neither of which is a stable API:
-- the `ASRComponent(state, scriptPath)` constructor and any other ASR types it uses;
-- the `CustomSettings` XML format.
+The wrapper depends on three things owned by `LiveSplit.AutoSplittingRuntime`, none of which is a stable API:
+- the `ASRComponent(state, scriptPath)` constructor;
+- the `CustomSettings` XML format;
+- `ComponentSettings.runtime`, a public field reached by casting `inner.GetSettingsControl(...)` to `ComponentSettings`. It's the only way to tell whether ASR loaded the module (§7.5).
 
 **Keep ASR types out of the factory.** `CelesteAutosplitFactory` must not use ASR types in its fields, properties or method signatures. LiveSplit creates factories inside `ComponentManager.LoadFactory`, which swallows every exception with `catch { }`. If creating the factory pulls in ASR types and that fails, the factory silently becomes `null` and users see only "could not be activated". Use ASR types only inside the wrapper component.
 
-**Handle failures clearly.** Create the ASR component in a try/catch that reports a clear error (§7.5). If a future ASR removes or changes a member the wrapper uses, the call fails at runtime with `MissingMethodException` or `TypeLoadException`. The compile-time reference only protects against mismatches with the ASR version you build with.
+**Confine ASR types to two out-of-line methods.** The JIT resolves the types a method uses when it compiles that method, before any of it runs. If the wrapper's constructor used `ASRComponent` directly, a missing or changed ASR would throw while the constructor was being compiled. The exception would surface in the caller (`Create`), outside the constructor's try/catch. Therefore:
+- The inner component's field is typed `LogicComponent`, from LiveSplit.Core. All forwarding goes through `LogicComponent`'s abstract members.
+- Only two methods use ASR types: one calls the constructor, the other reads `ComponentSettings.runtime`. Both are marked `[MethodImpl(MethodImplOptions.NoInlining)]` and called inside a try/catch.
+- If a future ASR removes or changes one of these members, the call fails at runtime with `MissingMethodException`, `MissingFieldException` or `TypeLoadException`, and the wrapper enters the error state (§7.5). The compile-time reference only protects against mismatches with the ASR version you build with.
 
 **Track the tested version.**
-- Build against the ASR version current LiveSplit ships (0.0.12 at time of writing) and record it in release notes.
-- Re-test whenever LiveSplit ships a new ASR.
+- Build against the ASR version current LiveSplit ships and record it in release notes.
+- **Last verified:** LiveSplit 1.8.37 with ASR 0.0.12, on 2026-10-10.
+  - The wrapper ran the wasm module both as a layout component and when activated as the Celeste auto splitter.
+  - Settings round-tripped through the native runtime, and `Dispose` stopped the runtime.
+  - A missing wasm, a corrupt wasm, a missing ASR assembly and a 32-bit process (with ASR's real 32-bit native library) each reached the error state with the settings intact.
+- Re-test whenever LiveSplit ships a new ASR. Bumping `LiveSplitVersion` re-runs the ASR compatibility tests (§13) in CI. Running in real LiveSplit stays manual.
 
 ### 7.7 Windows-only: game process priority
 
@@ -512,15 +540,16 @@ Not supported. The legacy component reads flat elements, which the new format do
 
 | # | Item | Notes and mitigation |
 |---|---|---|
-| 1 | Component display name | To be decided. |
+| 1 | Component display name | Celeste Autosplitter |
 | 2 | Real `cfg` schema and split mapping table | To be fleshed out once implementation begins. |
-| 3 | Changes to the ASR component's API | `ASRComponent` constructor, XML format. Mitigated by §7.6. |
+| 3 | Changes to the ASR component's API | `ASRComponent` constructor, `ComponentSettings.runtime`, XML format. Mitigated by §7.6. Verified with LiveSplit 1.8.37 (ASR 0.0.12). |
 | 4 | Druid fork and MVP persistence | MVP map persistence is unverified. |
 | 5 | Double splitting | Legacy component in layout (§11.6). The wrapper itself is hidden from the layout editor (§7.2). |
 | 6 | Assembly identity collision | Addressed by assembly name `celeste-autosplit` (§7.1). |
 | 7 | Strict `CustomSettings` parsing | A single bad element wipes the map. Covered by round-trip tests (§13). |
 | 8 | Legacy "Auto add enter/exit splits" | The legacy component adds two Control-menu entries that record room transitions while playing and append `LevelEnter`/`LevelExit` splits. This isn't covered yet. A possible port: the wasm publishes the current room as a custom variable via `asr::timer::set_variable`, which LiveSplit stores in the run's custom variables, and the wrapper's `ContextMenuControls` watches it and appends splits to `cfg`. Decide whether to port it. |
 | 9 | Other legacy Windows-only behaviour | Priority is handled (§7.7). Finish auditing the legacy component for anything else. |
+| 10 | 32-bit Windows users | Once the list entry points at the wrapper, they lose auto splitting. Only the wrapper's settings tell them why, pointing them to the legacy component (§7.5). |
 
 ---
 
@@ -532,6 +561,10 @@ Not supported. The legacy component reads flat elements, which the new format do
 - **`SplitType` coverage:** a table-driven test fails if any enum value has no mapping.
 - **Round-trip:** wrapper serialiser, then ASR's parser, then ASR's writer, gives identical XML. The same XML parses with livesplit-core's `StoredAutoSplitterSettings`.
 - **Wasm module:** missing keys, wrong types, newer `schema_version`, empty map.
+- **ASR compatibility:** the real wasm module runs inside the pinned LiveSplit's ASR component, without LiveSplit's UI. A hidden form on an STA thread stands in for LiveSplit's UI thread.
+  - Checks that ASR loads the module, settings round-trip exactly through the native runtime (and a second `SetSettings` replaces them rather than merging), and `Dispose` stops the runtime.
+  - Checks that a missing wasm, a wasm ASR can't load, and a missing ASR assembly (in a separate AppDomain) each reach the error state with the settings kept.
+  - Runs in CI on changes to the component or the wasm module. This catches both ASR changes when `LiveSplitVersion` is bumped and wasm changes the pinned ASR can't run.
 
 **Integration (Windows)**
 
@@ -544,6 +577,10 @@ Build LiveSplit from source with `AutoSplitterFactory.AutoSplittersXmlUrl` point
 6. Wasm deleted: clear error or self-repair.
 7. Settings dialog Cancel: changes reverted.
 8. Game priority: High applied when the game starts with the setting on; Normal restored when toggled off and on deactivation; no errors when the game exits.
+
+Scenarios that don't download anything can also run on a dev copy of stock LiveSplit. Save the DLL as `Components\LiveSplit.Celeste.dll`. LiveSplit derives that file name from the first URL of the official list's Celeste entry, finds the file present, and activates the wrapper for any "Celeste" splits file. This covers 6–8 and the non-download parts of 1 and 2.
+- Never do this in a LiveSplit install you run with, because it replaces the legacy component.
+- LiveSplit run from a new folder asks through UAC to point the `.lss` and `.lsl` file associations at itself. Delete `LiveSplit.Register.exe` from the dev copy to skip that.
 
 **Cross-host**
 - A `.lss` saved on Windows opens in the Druid fork and CryZe's app with identical settings.

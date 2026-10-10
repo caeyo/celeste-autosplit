@@ -3,6 +3,10 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <!-- ASR's native library only has a runtime in 64-bit builds. -->
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +24,20 @@
     <Reference Include="LiveSplit.Core" HintPath="$(LiveSplitDir)LiveSplit.Core.dll" />
     <Reference Include="UpdateManager" HintPath="$(LiveSplitDir)UpdateManager.dll" />
     <Reference Include="LiveSplit.AutoSplittingRuntime" HintPath="$(LiveSplitDir)Components/LiveSplit.AutoSplittingRuntime.dll" />
+  </ItemGroup>
+
+  <!--
+    The output folder stands in for LiveSplit's folder: ASR loads its native library
+    from Components\x64\, and the component looks for the wasm module in Components\.
+    Build the wasm module first, in release mode (cargo b -r in autosplitter/).
+  -->
+  <PropertyGroup>
+    <WasmPath>$(RepoRoot)autosplitter/target/wasm32-unknown-unknown/release/celeste_autosplit.wasm</WasmPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(LiveSplitDir)Components/x64/asr_capi.dll" Link="Components/x64/asr_capi.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(WasmPath)" Link="Components/celeste-autosplit.wasm" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(WasmPath)')" />
   </ItemGroup>
 
 </Project>
