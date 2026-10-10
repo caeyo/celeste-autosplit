@@ -11,7 +11,6 @@ asr = { git = "https://github.com/LiveSplit/asr", features = [
     "flags",
     "integer-vars",
     "signature",
-    # "wasi-no-std", # Support for no_std on WASI.
     # "unity", # Accessing games using the Unity engine.
     # "gba", # Accessing Game Boy Advance emulators.
     # "gcn", # Accessing GameCube emulators.
