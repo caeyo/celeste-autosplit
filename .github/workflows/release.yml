@@ -27,7 +27,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout Commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check version
         run: |
@@ -40,13 +40,13 @@ jobs:
           echo "LIVESPLIT_VERSION=$livesplit" >> "$GITHUB_ENV"
 
       - name: Download
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
 
       - name: Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/celeste-autosplit.dll
