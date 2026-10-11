@@ -14,7 +14,7 @@ public class CelesteAutosplitFactory : IComponentFactory
     public const string Name = "Celeste Autosplitter";
 
     public string ComponentName => Name;
-    public string Description => "Celeste autosplitter, running celeste-autosplit.wasm through the Auto Splitting Runtime.";
+    public string Description => "Celeste autosplitter, running celeste_autosplit.wasm through the Auto Splitting Runtime.";
     public ComponentCategory Category => ComponentCategory.Control;
 
     public IComponent Create(LiveSplitState state) => new CelesteAutosplitComponent(state);

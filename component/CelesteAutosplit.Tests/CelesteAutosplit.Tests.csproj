@@ -37,7 +37,7 @@
 
   <ItemGroup>
     <None Include="$(LiveSplitDir)Components/x64/asr_capi.dll" Link="Components/x64/asr_capi.dll" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="$(WasmPath)" Link="Components/celeste-autosplit.wasm" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(WasmPath)')" />
+    <None Include="$(WasmPath)" Link="Components/celeste_autosplit.wasm" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(WasmPath)')" />
   </ItemGroup>
 
 </Project>

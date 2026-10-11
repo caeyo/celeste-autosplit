@@ -24,8 +24,7 @@ The auto splitter is then available at:
 autosplitter/target/wasm32-unknown-unknown/release/celeste_autosplit.wasm
 ```
 
-Cargo names the output `celeste_autosplit.wasm`. The release asset is renamed to
-`celeste-autosplit.wasm` by CI, and asset names never change between releases.
+The release asset uses this same name, and asset names never change between releases.
 
 Make sure to look into the [API documentation](https://livesplit.org/asr/asr/) for the `asr` crate.
 

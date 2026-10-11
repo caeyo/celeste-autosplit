@@ -6,7 +6,7 @@ This document is not to be cited.
 
 ## 1. Summary
 
-A single **WebAssembly auto splitter** (`celeste-autosplit.wasm`) is the only splitting engine on every host. All of its configuration lives in the **ASR settings map**. Every host already saves that map into the `.lss` splits file, so settings travel with the splits between hosts.
+A single **WebAssembly auto splitter** (`celeste_autosplit.wasm`) is the only splitting engine on every host. All of its configuration lives in the **ASR settings map**. Every host already saves that map into the `.lss` splits file, so settings travel with the splits between hosts.
 
 The native ASR settings widgets are too limited, so each host family gets its own **settings editor** that only reads and writes that map:
 
@@ -44,7 +44,7 @@ On Windows, the component also **migrates existing `LiveSplit.Celeste` settings*
 | Term | Meaning |
 |---|---|
 | **Host** | Any LiveSplit flavour that runs the wasm module. |
-| **Wasm module** | `celeste-autosplit.wasm`, the Celeste auto splitter compiled to WebAssembly against the `asr` crate. |
+| **Wasm module** | `celeste_autosplit.wasm`, the Celeste auto splitter compiled to WebAssembly against the `asr` crate. |
 | **Settings map** | The ASR runtime's key/value store, which supports map, list, bool, i64, f64 and string. Hosts persist it in the `.lss`. |
 | **`cfg`** | The single top-level map key that holds all real settings (§5). |
 | **Wrapper component** | `celeste-autosplit.dll`, the new C# component for LiveSplit desktop. |
@@ -59,8 +59,8 @@ On Windows, the component also **migrates existing `LiveSplit.Celeste` settings*
 ```mermaid
 flowchart LR
     subgraph List["LiveSplit.AutoSplitters.xml entry"]
-        top["Type=Component<br/>URLs: celeste-autosplit.dll, celeste-autosplit.wasm"]
-        nested["&lt;AutoSplittingRuntime&gt;<br/>URL: celeste-autosplit.wasm"]
+        top["Type=Component<br/>URLs: celeste-autosplit.dll, celeste_autosplit.wasm"]
+        nested["&lt;AutoSplittingRuntime&gt;<br/>URL: celeste_autosplit.wasm"]
     end
 
     subgraph Win["LiveSplit (Windows)"]
@@ -355,7 +355,7 @@ These rules for implementing the §5.3 triggers keep parity with the legacy comp
 
 | Member | Behaviour |
 |---|---|
-| Constructor | Resolve `wasmPath = Path.GetFullPath(Path.Combine(ComponentManager.BasePath ?? "", "Components", "celeste-autosplit.wasm"))`. If LiveSplit runs as a 32-bit process or the wasm is missing, enter the error state (§7.5). Otherwise create the inner component in a try/catch: `inner = new ASRComponent(state, wasmPath)`, the same constructor `ASRFactory.Create(state, script)` uses. Then check that ASR actually loaded the module (§7.6). If it didn't, dispose `inner` and enter the error state. Then run the layout check (§11.6). |
+| Constructor | Resolve `wasmPath = Path.GetFullPath(Path.Combine(ComponentManager.BasePath ?? "", "Components", "celeste_autosplit.wasm"))`. If LiveSplit runs as a 32-bit process or the wasm is missing, enter the error state (§7.5). Otherwise create the inner component in a try/catch: `inner = new ASRComponent(state, wasmPath)`, the same constructor `ASRFactory.Create(state, script)` uses. Then check that ASR actually loaded the module (§7.6). If it didn't, dispose `inner` and enter the error state. Then run the layout check (§11.6). |
 | `Update(...)` | Forward to `inner.Update(...)`. LiveSplit calls this on the active auto splitter every frame. The ASR component's `Update` is currently empty: it steps the runtime on its own timer, marshalled to the UI thread through `state.Form`. The timer starts at 15 ms and then follows the module's tick rate (8.33 ms for the `asr` crate's default 120 Hz). Forwarding keeps the wrapper correct if a future ASR does work there. Also drives the throttled priority check (§7.7). |
 | `GetSettings(doc)` | `inner.GetSettings(doc)`, unchanged. This is what `XMLRunSaver` writes into the `.lss`. In the error state, return the held settings (§7.5). |
 | `SetSettings(node)` | If the node is in the legacy format, migrate it (§11). Then call `inner.SetSettings(node)` and refresh the wrapper's cached `cfg.high_priority`. On the first call, apply `cfg.set_game_time` (§7.8). **Never** pass legacy XML through: the ASR component replaces the map with an empty one (verified). ASR ignores an empty element (`<AutoSplitterSettings/>`) and keeps its current map. In the error state, hold a copy of the node (§7.5). |
@@ -398,7 +398,7 @@ So `GetSettings`/`SetSettings` must round-trip losslessly.
 - **ASR hides load failures.** `ComponentSettings.ReloadRuntime` catches the load exception, logs it and leaves `runtime` null, so `new ASRComponent(...)` succeeds with nothing running. Without the check, the wrapper would look active and never split.
 - **Error state:** in all these cases the wrapper has no inner component. `Update` and `Dispose` do nothing. `SetSettings` keeps a copy of the node and `GetSettings` returns it unchanged. This matters because an ASR component without a runtime discards `SetSettings` and writes an empty `CustomSettings`, which LiveSplit would save into the `.lss`, wiping the user's settings.
 - **Where details go:** LiveSplit's `Log` writes through `System.Diagnostics.Trace`. Only warnings and errors reach the Windows Event Log, and only if the `LiveSplit` event source exists (creating it needs admin once). Info messages go only to the debug output, which Sysinternals DebugView shows. That includes everything the wasm module prints and ASR's explanation of why a module failed to load.
-- **Missing wasm:** LiveSplit checks only that the **first** URL in the list entry (the DLL) exists, so a missing wasm is never re-downloaded by LiveSplit. The wrapper either shows a repair message or downloads `celeste-autosplit.wasm` itself from `https://github.com/<owner>/<repo>/releases/latest/download/celeste-autosplit.wasm`.
+- **Missing wasm:** LiveSplit checks only that the **first** URL in the list entry (the DLL) exists, so a missing wasm is never re-downloaded by LiveSplit. The wrapper either shows a repair message or downloads `celeste_autosplit.wasm` itself from `https://github.com/<owner>/<repo>/releases/latest/download/celeste_autosplit.wasm`.
 
 ### 7.6 Dependency on ASR internals
 
@@ -466,7 +466,7 @@ Neither the ASR component nor the `asr` crate can set the timing method, so the 
 - **Output format:** must produce exactly the §5.1 format and set `schema_version`. Apply the same §5.4 rules: preserve unknown keys, refuse newer schemas, and label Windows-only settings.
 - **User guidance:** close the splits in the host before editing (or don't save from the host afterwards), otherwise the host overwrites the edit.
 - **Legacy import:** detect the legacy `LiveSplit.Celeste` format (§11.1) and convert it with the same mapping table as the wrapper. This is for runners carrying old Windows `.lss` files to other hosts, because livesplit-core reads only `CustomSettings`.
-- **Downloads for other hosts:** link to `celeste-autosplit.wasm` on the latest release, with setup steps for hosts that don't read the list (§9).
+- **Downloads for other hosts:** link to `celeste_autosplit.wasm` on the latest release, with setup steps for hosts that don't read the list (§9).
 - **Discovery:** the URL appears in the native fallback widgets (§6.2). It is also the list entry's nested `<Website>`, and the nested `<Description>` tells users to "Configure at the linked website." (§10.1). Whether livesplit-core hosts show that website link is up to each host's UI.
 
 ---
@@ -508,13 +508,13 @@ This replaces the existing Celeste entry. The game names are the current ones.
     </Games>
     <URLs>
         <URL>https://github.com/<owner>/<repo>/releases/latest/download/celeste-autosplit.dll</URL>
-        <URL>https://github.com/<owner>/<repo>/releases/latest/download/celeste-autosplit.wasm</URL>
+        <URL>https://github.com/<owner>/<repo>/releases/latest/download/celeste_autosplit.wasm</URL>
     </URLs>
     <Type>Component</Type>
     <Description>Autosplitting is available.</Description>
     <Website>https://github.com/<owner>/<repo></Website>
     <AutoSplittingRuntime>
-        <URL>https://github.com/<owner>/<repo>/releases/latest/download/celeste-autosplit.wasm</URL>
+        <URL>https://github.com/<owner>/<repo>/releases/latest/download/celeste_autosplit.wasm</URL>
         <Description>Autosplitting is available. Configure at the linked website.</Description>
         <Website>https://<owner>.github.io/<repo>/</Website>
     </AutoSplittingRuntime>
@@ -556,7 +556,7 @@ At startup LiveSplit checks the `XMLURL` of every loaded component factory. If a
   <update version="1.0.1">
     <files>
       <file path="latest/download/celeste-autosplit.dll"  localPath="Components/celeste-autosplit.dll"  status="changed"/>
-      <file path="latest/download/celeste-autosplit.wasm" localPath="Components/celeste-autosplit.wasm" status="changed"/>
+      <file path="latest/download/celeste_autosplit.wasm" localPath="Components/celeste_autosplit.wasm" status="changed"/>
     </files>
     <changelog>
       <change>…</change>
@@ -652,7 +652,7 @@ Other legacy Windows-only behaviour is a debug log, `_Celeste.txt`, written only
 
 ### 11.2 Rollout path: new file name
 
-- **Fresh installs and existing users alike:** the list entry's first URL becomes `celeste-autosplit.dll`. Existing users don't have that file, so their next activation downloads `celeste-autosplit.dll` and `celeste-autosplit.wasm`. That activation happens automatically when they load Celeste splits, because LiveSplit remembers activation by game name.
+- **Fresh installs and existing users alike:** the list entry's first URL becomes `celeste-autosplit.dll`. Existing users don't have that file, so their next activation downloads `celeste-autosplit.dll` and `celeste_autosplit.wasm`. That activation happens automatically when they load Celeste splits, because LiveSplit remembers activation by game name.
 - **The old DLL:** `LiveSplit.Celeste.dll` stays in users' `Components\`. LiveSplit still loads its factory at startup, which is harmless. It only matters if the legacy component is in a layout (§11.6).
 - **Rejected alternative:** pushing the new files through the legacy component's update channel (`ShootMe/LiveSplit.Celeste/Components/Updates.xml`). It would need push access to that repo and only reaches users with update checks enabled.
 - **Keeping the old file name would not work.** LiveSplit would see `LiveSplit.Celeste.dll` already present, never download the new files, and keep loading the legacy component.

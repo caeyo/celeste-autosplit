@@ -6,7 +6,7 @@ An auto splitter for Celeste that runs on every LiveSplit host.
 
 | Folder | What | Built with |
 |---|---|---|
-| [`autosplitter/`](autosplitter/) | The auto splitter itself, compiled to `celeste-autosplit.wasm`. The only splitting engine on every host. | Rust (`cargo`) |
+| [`autosplitter/`](autosplitter/) | The auto splitter itself, compiled to `celeste_autosplit.wasm`. The only splitting engine on every host. | Rust (`cargo`) |
 | [`component/`](component/) | `celeste-autosplit.dll`, the LiveSplit (Windows) component that wraps the wasm module and provides the settings editor and legacy migration. | .NET SDK (`dotnet`) |
 | [`schema/`](schema/) | `settings-schema.json`, the shared settings schema consumed by the component and the website. | — |
 | [`site/`](site/) | The GitHub Pages settings editor for `.lss` files, for livesplit-core hosts. | Static HTML/CSS/JS |
@@ -29,7 +29,7 @@ See each folder's README for details.
 | `autosplitter.yml` | Build, clippy and fmt on changes to `autosplitter/`. |
 | `component.yml` | Build and test on Windows on changes to `component/`, `schema/` or `autosplitter/` (the tests run the wasm module). |
 | `site.yml` | Deploys `site/` (plus the schema) to GitHub Pages on pushes to `master`. |
-| `release.yml` | On a `v*` tag: builds both, then publishes `celeste-autosplit.dll` and `celeste-autosplit.wasm` together. |
+| `release.yml` | On a `v*` tag: builds both, then publishes `celeste-autosplit.dll` and `celeste_autosplit.wasm` together. |
 
 Releasing:
 

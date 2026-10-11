@@ -1,6 +1,6 @@
 name: Release
 
-# Pushing a tag vX.Y.Z publishes celeste-autosplit.dll and celeste-autosplit.wasm
+# Pushing a tag vX.Y.Z publishes celeste-autosplit.dll and celeste_autosplit.wasm
 # together as one release. The tag must match <Version> in CelesteAutosplit.csproj.
 # Add the update.xml entry only after this succeeds.
 
@@ -50,7 +50,7 @@ jobs:
         with:
           files: |
             dist/celeste-autosplit.dll
-            dist/celeste-autosplit.wasm
+            dist/celeste_autosplit.wasm
           fail_on_unmatched_files: true
           make_latest: true
           generate_release_notes: true

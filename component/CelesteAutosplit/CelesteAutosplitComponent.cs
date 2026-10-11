@@ -11,11 +11,11 @@ using System.Xml;
 
 namespace CelesteAutosplit;
 
-// Runs celeste-autosplit.wasm through LiveSplit's ASR component, which does all
+// Runs celeste_autosplit.wasm through LiveSplit's ASR component, which does all
 // the auto splitting.
 public class CelesteAutosplitComponent : LogicComponent
 {
-    public const string WasmFileName = "celeste-autosplit.wasm";
+    public const string WasmFileName = "celeste_autosplit.wasm";
 
     // Typed as LogicComponent so that only CreateInner and HasRuntime touch ASR
     // types. Null when ASR can't run in this process, the wasm is missing, or ASR

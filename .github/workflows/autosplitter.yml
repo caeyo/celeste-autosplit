@@ -32,15 +32,13 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Build
-        run: |
-          cargo b --release --locked
-          cp target/wasm32-unknown-unknown/release/celeste_autosplit.wasm celeste-autosplit.wasm
+        run: cargo b --release --locked
 
       - name: Upload
         uses: actions/upload-artifact@v7
         with:
           name: autosplitter
-          path: autosplitter/celeste-autosplit.wasm
+          path: autosplitter/target/wasm32-unknown-unknown/release/celeste_autosplit.wasm
           if-no-files-found: error
 
   clippy:
