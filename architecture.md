@@ -161,8 +161,7 @@ cfg: map
   splits:         list<trigger>  default []
   timing_method:  string         default "file"
                   "file" | "chapter" | "file_since_start" | "chapter_since_start"
-  reset:          string         default "never"
-                  "never" | "leave_chapter"
+  auto_reset:     bool           default false
   everest:        bool           default false
   high_priority:  bool           default true    LiveSplit (Windows) only (§7.7)
   set_game_time:  bool           default true    LiveSplit (Windows) only (§7.8)
@@ -173,19 +172,19 @@ cfg: map
 | `start` | The trigger that starts the timer. |
 | `splits` | `splits[i]` is the trigger that ends segment `i`. Bound by position to the timer's current split index (`asr::timer::current_split_index`, supported by ASR 0.0.12), so manual splits, skips and undos keep it aligned. Segments past the end of the list are split by hand. Extra entries are ignored. |
 | `timing_method` | Which game time the module reports. `file` is the save file's time. `chapter` is the chapter time, held while outside a chapter so a save and quit doesn't drop it to zero. `*_since_start` subtracts the value at the moment the start trigger fired. |
-| `reset` | `leave_chapter` resets the timer whenever the game is outside a chapter (return to map, save and quit, restart), **including after the run has ended**. That reset is how an IL attempt is committed. |
+| `auto_reset` | Whenever the start trigger fires while a run is in progress **or has ended**, reset and start again in the same tick. That reset is how an attempt is committed. Only use it with a start trigger that can't recur during a run: `new_file` and `chapter_start` are safe, but for example `room_enter` on a room the run passes through again would reset mid-run, so editors warn about that combination. |
 | `everest` | Turns on the Everest-only fields (rule 9). |
 | `high_priority` | The wrapper sets the Celeste process's priority. |
 | `set_game_time` | The wrapper switches LiveSplit's timing method to Game Time. |
 
 **An empty `cfg` does nothing.** It has no automatic start, reset or splits; the module only reports game time.
 
-Editors offer **presets** that set `start`, `timing_method`, `reset` and the `timing` of every `chapter_complete` split together:
+Editors offer **presets** that set `start`, `timing_method`, `auto_reset` and the `timing` of every `chapter_complete` split together:
 
-| Preset | `start` | `timing_method` | `reset` | `chapter_complete` `timing` |
+| Preset | `start` | `timing_method` | `auto_reset` | `chapter_complete` `timing` |
 |---|---|---|---|---|
-| Full game | `new_file` | `file` | `never` | `chapter_exit` |
-| Individual level | `chapter_start` | `chapter` | `leave_chapter` | `chapter_complete` |
+| Full game | `new_file` | `file` | `true` | `chapter_exit` |
+| Individual level | `chapter_start` | `chapter` | `true` | `chapter_complete` |
 
 Presets exist only in the UI and nothing about them is stored. A configuration that matches no preset is shown as "Custom".
 
@@ -314,6 +313,7 @@ These rules for implementing the §5.3 triggers keep parity with the legacy comp
 - **`heart` and `cassette`** fire on the rising edge of the chapter's heart or cassette flag, in every setup.
   - Legacy also split when the file's total count went up by one, and used the flag only in IL and file-time-offset setups.
   - Counting breaks ILs on a file that already has the heart. Reacting to the flag while it stays set double-splits consecutive heart splits. The rising edge avoids both.
+- **`auto_reset`** resets and then starts in the same tick, so the new attempt doesn't lose its first frame. It applies while running, paused or ended. The split trigger isn't checked on that tick.
 - **`checkpoint`** fires on entering the room, including spawning into it from the menu. Legacy fired whenever the current room matched. The two only differ when the previous split fired in that same room.
 - **`chapter_start`** ignores the first 3 s after attaching, as legacy does.
 - **`chapter_enter` and `chapter_exit` with a `side`** require the side to change too, as legacy does.
@@ -674,7 +674,7 @@ The legacy node is the migration's only input. It never looks at the run.
 | `start` | `{manual}` | `{new_file}` | `{chapter_start}` | map(`splits[0]`) |
 | `splits` | `[]` | map(each); every `chapter_complete` gets `timing: "chapter_exit"` | map(each); every `chapter_complete` gets `timing: "chapter_complete"` | map(`splits[1..]`) |
 | `timing_method` | `file` | `file` | `chapter` | `chapter_since_start` |
-| `reset` | `never` | `never` | `AutoReset ? leave_chapter : never` | `AutoReset ? leave_chapter : never` |
+| `auto_reset` | `AutoReset` | `AutoReset` | `AutoReset` | `AutoReset` |
 
 - **Case E becomes an empty configuration.** The legacy behaviour (start on any room change, auto reset, split one-segment runs on room changes) is dropped.
 - **Case C's room-change fallback is dropped too.** It came from the same code path as case E, without E's grace logic. The segment is split by hand.
@@ -730,6 +730,7 @@ legacy: map
 | Legacy | Now | Who notices |
 |---|---|---|
 | Always switches to Game Time | Honours `SetGameTime` (§7.8) | Users who unchecked "Game Time" stop being switched. |
+| `AutoReset` resets whenever the game is outside a chapter, and is ignored in full game (case F) | `auto_reset = AutoReset` in every case: reset and start again when the start trigger fires again | Full-game runners get a reset when they start a new file. IL attempts are committed when the next attempt starts, not on return to map. Abandoned attempts stay on the timer until then. |
 | Unknown types silently manual | `unknown`: still never fires, but flagged | Nobody, timing-wise. |
 | Case C final split time is absolute | Consistent with the rest of the run | Custom-start runners, whose final time was wrong. |
 | `FileTimeOffset` in cases C and E mixes clocks | `file_since_start` | Rare combination. |

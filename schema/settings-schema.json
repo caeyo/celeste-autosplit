@@ -30,18 +30,11 @@
       ]
     },
     {
-      "key": "reset",
-      "type": "string",
-      "default": "never",
+      "key": "auto_reset",
+      "type": "bool",
+      "default": false,
       "label": "Auto reset",
-      "values": [
-        { "value": "never", "label": "Never" },
-        {
-          "value": "leave_chapter",
-          "label": "On leaving a chapter",
-          "description": "Return to map, save and quit, or restart. Also after the run has ended, which commits an IL attempt."
-        }
-      ]
+      "description": "Reset and start again whenever the start trigger fires during a run, including after it has ended."
     },
     {
       "key": "everest",
@@ -135,13 +128,13 @@
     {
       "id": "full_game",
       "label": "Full game",
-      "settings": { "start": { "kind": "new_file" }, "timing_method": "file", "reset": "never" },
+      "settings": { "start": { "kind": "new_file" }, "timing_method": "file", "auto_reset": true },
       "trigger_fields": { "chapter_complete": { "timing": "chapter_exit" } }
     },
     {
       "id": "il",
       "label": "Individual level",
-      "settings": { "start": { "kind": "chapter_start" }, "timing_method": "chapter", "reset": "leave_chapter" },
+      "settings": { "start": { "kind": "chapter_start" }, "timing_method": "chapter", "auto_reset": true },
       "trigger_fields": { "chapter_complete": { "timing": "chapter_complete" } }
     }
   ],
