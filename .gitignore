@@ -4,6 +4,8 @@ target/
 # .NET
 bin/
 obj/
+# but not the harness's other Rust binaries
+!harness/src/bin/
 *.user
 .vs/
 component/.deps/

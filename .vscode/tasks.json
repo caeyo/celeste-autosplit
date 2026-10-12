@@ -65,6 +65,40 @@
 		},
 		{
 			"type": "shell",
+			"command": "cargo build --release",
+			"options": {
+				"cwd": "${workspaceFolder}/harness"
+			},
+			"problemMatcher": [
+				"$rustc",
+				"$rust-panic"
+			],
+			"group": "build",
+			"label": "Build Harness"
+		},
+		{
+			"type": "shell",
+			"command": "cargo run --release --bin harness -- read",
+			// Reading another process's memory needs root on macOS.
+			"osx": {
+				"command": "sudo target/release/harness read"
+			},
+			"options": {
+				"cwd": "${workspaceFolder}/harness"
+			},
+			// The harness runs the release build of the wasm module, and needs fake-celeste,
+			// which only a build of every binary builds.
+			"dependsOn": [
+				"Build Auto Splitter (Release)",
+				"Build Harness"
+			],
+			"dependsOrder": "sequence",
+			"problemMatcher": [],
+			"group": "test",
+			"label": "Reading Test"
+		},
+		{
+			"type": "shell",
 			"command": "node serve.mjs",
 			"options": {
 				"cwd": "${workspaceFolder}/site"
