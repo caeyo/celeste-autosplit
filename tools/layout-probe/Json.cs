@@ -14,18 +14,236 @@ namespace LayoutProbe
 
         public void Add(string key, object value) => members.Add(new KeyValuePair<string, object>(key, value));
 
+        public bool TryGetValue(string key, out object value)
+        {
+            foreach (KeyValuePair<string, object> member in members)
+            {
+                if (member.Key == key)
+                {
+                    value = member.Value;
+                    return true;
+                }
+            }
+            value = null;
+            return false;
+        }
+
         public IEnumerator<KeyValuePair<string, object>> GetEnumerator() => members.GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     /// <summary>
-    /// Writes JSON in one stable format, so that regenerated layouts only differ where values do:
+    /// Reads and writes JSON. The game's bundled Mono lacks what DataContractJsonSerializer
+    /// needs, so this does it by hand. Objects are read as JsonObjects, arrays as lists, and
+    /// numbers as longs or doubles.
+    ///
+    /// Writing uses one stable format, so that regenerated layouts only differ where values do:
     /// two-space indents, members in the order they were added, and objects and arrays holding
     /// only scalars and arrays of scalars on one line.
     /// </summary>
     internal static class Json
     {
+        public static object Parse(string text) => new Reader(text).Document();
+
+        private sealed class Reader
+        {
+            private readonly string text;
+            private int position;
+
+            public Reader(string text)
+            {
+                this.text = text;
+            }
+
+            public object Document()
+            {
+                object value = Value();
+                SkipSpace();
+                if (position < text.Length)
+                {
+                    throw Error("unexpected text after the end");
+                }
+                return value;
+            }
+
+            private object Value()
+            {
+                SkipSpace();
+                switch (Peek())
+                {
+                    case '{': return Object();
+                    case '[': return Array();
+                    case '"': return String();
+                    case 't': return Word("true", true);
+                    case 'f': return Word("false", false);
+                    case 'n': return Word("null", null);
+                    default: return Number();
+                }
+            }
+
+            private JsonObject Object()
+            {
+                var obj = new JsonObject();
+                position++;
+                SkipSpace();
+                if (Peek() == '}')
+                {
+                    position++;
+                    return obj;
+                }
+                while (true)
+                {
+                    SkipSpace();
+                    if (Peek() != '"')
+                    {
+                        throw Error("expected a member name");
+                    }
+                    string key = String();
+                    SkipSpace();
+                    Expect(':');
+                    obj.Add(key, Value());
+                    SkipSpace();
+                    if (Peek() == '}')
+                    {
+                        position++;
+                        return obj;
+                    }
+                    Expect(',');
+                }
+            }
+
+            private List<object> Array()
+            {
+                var list = new List<object>();
+                position++;
+                SkipSpace();
+                if (Peek() == ']')
+                {
+                    position++;
+                    return list;
+                }
+                while (true)
+                {
+                    list.Add(Value());
+                    SkipSpace();
+                    if (Peek() == ']')
+                    {
+                        position++;
+                        return list;
+                    }
+                    Expect(',');
+                }
+            }
+
+            private string String()
+            {
+                var s = new StringBuilder();
+                position++;
+                while (true)
+                {
+                    char c = Peek();
+                    position++;
+                    if (c == '"')
+                    {
+                        return s.ToString();
+                    }
+                    if (c < ' ')
+                    {
+                        throw Error("unescaped control character in a string");
+                    }
+                    if (c != '\\')
+                    {
+                        s.Append(c);
+                        continue;
+                    }
+                    char escape = Peek();
+                    position++;
+                    switch (escape)
+                    {
+                        case '"': case '\\': case '/': s.Append(escape); break;
+                        case 'b': s.Append('\b'); break;
+                        case 'f': s.Append('\f'); break;
+                        case 'n': s.Append('\n'); break;
+                        case 'r': s.Append('\r'); break;
+                        case 't': s.Append('\t'); break;
+                        case 'u':
+                            if (position + 4 > text.Length || !int.TryParse(text.Substring(position, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int code))
+                            {
+                                throw Error("bad \\u escape");
+                            }
+                            s.Append((char)code);
+                            position += 4;
+                            break;
+                        default: throw Error("bad escape \\" + escape);
+                    }
+                }
+            }
+
+            private object Number()
+            {
+                int start = position;
+                while (position < text.Length && "+-0123456789.eE".IndexOf(text[position]) >= 0)
+                {
+                    position++;
+                }
+                string number = text.Substring(start, position - start);
+                if (long.TryParse(number, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long integer))
+                {
+                    return integer;
+                }
+                if (double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out double real))
+                {
+                    return real;
+                }
+                position = start;
+                throw Error(number.Length == 0 ? "unexpected '" + Peek() + "'" : "bad number " + number);
+            }
+
+            private object Word(string word, object value)
+            {
+                if (string.CompareOrdinal(text, position, word, 0, word.Length) != 0)
+                {
+                    throw Error("unexpected '" + Peek() + "'");
+                }
+                position += word.Length;
+                return value;
+            }
+
+            private void Expect(char c)
+            {
+                if (Peek() != c)
+                {
+                    throw Error("expected '" + c + "'");
+                }
+                position++;
+            }
+
+            private char Peek()
+            {
+                if (position >= text.Length)
+                {
+                    throw Error("unexpected end");
+                }
+                return text[position];
+            }
+
+            private void SkipSpace()
+            {
+                while (position < text.Length && " \t\r\n".IndexOf(text[position]) >= 0)
+                {
+                    position++;
+                }
+            }
+
+            private FormatException Error(string message)
+            {
+                int line = 1 + text.Take(position).Count(c => c == '\n');
+                int column = position - text.LastIndexOf('\n', Math.Max(0, position - 1));
+                return new FormatException(message + " at line " + line + ", column " + column);
+            }
+        }
+
         public static string Write(object value)
         {
             var text = new StringBuilder();

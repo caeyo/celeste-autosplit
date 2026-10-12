@@ -197,7 +197,7 @@ namespace LayoutProbe
         {
             Console.WriteLine("manifest: " + manifestPath);
             Manifest manifest = Manifest.Load(manifestPath);
-            roots = (manifest.Roots ?? new ManifestRoot[0]).Select(ResolveRoot).ToArray();
+            roots = manifest.Roots.Select(ResolveRoot).ToArray();
             if (roots.Length == 0)
             {
                 throw new ProbeException("the manifest has no roots");
@@ -216,7 +216,7 @@ namespace LayoutProbe
             };
             CheckObjectType(root.Field.FieldType, root.Name);
             Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), entry.Anchor);
-            root.Paths = (entry.Paths ?? new string[0]).Select(p => ResolvePath(root, p)).ToArray();
+            root.Paths = entry.Paths.Select(p => ResolvePath(root, p)).ToArray();
             CheckUnique(root.Paths.Select(p => p.Name), " in the paths of " + root.Name);
             return root;
         }
