@@ -1,51 +1,56 @@
-using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 
 namespace LayoutProbe
 {
-    /// <summary>layouts/manifest.json: what the auto splitter reads, by .NET names.</summary>
-    internal sealed class Manifest
+    /// <summary>
+    /// What the auto splitter reads, by .NET names. Each root is a static field that the auto
+    /// splitter finds through a hand-written signature in its anchor method's compiled code, and
+    /// each of its paths is a chain of instance fields read from the root's object.
+    /// </summary>
+    internal static class Manifest
     {
-        public ManifestRoot[] Roots;
+        // Celeste's constructor passes the game and window sizes (1920x1080, 960x540) to
+        // Engine's, then stores itself in Celeste.Instance. These match the size arguments:
+        // pushed on Windows, in registers on Mono. They're memory.rs's WINDOWS_CLR32_SIG and
+        // MONO64_SIG.
+        private const string CelesteClr32 = "68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35";
+        private const string CelesteMono64 = "be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00";
 
-        public static Manifest Load(string path)
+        public static readonly ManifestRoot[] Roots =
         {
-            object json;
-            try
+            new ManifestRoot
             {
-                json = Json.Parse(File.ReadAllText(path));
-            }
-            catch (FormatException e)
-            {
-                throw new ProbeException("can't read " + path + ": " + e.Message);
-            }
-            List<object> roots = Member<List<object>>(As<JsonObject>(json, "the manifest"), "roots", null);
-            return new Manifest { Roots = roots.Select((r, i) => ManifestRoot.Read(r, "roots[" + i + "]")).ToArray() };
-        }
-
-        /// <summary>An object's member, where null means the manifest itself.</summary>
-        public static T Member<T>(JsonObject obj, string key, string where)
-        {
-            if (!obj.TryGetValue(key, out object value))
-            {
-                throw new ProbeException((where ?? "the manifest") + " has no \"" + key + "\"");
-            }
-            return As<T>(value, where == null ? key : where + "." + key);
-        }
-
-        public static T As<T>(object value, string where)
-        {
-            if (!(value is T typed))
-            {
-                throw new ProbeException(where + " should be " + (typeof(T) == typeof(JsonObject) ? "an object" : typeof(T) == typeof(string) ? "a string" : "an array"));
-            }
-            return typed;
-        }
+                Field = "Celeste.Celeste::Instance",
+                Anchor = "Celeste.Celeste::.ctor()",
+                Signatures =
+                {
+                    ["windows-xna"] = CelesteClr32,
+                    ["windows-fna"] = CelesteClr32,
+                    ["linux"] = CelesteMono64,
+                    ["macos"] = CelesteMono64,
+                },
+                Paths =
+                {
+                    "Title",
+                    "AutoSplitterInfo.Chapter",
+                    "AutoSplitterInfo.Mode",
+                    "AutoSplitterInfo.Level",
+                    "AutoSplitterInfo.TimerActive",
+                    "AutoSplitterInfo.ChapterStarted",
+                    "AutoSplitterInfo.ChapterComplete",
+                    "AutoSplitterInfo.ChapterTime",
+                    "AutoSplitterInfo.ChapterStrawberries",
+                    "AutoSplitterInfo.ChapterCassette",
+                    "AutoSplitterInfo.ChapterHeart",
+                    "AutoSplitterInfo.FileTime",
+                    "AutoSplitterInfo.FileStrawberries",
+                    "AutoSplitterInfo.FileCassettes",
+                    "AutoSplitterInfo.FileHearts",
+                },
+            },
+        };
     }
 
-    /// <summary>A static field the auto splitter finds through a signature, and the paths it reads from there.</summary>
     internal sealed class ManifestRoot
     {
         /// <summary>The static field, as Namespace.Type::Field.</summary>
@@ -53,22 +58,20 @@ namespace LayoutProbe
 
         /// <summary>
         /// The method whose compiled code holds the field's address, as
-        /// Namespace.Type::Method(ParameterType, ...).
+        /// Namespace.Type::Name(ParameterType, ...).
         /// </summary>
         public string Anchor;
 
-        /// <summary>Instance field names from the root's object, joined with dots.</summary>
-        public string[] Paths;
+        /// <summary>
+        /// Per flavour, the hand-written signature that finds the anchor's code: hex bytes, with
+        /// ?? for any byte. It must match the code once, followed by a reference to the field.
+        /// </summary>
+        public readonly Dictionary<string, string> Signatures = new Dictionary<string, string>();
 
-        public static ManifestRoot Read(object json, string where)
-        {
-            JsonObject root = Manifest.As<JsonObject>(json, where);
-            return new ManifestRoot
-            {
-                Field = Manifest.Member<string>(root, "field", where),
-                Anchor = Manifest.Member<string>(root, "anchor", where),
-                Paths = Manifest.Member<List<object>>(root, "paths", where).Select((p, i) => Manifest.As<string>(p, where + ".paths[" + i + "]")).ToArray(),
-            };
-        }
+        /// <summary>
+        /// Instance field names from the root's object, joined with dots. Each name is looked up
+        /// in the previous field's type, or its nearest base class with that field.
+        /// </summary>
+        public readonly List<string> Paths = new List<string>();
     }
 }

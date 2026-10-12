@@ -93,7 +93,7 @@ jobs:
       # The probe's live validation runs as the game, the way the auto splitter will see
       # it: the probe becomes Celeste.exe, the game's own Celeste.exe moves to real/, and
       # it starts the way players start the game. The game's Linux script changes
-      # directory first, so the paths given to the probe are absolute.
+      # directory first, so the output path given to the probe is absolute.
 
       - name: Probe (Windows)
         if: runner.os == 'Windows'
@@ -104,7 +104,7 @@ jobs:
           mv Celeste.exe real/
           [ ! -f Celeste.exe.config ] || mv Celeste.exe.config real/
           cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
-          ./Celeste.exe --game real/Celeste.exe --manifest "$GITHUB_WORKSPACE/layouts/manifest.json" --out "$RUNNER_TEMP/layouts"
+          ./Celeste.exe --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
       # The script runs Celeste.bin.x86_64, a MonoKickstart that runs Celeste.exe with the
       # game's own Mono. FNA needs a display to create its window. The runner image already
@@ -119,7 +119,7 @@ jobs:
           mv Celeste.exe Celeste.exe.config real/
           cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
           chmod +x Celeste Celeste.bin.x86_64
-          xvfb-run -a -s '-screen 0 1280x720x24' ./Celeste --game real/Celeste.exe --manifest "$GITHUB_WORKSPACE/layouts/manifest.json" --out "$RUNNER_TEMP/layouts"
+          xvfb-run -a -s '-screen 0 1280x720x24' ./Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
       # MacOS/Celeste is a MonoKickstart that runs Resources/Celeste.exe with the game's own
       # Mono.
@@ -132,7 +132,7 @@ jobs:
           mv Resources/Celeste.exe Resources/real/
           cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Resources/Celeste.exe
           chmod +x MacOS/Celeste
-          MacOS/Celeste --game real/Celeste.exe --manifest "$GITHUB_WORKSPACE/layouts/manifest.json" --out "$RUNNER_TEMP/layouts"
+          MacOS/Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
       # The probe names the file after the flavour it detected, so a mislabelled matrix
       # entry fails here.

@@ -1,11 +1,12 @@
 # layouts
 
-The memory layouts the auto splitter reads, one file per game flavour, and the
-manifest that says what to measure.
+The memory layouts the auto splitter reads, one file per game flavour. What gets
+measured is listed in the layout probe's
+[`Manifest.cs`](../tools/layout-probe/Manifest.cs), described in its
+[README](../tools/layout-probe/README.md#the-manifest).
 
 | File | What | Made by |
 |---|---|---|
-| `manifest.json` | What the auto splitter reads, by .NET names. | Hand-written. |
 | `windows-xna.json`, `windows-fna.json`, `linux.json`, `macos.json` | Each vanilla flavour's measured layout. | The [layout probe](../tools/layout-probe/), through the Layouts workflow. Don't edit them by hand. |
 | `everest.json` | Everest's own info struct. | Transcribed from Everest's source. |
 
@@ -21,7 +22,7 @@ It runs the probe on every vanilla flavour, then opens a pull request into
 `<branch>` with the regenerated files, from the branch `layouts/<branch>`. If
 nothing changed, it says so and opens nothing. A later run updates an open pull
 request instead of opening another. The run uses `<branch>`'s workflow and
-manifest, so changes can be tried before they're merged.
+probe, so changes can be tried before they're merged.
 
 For each flavour, the probe runs inside the game's own runtime, next to the real
 game files. It:
@@ -35,35 +36,6 @@ game files. It:
 
 Any failure fails the run, and no pull request is opened. To run the probe
 yourself, see its [README](../tools/layout-probe/README.md).
-
-## `manifest.json`
-
-```json
-{
-  "roots": [
-    {
-      "field": "Celeste.Celeste::Instance",
-      "anchor": "Celeste.Celeste::.ctor()",
-      "paths": ["Title", "AutoSplitterInfo.Chapter", "..."]
-    }
-  ]
-}
-```
-
-Each root is a static field that the auto splitter finds through machine code:
-
-- **`field`**: the static field, as `Namespace.Type::Field`.
-- **`anchor`**: the method whose compiled code holds the field's address, as
-  `Namespace.Type::Name(ParameterType, ...)`. The auto splitter finds that code with a
-  hand-written signature, and reads the address at a fixed displacement from it.
-- **`paths`**: instance fields to read from the root's object, joined with dots.
-  Each name is looked up in the previous field's type, or its nearest base class
-  with that field. A path only goes through objects of concrete classes, and ends
-  in a `string`, `bool`, `int`, `long` or object.
-
-A new root also needs a hand-written signature for every flavour, in both the
-probe's [`Signatures.cs`](../tools/layout-probe/Signatures.cs) and
-[`memory.rs`](../autosplitter/src/memory.rs).
 
 ## `<flavour>.json`
 

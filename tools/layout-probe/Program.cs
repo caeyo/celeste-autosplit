@@ -14,20 +14,19 @@ namespace LayoutProbe
 {
     /// <summary>
     /// Measures the memory layout the auto splitter reads, inside the runtime of the game flavour
-    /// it runs with, and writes it as &lt;flavour&gt;.json. layouts/manifest.json says what to
-    /// measure. It has to run in the game's own runtime, from the game's folder: 32-bit .NET
-    /// Framework on Windows, and the Mono bundled with the game on Linux and macOS, through the
-    /// game's MonoKickstart launcher (which runs the .exe named after itself).
+    /// it runs with, and writes it as &lt;flavour&gt;.json. Manifest.cs says what to measure. It
+    /// has to run in the game's own runtime, from the game's folder: 32-bit .NET Framework on
+    /// Windows, and the Mono bundled with the game on Linux and macOS, through the game's
+    /// MonoKickstart launcher (which runs the .exe named after itself).
     ///
     /// Options:
-    ///   --manifest PATH   layouts/manifest.json. Required.
     ///   --out DIR         writes DIR/&lt;flavour&gt;.json once every check has passed.
     ///   --game PATH       the game's Celeste.exe, relative to the probe's directory (default:
     ///                     Celeste.exe next to the probe). Lets the probe itself be Celeste.exe,
     ///                     so its process has the game's name.
     ///   --hold SECONDS    then stays alive, so the process can be read from outside.
     ///
-    /// The game's Linux launcher script changes directory first, so pass absolute paths.
+    /// The game's Linux launcher script changes directory first, so pass an absolute --out.
     /// </summary>
     internal static class Program
     {
@@ -39,7 +38,6 @@ namespace LayoutProbe
         // A length nothing else in an array's header could hold.
         private const int SampleArrayLength = 713;
 
-        private static string manifestPath;
         private static string outDirectory;
         private static string gamePath;
         private static int holdSeconds;
@@ -63,7 +61,7 @@ namespace LayoutProbe
             catch (Exception e) when (e is ArgumentException || e is FormatException || e is IndexOutOfRangeException)
             {
                 Console.Error.WriteLine(e.Message);
-                Console.Error.WriteLine("usage: LayoutProbe.exe --manifest PATH [--out DIR] [--game PATH] [--hold SECONDS]");
+                Console.Error.WriteLine("usage: LayoutProbe.exe [--out DIR] [--game PATH] [--hold SECONDS]");
                 return 2;
             }
 
@@ -94,16 +92,11 @@ namespace LayoutProbe
             {
                 switch (args[i])
                 {
-                    case "--manifest": manifestPath = Path.GetFullPath(args[++i]); break;
                     case "--out": outDirectory = Path.GetFullPath(args[++i]); break;
                     case "--game": gameFile = args[++i]; break;
                     case "--hold": holdSeconds = int.Parse(args[++i]); break;
                     default: throw new ArgumentException("unknown option " + args[i]);
                 }
-            }
-            if (manifestPath == null)
-            {
-                throw new ArgumentException("--manifest is required");
             }
             gamePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, gameFile));
         }
@@ -195,24 +188,22 @@ namespace LayoutProbe
 
         private static void ResolveManifest()
         {
-            Console.WriteLine("manifest: " + manifestPath);
-            Manifest manifest = Manifest.Load(manifestPath);
-            roots = manifest.Roots.Select(ResolveRoot).ToArray();
-            if (roots.Length == 0)
-            {
-                throw new ProbeException("the manifest has no roots");
-            }
+            roots = Manifest.Roots.Select(ResolveRoot).ToArray();
             CheckUnique(roots.Select(r => r.Name), "");
         }
 
         private static Root ResolveRoot(ManifestRoot entry)
         {
+            if (!entry.Signatures.TryGetValue(flavour, out string signature))
+            {
+                throw new ProbeException(entry.Field + " has no signature for " + flavour + ": add one to Manifest.cs and to memory.rs");
+            }
             var root = new Root
             {
                 Name = entry.Field,
                 Field = Names.StaticField(game, entry.Field),
                 Anchor = Names.Method(game, entry.Anchor),
-                Signature = Signatures.For(entry.Field, flavour),
+                Signature = new Signature(signature),
             };
             CheckObjectType(root.Field.FieldType, root.Name);
             Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), entry.Anchor);
@@ -603,36 +594,7 @@ namespace LayoutProbe
 
         private static void WriteLayout()
         {
-            var rootsJson = new JsonObject();
-            foreach (Root root in roots)
-            {
-                var paths = new JsonObject();
-                foreach (FieldPath path in root.Paths)
-                {
-                    paths.Add(path.Name, new JsonObject
-                    {
-                        { "offsets", path.Offsets },
-                        { "types", path.Fields.Select(f => Names.TypeName(f.FieldType)).ToArray() },
-                    });
-                }
-                rootsJson.Add(root.Name, new JsonObject
-                {
-                    { "signature", root.Signature.ToString() },
-                    { "slot", new JsonObject { { "displacement", root.Displacement }, { "encoding", root.Reference.Encoding } } },
-                    { "paths", paths },
-                });
-            }
-
-            string text = Json.Write(new JsonObject
-            {
-                { "flavour", flavour },
-                { "os", os },
-                { "game", new JsonObject { { "version", gameVersion }, { "mvid", game.ManifestModule.ModuleVersionId.ToString() } } },
-                { "pointer_size", IntPtr.Size },
-                { "string", new JsonObject { { "length", stringLength }, { "chars", stringChars } } },
-                { "array", new JsonObject { { "length", arrayLength }, { "data", arrayData } } },
-                { "roots", rootsJson },
-            });
+            string text = LayoutJson();
             Console.Write(text);
             if (outDirectory != null)
             {
@@ -641,6 +603,46 @@ namespace LayoutProbe
                 File.WriteAllText(file, text, new UTF8Encoding(false));
                 Console.WriteLine("written to " + file);
             }
+        }
+
+        /// <summary>
+        /// The layout as JSON, always in this format, so that regenerated layouts only differ
+        /// where values do. Every path goes on one line.
+        /// </summary>
+        private static string LayoutJson()
+        {
+            IEnumerable<string> rootsJson = roots.Select(root =>
+                "    " + Quote(root.Name) + ": {\n" +
+                "      \"signature\": " + Quote(root.Signature.ToString()) + ",\n" +
+                "      \"slot\": { \"displacement\": " + root.Displacement + ", \"encoding\": " + Quote(root.Reference.Encoding) + " },\n" +
+                "      \"paths\": {\n" +
+                string.Join(",\n", root.Paths.Select(path =>
+                    "        " + Quote(path.Name) + ": { " +
+                    "\"offsets\": [" + string.Join(", ", path.Offsets.Select(o => o.ToString()).ToArray()) + "], " +
+                    "\"types\": [" + string.Join(", ", path.Fields.Select(f => Quote(Names.TypeName(f.FieldType))).ToArray()) + "] }").ToArray()) + "\n" +
+                "      }\n" +
+                "    }");
+            return "{\n" +
+                "  \"flavour\": " + Quote(flavour) + ",\n" +
+                "  \"os\": " + Quote(os) + ",\n" +
+                "  \"game\": { \"version\": " + Quote(gameVersion) + ", \"mvid\": " + Quote(game.ManifestModule.ModuleVersionId.ToString()) + " },\n" +
+                "  \"pointer_size\": " + IntPtr.Size + ",\n" +
+                "  \"string\": { \"length\": " + stringLength + ", \"chars\": " + stringChars + " },\n" +
+                "  \"array\": { \"length\": " + arrayLength + ", \"data\": " + arrayData + " },\n" +
+                "  \"roots\": {\n" +
+                string.Join(",\n", rootsJson.ToArray()) + "\n" +
+                "  }\n" +
+                "}\n";
+        }
+
+        /// <summary>A JSON string. The layout's strings are .NET names, which have nothing to escape.</summary>
+        private static string Quote(string s)
+        {
+            if (s.Any(c => c == '"' || c == '\\' || c < ' '))
+            {
+                throw new ProbeException("can't write " + s + " as JSON without escaping it");
+            }
+            return "\"" + s + "\"";
         }
 
         [DllImport("libc")]

@@ -1,11 +1,11 @@
 # layout-probe
 
 Measures the memory layout the auto splitter reads, inside the game's own
-runtime, and writes it as `<flavour>.json`. What it measures comes from
-[`layouts/manifest.json`](../../layouts/manifest.json). The
+runtime, and writes it as `<flavour>.json`. What it measures is listed in
+[`Manifest.cs`](Manifest.cs). The
 [`layouts.yml`](../../.github/workflows/layouts.yml) workflow runs it against
 every vanilla flavour and opens a pull request with the results. The
-[layouts README](../../layouts/README.md) describes both files.
+[layouts README](../../layouts/README.md) describes the output.
 
 In order, it:
 
@@ -17,8 +17,7 @@ In order, it:
    - where strings and arrays hold their lengths and contents;
 3. for each root, compiles the anchor method, finds where its code references
    the static slot, and checks that the flavour's hand-written signature
-   ([`Signatures.cs`](Signatures.cs), a copy of the ones in
-   `autosplitter/src/memory.rs`) matches once before it;
+   matches once before it;
 4. constructs the game (`new Celeste()`), writes distinctive values into every
    field that still holds its default, and reads every path back raw from the
    slot whose address the code holds, as the auto splitter does. It does this
@@ -28,6 +27,25 @@ In order, it:
 It prints what it finds along the way, including every field of each type along
 the paths, and the anchor's machine code. It stops at the first failure, and
 exits with 1.
+
+## The manifest
+
+`Manifest.cs` lists the roots the auto splitter reads from. Each root is a
+static field that the auto splitter finds through machine code:
+
+- **`Field`**: the static field, as `Namespace.Type::Field`.
+- **`Anchor`**: the method whose compiled code holds the field's address, as
+  `Namespace.Type::Name(ParameterType, ...)`.
+- **`Signatures`**: per flavour, the hand-written signature that finds the
+  anchor's code: hex bytes, with `??` for any byte. They're copies of the ones
+  in [`memory.rs`](../../autosplitter/src/memory.rs). Each must match the
+  anchor's code once, followed by a reference to the field.
+- **`Paths`**: instance fields to read from the root's object, joined with dots.
+  Each name is looked up in the previous field's type, or its nearest base
+  class with that field. A path only goes through objects of concrete classes,
+  and ends in a `string`, `bool`, `int`, `long` or object.
+
+A new root needs a signature for every flavour, both here and in `memory.rs`.
 
 ## Building
 
@@ -55,12 +73,11 @@ started the way players start the game.
 For example, on Windows, from the game's folder:
 
 ```sh
-./Celeste.exe --game real/Celeste.exe --manifest <repo>/layouts/manifest.json --out <repo>/layouts
+./Celeste.exe --game real/Celeste.exe --out <repo>/layouts
 ```
 
 Options:
 
-- `--manifest PATH`: the manifest. Required.
 - `--out DIR`: writes `DIR/<flavour>.json`, once every check has passed.
 - `--game PATH`: the game's `Celeste.exe`, relative to the probe (default:
   `Celeste.exe` next to it).
@@ -68,4 +85,4 @@ Options:
   outside. It prints `holding for N s` once it's ready.
 
 The Linux script changes to the game's folder first, and passes its arguments on
-unquoted, so give absolute paths without spaces.
+unquoted, so give `--out` an absolute path without spaces.
