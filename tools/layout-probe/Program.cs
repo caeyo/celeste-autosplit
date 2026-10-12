@@ -136,11 +136,6 @@ namespace LayoutProbe
 
         private static void LoadGame()
         {
-            // When the probe is Celeste.exe, that's what the game's assembly name finds next
-            // to it, so loads by that name get the game's assembly instead.
-            AppDomain.CurrentDomain.AssemblyResolve += (sender, e) =>
-                game != null && new AssemblyName(e.Name).Name == game.GetName().Name ? game : null;
-
             game = Assembly.LoadFrom(gamePath);
             Console.WriteLine("game: " + gamePath);
             Console.WriteLine("assembly: " + game.FullName);
