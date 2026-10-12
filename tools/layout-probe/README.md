@@ -40,16 +40,17 @@ static field that the auto splitter finds through machine code:
 - **`Signatures`**: per flavour, how to find the field's address in the
   anchor's code. Each has:
   - a signature that matches the anchor's code once: hex bytes, with `??` for
-    any byte. [`memory.rs`](../../autosplitter/src/memory.rs) has the same
-    ones;
+    any byte;
   - store patterns for the code that stores into the field after it, with `SS`
     for the field's address: 4 or 8 bytes in a row. The earliest match of any
     of them after the signature holds the address: earliest, because a 4-byte
     pattern can also match inside an 8-byte store. They're searched for rather
     than expected at a fixed distance, because the instructions in between can
     change length. On Linux, an address takes 4 or 8 bytes depending on where
-    the heap is. `memory.rs` still reads at a fixed distance after the
-    signature.
+    the heap is.
+
+  [`memory.rs`](../../autosplitter/src/memory.rs) has the same signatures and
+  store patterns, and finds the address from them the same way.
 - **`Paths`**: instance fields to read from the root's object, joined with dots.
   Each name is looked up in the previous field's type, or its nearest base
   class with that field. A path only goes through objects of concrete classes,

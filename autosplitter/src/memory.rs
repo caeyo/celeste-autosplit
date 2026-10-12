@@ -282,18 +282,12 @@ impl GameState {
     }
 }
 
-enum InstanceSize {
-    MethodTablePlus4,
-    KlassPlus1c,
-}
-
+/// Where a runtime puts a string's length and characters, and each field of `AutoSplitterInfo`,
+/// from the start of the object.
 struct Layout {
     ptr_size: PointerSize,
-    field_step: u64,
     string_len: u64,
     string_chars: u64,
-    autosplitter_from_title: u64,
-    instance_size: InstanceSize,
     chapter_time: u64,
     file_time: u64,
     level: u64,
@@ -310,13 +304,11 @@ struct Layout {
     chapter_heart: u64,
 }
 
-const WINDOWS_CLR32: Layout = Layout {
+/// 32-bit .NET Framework, on Windows.
+const CLR32: Layout = Layout {
     ptr_size: PointerSize::Bit32,
-    field_step: 4,
     string_len: 4,
     string_chars: 8,
-    autosplitter_from_title: 0x1c,
-    instance_size: InstanceSize::MethodTablePlus4,
     chapter_time: 0x04,
     file_time: 0x0c,
     level: 0x14,
@@ -337,11 +329,8 @@ const WINDOWS_CLR32: Layout = Layout {
 /// in declaration order. Ints are 8-aligned rather than packed.
 const MONO64: Layout = Layout {
     ptr_size: PointerSize::Bit64,
-    field_step: 8,
     string_len: 0x10,
     string_chars: 0x14,
-    autosplitter_from_title: 0x30,
-    instance_size: InstanceSize::KlassPlus1c,
     chapter_time: 0x10,
     file_time: 0x18,
     level: 0x20,
@@ -357,62 +346,6 @@ const MONO64: Layout = Layout {
     chapter_cassette: 0x57,
     chapter_heart: 0x58,
 };
-
-impl Layout {
-    fn read_ptr(&self, process: &Process, address: u64) -> Option<u64> {
-        match self.ptr_size {
-            PointerSize::Bit32 => process.read::<u32>(address).ok().map(u64::from),
-            PointerSize::Bit64 => process.read(address).ok(),
-            PointerSize::Bit16 => None,
-        }
-    }
-
-    fn instance_size(&self, process: &Process, instance: u64) -> Option<u32> {
-        let vtable = self.read_ptr(process, instance)?;
-        match self.instance_size {
-            InstanceSize::MethodTablePlus4 => process.read(vtable + 4).ok(),
-            InstanceSize::KlassPlus1c => {
-                let klass: u64 = process.read(vtable).ok()?;
-                process.read(klass + 0x1c).ok()
-            }
-        }
-    }
-
-    fn title_offs(&self, process: &Process, instance: u64) -> Option<u64> {
-        let type_size = self.instance_size(process, instance)?;
-        if u64::from(type_size) < self.field_step {
-            return None;
-        }
-
-        let mut offs = u64::from(type_size) - self.field_step;
-        loop {
-            if read_dotnet_string(
-                process,
-                self.read_ptr(process, instance + offs)?,
-                self.string_len,
-                self.string_chars,
-            )
-            .as_deref()
-                == Some("Celeste")
-            {
-                return Some(offs);
-            }
-            if offs < self.field_step {
-                break;
-            }
-            offs -= self.field_step;
-        }
-        None
-    }
-
-    fn field_ptr(&self, static_slot: u64, title_offs: u64, field: u64) -> DeepPointer<3> {
-        DeepPointer::new(
-            static_slot,
-            self.ptr_size,
-            &[0, title_offs + self.autosplitter_from_title, field],
-        )
-    }
-}
 
 fn read_dotnet_string(
     process: &Process,
@@ -453,54 +386,180 @@ fn read_everest_string(process: &Process, ptr: u64) -> Option<String> {
     String::from_utf8(buf).ok()
 }
 
-struct SignatureHook {
-    static_slot_disp: u64,
-    static_slot_u64: bool,
-    scan: fn(&Process, (Address, u64)) -> Option<Address>,
+/// A vanilla flavour of the game: how to find `Celeste.Instance`, and where its fields are.
+struct Flavour {
+    /// As `asr::get_os` names it.
+    os: &'static str,
+    /// Where each match of the flavour's signature ends, in an executable range.
+    signature: fn(&Process, (Address, u64)) -> Vec<Address>,
+    /// Patterns for the store into `Celeste.Instance` after the signature: hex bytes, with `??`
+    /// for any byte, and `SS` for the static slot's address, 4 or 8 of them in a row.
+    stores: &'static [&'static str],
+    layout: &'static Layout,
+    /// `Engine.Title`, which holds "Celeste".
+    title: u64,
+    /// `Celeste.AutoSplitterInfo`.
+    auto_splitter_info: u64,
 }
 
-#[derive(Copy, Clone)]
-struct SigMatch {
-    address: Address,
-    static_slot_disp: u64,
-    static_slot_u64: bool,
-}
+// Celeste's constructor passes the game and window sizes (1920x1080, 960x540) to Engine's,
+// then stores itself in Celeste.Instance. The signatures match the size arguments: pushed on
+// Windows, in registers on Mono. Then the store:
+// - On Windows, the slot's address goes to the GC's write barrier: lea edx, [slot]; call.
+// - On Mono, it's loaded into rax and stored through: mov eax or rax, slot; mov [rax], r15.
+//   The 4-byte form is used when the address fits, which on Linux depends on where the heap
+//   is, so both forms are listed. Where the heap is also changes the length of other
+//   instructions between the signature and the store, so the store is searched for rather
+//   than expected at a fixed distance.
+// The layout probe checks the same signatures and store patterns against the game's compiled
+// code, from its own copy in tools/layout-probe/Manifest.cs.
 
-static WINDOWS_CLR32_SIG: Signature<17> =
+static CLR32_SIGNATURE: Signature<17> =
     Signature::new("68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35");
 
-static MONO64_SIG: Signature<21> =
+const CLR32_STORES: &[&str] = &["8d 15 SS SS SS SS e8"];
+
+static MONO64_SIGNATURE: Signature<21> =
     Signature::new("be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00");
 
-fn scan_windows_clr32(process: &Process, range: (Address, u64)) -> Option<Address> {
-    WINDOWS_CLR32_SIG.scan_process_range(process, range)
+const MONO64_STORES: &[&str] = &[
+    "b8 SS SS SS SS 4c 89 38",
+    "48 b8 SS SS SS SS SS SS SS SS 4c 89 38",
+];
+
+fn clr32_signature(process: &Process, range: (Address, u64)) -> Vec<Address> {
+    signature_ends(&CLR32_SIGNATURE, process, range)
 }
 
-fn scan_mono64(process: &Process, range: (Address, u64)) -> Option<Address> {
-    MONO64_SIG.scan_process_range(process, range)
+fn mono64_signature(process: &Process, range: (Address, u64)) -> Vec<Address> {
+    signature_ends(&MONO64_SIGNATURE, process, range)
 }
 
-const WINDOWS_CLR32_HOOK: SignatureHook = SignatureHook {
-    static_slot_disp: 99,
-    static_slot_u64: false,
-    scan: scan_windows_clr32,
-};
+fn signature_ends<const N: usize>(
+    signature: &Signature<N>,
+    process: &Process,
+    range: (Address, u64),
+) -> Vec<Address> {
+    signature
+        .scan_iter(process, range)
+        .map(|start| start + N as u64)
+        .collect()
+}
 
-const LINUX_MONO64_HOOK: SignatureHook = SignatureHook {
-    static_slot_disp: 132,
-    static_slot_u64: false,
-    scan: scan_mono64,
-};
+/// In the order they're tried. Both Windows flavours have the same signature and store, so
+/// only their title offsets tell them apart: XNA's and FNA's `Game` classes, which `Engine`
+/// derives from, have different fields.
+const FLAVOURS: &[Flavour] = &[
+    // windows-xna
+    Flavour {
+        os: "windows",
+        signature: clr32_signature,
+        stores: CLR32_STORES,
+        layout: &CLR32,
+        title: 0x90,
+        auto_splitter_info: 0xac,
+    },
+    // windows-fna
+    Flavour {
+        os: "windows",
+        signature: clr32_signature,
+        stores: CLR32_STORES,
+        layout: &CLR32,
+        title: 0x84,
+        auto_splitter_info: 0xa0,
+    },
+    // linux
+    Flavour {
+        os: "linux",
+        signature: mono64_signature,
+        stores: MONO64_STORES,
+        layout: &MONO64,
+        title: 0xe8,
+        auto_splitter_info: 0x118,
+    },
+    // macos
+    Flavour {
+        os: "macos",
+        signature: mono64_signature,
+        stores: MONO64_STORES,
+        layout: &MONO64,
+        title: 0xe8,
+        auto_splitter_info: 0x118,
+    },
+];
 
-const MACOS_MONO64_HOOK: SignatureHook = SignatureHook {
-    static_slot_disp: 167,
-    static_slot_u64: true,
-    scan: scan_mono64,
-};
+/// How much of the code after a signature is searched for the store. Today's stores start 80
+/// to 144 bytes after their signatures.
+const STORE_WINDOW: u64 = 256;
 
-const WINDOWS_CLR32_SIGNATURES: &[SignatureHook] = &[WINDOWS_CLR32_HOOK];
-const LINUX_MONO64_SIGNATURES: &[SignatureHook] = &[LINUX_MONO64_HOOK];
-const MACOS_MONO64_SIGNATURES: &[SignatureHook] = &[MACOS_MONO64_HOOK];
+impl Flavour {
+    /// Finds the static slot of `Celeste.Instance`. Each match of the signature is tried in
+    /// turn, and its slot is only accepted if the object in it has the title "Celeste".
+    fn find_slot(&self, process: &Process) -> Option<Address> {
+        scan_executable(process, |(start, size)| {
+            let end = start.value() + size;
+            (self.signature)(process, (start, size))
+                .into_iter()
+                .find_map(|code| {
+                    // Only within the range, which is all mapped.
+                    let len = STORE_WINDOW.min(end - code.value());
+                    let slot = self.read_store(process, code, len)?;
+                    self.has_title(process, slot).then_some(slot)
+                })
+        })
+    }
+
+    /// The slot's address, from the earliest match of any store pattern in the code. Earliest,
+    /// not the first pattern listed, because a 4-byte pattern can also match inside an 8-byte
+    /// store, when the address's fourth byte happens to be the 4-byte form's opcode.
+    fn read_store(&self, process: &Process, code: Address, len: u64) -> Option<Address> {
+        let mut buf = [0; STORE_WINDOW as usize];
+        let code_bytes = &mut buf[..len as usize];
+        process.read_into_buf(code, code_bytes).ok()?;
+        (0..code_bytes.len()).find_map(|start| {
+            self.stores
+                .iter()
+                .find_map(|store| match_store(store, &code_bytes[start..]))
+        })
+    }
+
+    fn has_title(&self, process: &Process, slot: Address) -> bool {
+        let layout = self.layout;
+        let Ok(instance) = process.read_pointer(slot, layout.ptr_size) else {
+            return false;
+        };
+        if instance.is_null() {
+            return false;
+        }
+        let Ok(title) = process.read_pointer(instance + self.title, layout.ptr_size) else {
+            return false;
+        };
+        read_dotnet_string(process, title.value(), layout.string_len, layout.string_chars)
+            .is_some_and(|title| title == "Celeste")
+    }
+}
+
+/// The slot's address in the store, if the store pattern matches at the start of the code.
+fn match_store(store: &str, code: &[u8]) -> Option<Address> {
+    let mut slot = 0;
+    let mut slot_bytes = 0;
+    for (i, byte) in store.split(' ').enumerate() {
+        let actual = *code.get(i)?;
+        match byte {
+            "SS" => {
+                slot |= u64::from(actual) << (8 * slot_bytes);
+                slot_bytes += 1;
+            }
+            "??" => {}
+            _ => {
+                if u8::from_str_radix(byte, 16).ok()? != actual {
+                    return None;
+                }
+            }
+        }
+    }
+    Some(Address::new(slot))
+}
 
 fn scan_executable(
     process: &Process,
@@ -521,52 +580,6 @@ fn scan_executable(
         }
     }
     None
-}
-
-fn find_signature(process: &Process, hooks: &[SignatureHook]) -> Option<SigMatch> {
-    for hook in hooks {
-        if let Some(address) = scan_executable(process, |range| (hook.scan)(process, range)) {
-            return Some(SigMatch {
-                address,
-                static_slot_disp: hook.static_slot_disp,
-                static_slot_u64: hook.static_slot_u64,
-            });
-        }
-    }
-    None
-}
-
-#[derive(Copy, Clone)]
-enum Platform {
-    WindowsClr32,
-    LinuxMono64,
-    MacMono64,
-}
-
-impl Platform {
-    const fn layout(self) -> &'static Layout {
-        match self {
-            Self::WindowsClr32 => &WINDOWS_CLR32,
-            Self::LinuxMono64 | Self::MacMono64 => &MONO64,
-        }
-    }
-
-    const fn signatures(self) -> &'static [SignatureHook] {
-        match self {
-            Self::WindowsClr32 => WINDOWS_CLR32_SIGNATURES,
-            Self::LinuxMono64 => LINUX_MONO64_SIGNATURES,
-            Self::MacMono64 => MACOS_MONO64_SIGNATURES,
-        }
-    }
-}
-
-fn detect_platform() -> Option<Platform> {
-    match asr::get_os().ok()?.as_str() {
-        "windows" => Some(Platform::WindowsClr32),
-        "linux" => Some(Platform::LinuxMono64),
-        "macos" => Some(Platform::MacMono64),
-        _ => None,
-    }
 }
 
 const PROCESS_NAMES: &[&str] = &[
@@ -603,35 +616,34 @@ fn init_everest(process: &Process) -> Option<GameState> {
     None
 }
 
-fn init_vanilla(process: &Process, layout: &Layout, sig: SigMatch) -> Option<GameState> {
-    let static_slot = if sig.static_slot_u64 {
-        process.read(sig.address + sig.static_slot_disp).ok()?
-    } else {
-        u64::from(process.read::<u32>(sig.address + sig.static_slot_disp).ok()?)
+fn init_vanilla(process: &Process, flavour: &Flavour) -> Option<GameState> {
+    let static_slot = flavour.find_slot(process)?;
+    let layout = flavour.layout;
+    let field = |offset| {
+        DeepPointer::new(
+            static_slot,
+            layout.ptr_size,
+            &[0, flavour.auto_splitter_info, offset],
+        )
     };
-    let instance = layout.read_ptr(process, static_slot)?;
-    if instance == 0 {
-        return None;
-    }
-    let title_offs = layout.title_offs(process, instance)?;
     Some(GameState::Vanilla {
         ptr_size: layout.ptr_size,
         string_len: layout.string_len,
         string_chars: layout.string_chars,
-        chapter_time: layout.field_ptr(static_slot, title_offs, layout.chapter_time),
-        file_time: layout.field_ptr(static_slot, title_offs, layout.file_time),
-        level: layout.field_ptr(static_slot, title_offs, layout.level),
-        chapter: layout.field_ptr(static_slot, title_offs, layout.chapter),
-        mode: layout.field_ptr(static_slot, title_offs, layout.mode),
-        chapter_strawberries: layout.field_ptr(static_slot, title_offs, layout.chapter_strawberries),
-        file_strawberries: layout.field_ptr(static_slot, title_offs, layout.file_strawberries),
-        file_cassettes: layout.field_ptr(static_slot, title_offs, layout.file_cassettes),
-        file_hearts: layout.field_ptr(static_slot, title_offs, layout.file_hearts),
-        timer_active: layout.field_ptr(static_slot, title_offs, layout.timer_active),
-        chapter_started: layout.field_ptr(static_slot, title_offs, layout.chapter_started),
-        chapter_complete: layout.field_ptr(static_slot, title_offs, layout.chapter_complete),
-        chapter_cassette: layout.field_ptr(static_slot, title_offs, layout.chapter_cassette),
-        chapter_heart: layout.field_ptr(static_slot, title_offs, layout.chapter_heart),
+        chapter_time: field(layout.chapter_time),
+        file_time: field(layout.file_time),
+        level: field(layout.level),
+        chapter: field(layout.chapter),
+        mode: field(layout.mode),
+        chapter_strawberries: field(layout.chapter_strawberries),
+        file_strawberries: field(layout.file_strawberries),
+        file_cassettes: field(layout.file_cassettes),
+        file_hearts: field(layout.file_hearts),
+        timer_active: field(layout.timer_active),
+        chapter_started: field(layout.chapter_started),
+        chapter_complete: field(layout.chapter_complete),
+        chapter_cassette: field(layout.chapter_cassette),
+        chapter_heart: field(layout.chapter_heart),
     })
 }
 
@@ -639,8 +651,9 @@ pub fn init(process: &Process) -> Option<GameState> {
     if let Some(state) = init_everest(process) {
         return Some(state);
     }
-    let platform = detect_platform()?;
-    let layout = platform.layout();
-    let sig = find_signature(process, platform.signatures())?;
-    init_vanilla(process, layout, sig)
+    let os = asr::get_os().ok()?;
+    FLAVOURS
+        .iter()
+        .filter(|flavour| flavour.os == os.as_str())
+        .find_map(|flavour| init_vanilla(process, flavour))
 }
