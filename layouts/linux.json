@@ -1,0 +1,31 @@
+{
+  "flavour": "linux",
+  "os": "linux",
+  "game": { "version": "1.4.0.0", "mvid": "d7b2abb4-05ec-4c97-9545-49f0a02e4a41" },
+  "pointer_size": 8,
+  "string": { "length": 16, "chars": 20 },
+  "array": { "length": 24, "data": 32 },
+  "roots": {
+    "Celeste.Celeste::Instance": {
+      "signature": "be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00",
+      "slot": { "displacement": 132, "encoding": "absolute_u32" },
+      "paths": {
+        "Title": { "offsets": [232], "types": ["System.String"] },
+        "AutoSplitterInfo.Chapter": { "offsets": [280, 24], "types": ["Celeste.AutoSplitterInfo", "System.Int32"] },
+        "AutoSplitterInfo.Mode": { "offsets": [280, 28], "types": ["Celeste.AutoSplitterInfo", "System.Int32"] },
+        "AutoSplitterInfo.Level": { "offsets": [280, 16], "types": ["Celeste.AutoSplitterInfo", "System.String"] },
+        "AutoSplitterInfo.TimerActive": { "offsets": [280, 32], "types": ["Celeste.AutoSplitterInfo", "System.Boolean"] },
+        "AutoSplitterInfo.ChapterStarted": { "offsets": [280, 33], "types": ["Celeste.AutoSplitterInfo", "System.Boolean"] },
+        "AutoSplitterInfo.ChapterComplete": { "offsets": [280, 34], "types": ["Celeste.AutoSplitterInfo", "System.Boolean"] },
+        "AutoSplitterInfo.ChapterTime": { "offsets": [280, 40], "types": ["Celeste.AutoSplitterInfo", "System.Int64"] },
+        "AutoSplitterInfo.ChapterStrawberries": { "offsets": [280, 48], "types": ["Celeste.AutoSplitterInfo", "System.Int32"] },
+        "AutoSplitterInfo.ChapterCassette": { "offsets": [280, 52], "types": ["Celeste.AutoSplitterInfo", "System.Boolean"] },
+        "AutoSplitterInfo.ChapterHeart": { "offsets": [280, 53], "types": ["Celeste.AutoSplitterInfo", "System.Boolean"] },
+        "AutoSplitterInfo.FileTime": { "offsets": [280, 56], "types": ["Celeste.AutoSplitterInfo", "System.Int64"] },
+        "AutoSplitterInfo.FileStrawberries": { "offsets": [280, 64], "types": ["Celeste.AutoSplitterInfo", "System.Int32"] },
+        "AutoSplitterInfo.FileCassettes": { "offsets": [280, 68], "types": ["Celeste.AutoSplitterInfo", "System.Int32"] },
+        "AutoSplitterInfo.FileHearts": { "offsets": [280, 72], "types": ["Celeste.AutoSplitterInfo", "System.Int32"] }
+      }
+    }
+  }
+}
