@@ -1,0 +1,220 @@
+name: Layouts
+
+# Probes each vanilla flavour of the game for the memory layout the auto splitter
+# reads. The probe runs inside the flavour's own runtime, next to the real game files.
+#
+# The game files are release assets of a private repository, fetched with the
+# GAME_FILES_TOKEN secret. They never go into caches or artifacts, and this never runs
+# for pull requests from forks.
+#
+# For now this is the spike: it prints what the probe finds, and whether a real
+# `new Celeste()` can be made without booting the game.
+
+on:
+  workflow_dispatch:
+  # Only while the spike is in progress: a dispatch needs the workflow on master first.
+  push:
+    branches:
+      - 'i1-layout-probe-spike'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: layouts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GAME_FILES_REPO: caeyo/celeste-autosplit-gamefiles
+  GAME_FILES_TAG: gamefiles-v1
+  PROBE_BUILD: tools/layout-probe/bin/Release/net45
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  windows:
+    name: ${{ matrix.flavour }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        flavour: [windows-xna, windows-fna]
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Build probe
+        run: dotnet build tools/layout-probe -c Release
+
+      - name: Fetch game files
+        env:
+          GH_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
+        run: |
+          gh release download "$GAME_FILES_TAG" --repo "$GAME_FILES_REPO" --pattern "celeste-${{ matrix.flavour }}.zip" --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP/celeste-${{ matrix.flavour }}.zip" -d "$RUNNER_TEMP/game"
+          rm "$RUNNER_TEMP/celeste-${{ matrix.flavour }}.zip"
+
+      # XNA's assemblies load from the GAC, so XNA builds need the redistributable,
+      # which needs the VC++ 2010 runtime.
+      - name: Install XNA 4.0
+        if: matrix.flavour == 'windows-xna'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
+        run: |
+          "VC++ 2010 x86 runtime preinstalled: $(Test-Path C:\Windows\SysWOW64\msvcr100.dll)"
+          if (-not (Test-Path C:\Windows\SysWOW64\msvcr100.dll)) {
+            Invoke-WebRequest https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x86.exe -OutFile $env:RUNNER_TEMP\vcredist_x86.exe
+            $vc = Start-Process $env:RUNNER_TEMP\vcredist_x86.exe -ArgumentList '/q', '/norestart' -Wait -PassThru
+            "VC++ 2010 x86 installer exit code: $($vc.ExitCode)"
+          }
+          gh release download $env:GAME_FILES_TAG --repo $env:GAME_FILES_REPO --pattern xna-redist-4.0.zip --dir $env:RUNNER_TEMP
+          Expand-Archive $env:RUNNER_TEMP\xna-redist-4.0.zip $env:RUNNER_TEMP\xna
+          $xna = Start-Process msiexec -ArgumentList '/i', "$env:RUNNER_TEMP\xna\xnafx40_redist.msi", '/qn', '/norestart' -Wait -PassThru
+          "XNA installer exit code: $($xna.ExitCode)"
+          if ($xna.ExitCode -notin 0, 3010) { exit 1 }
+
+      - name: Probe
+        working-directory: ${{ runner.temp }}/game
+        run: |
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD"/LayoutProbe.* .
+          ./LayoutProbe.exe
+
+      - name: Construct
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/game
+        run: ./LayoutProbe.exe --construct
+
+  linux:
+    name: linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Build probe
+        run: dotnet build tools/layout-probe -c Release
+
+      - name: Fetch game files
+        env:
+          GH_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
+        run: |
+          gh release download "$GAME_FILES_TAG" --repo "$GAME_FILES_REPO" --pattern celeste-linux.zip --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP/celeste-linux.zip" -d "$RUNNER_TEMP/game"
+          rm "$RUNNER_TEMP/celeste-linux.zip"
+
+      - name: Install Xvfb and Mesa
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends xvfb xauth libgl1 libgl1-mesa-dri libegl1 libegl-mesa0
+
+      # MonoKickstart runs the .exe named after itself, with the game's own Mono.
+      - name: Probe
+        working-directory: ${{ runner.temp }}/game
+        run: |
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD"/LayoutProbe.* .
+          cp Celeste.bin.x86_64 LayoutProbe.bin.x86_64
+          chmod +x LayoutProbe.bin.x86_64
+          ./LayoutProbe.bin.x86_64
+
+      - name: Construct (no display)
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/game
+        run: ./LayoutProbe.bin.x86_64 --construct
+
+      - name: Construct (SDL dummy video driver)
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/game
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: ./LayoutProbe.bin.x86_64 --construct
+
+      - name: Construct (SDL offscreen video driver)
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/game
+        env:
+          SDL_VIDEODRIVER: offscreen
+        run: ./LayoutProbe.bin.x86_64 --construct
+
+      - name: Construct (Xvfb)
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/game
+        run: xvfb-run -a -s '-screen 0 1280x720x24' ./LayoutProbe.bin.x86_64 --construct
+
+  macos:
+    name: macos (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The game is x86_64 only: on arm64 it runs under Rosetta.
+        runner: [macos-latest, macos-15-intel]
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Build probe
+        run: dotnet build tools/layout-probe -c Release
+
+      - name: Fetch game files
+        env:
+          GH_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
+        run: |
+          gh release download "$GAME_FILES_TAG" --repo "$GAME_FILES_REPO" --pattern celeste-macos.zip --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP/celeste-macos.zip" -d "$RUNNER_TEMP/game"
+          rm "$RUNNER_TEMP/celeste-macos.zip"
+
+      - name: Check x86_64 support
+        run: |
+          sw_vers
+          uname -m
+          if [ "$(uname -m)" = arm64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Installing Rosetta"
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+          arch -x86_64 /usr/bin/true && echo "x86_64 binaries run"
+
+      # MonoKickstart runs the .exe named after itself from Resources, with the game's own Mono.
+      - name: Probe
+        working-directory: ${{ runner.temp }}/game/Celeste.app/Contents
+        run: |
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD"/LayoutProbe.* Resources/
+          cp MacOS/Celeste MacOS/LayoutProbe
+          chmod +x MacOS/LayoutProbe
+          MacOS/LayoutProbe
+
+      - name: Construct
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/game/Celeste.app/Contents
+        run: MacOS/LayoutProbe --construct
+
+      - name: Construct (SDL dummy video driver)
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/game/Celeste.app/Contents
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: MacOS/LayoutProbe --construct
