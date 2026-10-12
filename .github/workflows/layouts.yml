@@ -58,20 +58,14 @@ jobs:
           unzip -q "$RUNNER_TEMP/celeste-${{ matrix.flavour }}.zip" -d "$RUNNER_TEMP/game"
           rm "$RUNNER_TEMP/celeste-${{ matrix.flavour }}.zip"
 
-      # XNA's assemblies load from the GAC, so XNA builds need the redistributable. Its
-      # mixed-mode assemblies import the VC++ 2010 runtime, which the runner image lacks.
+      # XNA's assemblies load from the GAC, so XNA builds need the redistributable. It
+      # also installs the VC++ 2010 runtime and DirectX pieces its assemblies import.
       - name: Install XNA 4.0
         if: matrix.flavour == 'windows-xna'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
         run: |
-          "VC++ 2010 x86 runtime preinstalled: $(Test-Path C:\Windows\SysWOW64\msvcr100.dll)"
-          if (-not (Test-Path C:\Windows\SysWOW64\msvcr100.dll)) {
-            Invoke-WebRequest https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x86.exe -OutFile $env:RUNNER_TEMP\vcredist_x86.exe
-            $vc = Start-Process $env:RUNNER_TEMP\vcredist_x86.exe -ArgumentList '/q', '/norestart' -Wait -PassThru
-            "VC++ 2010 x86 installer exit code: $($vc.ExitCode)"
-          }
           gh release download $env:GAME_FILES_TAG --repo $env:GAME_FILES_REPO --pattern xna-redist-4.0.zip --dir $env:RUNNER_TEMP
           Expand-Archive $env:RUNNER_TEMP\xna-redist-4.0.zip $env:RUNNER_TEMP\xna
           $xna = Start-Process msiexec -ArgumentList '/i', "$env:RUNNER_TEMP\xna\xnafx40_redist.msi", '/qn', '/norestart' -Wait -PassThru
