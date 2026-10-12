@@ -4,7 +4,6 @@
   "game": { "version": "1.4.0.0", "mvid": "d7b2abb4-05ec-4c97-9545-49f0a02e4a41" },
   "pointer_size": 8,
   "string": { "length": 16, "chars": 20 },
-  "array": { "length": 24, "data": 32 },
   "roots": {
     "Celeste.Celeste::Instance": {
       "signature": "be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00",
