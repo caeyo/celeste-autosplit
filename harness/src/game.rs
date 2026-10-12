@@ -1,12 +1,10 @@
-//! A stand-in for the game, for the auto splitter to read. From a layout in `layouts/`, it lays
-//! out in its own memory what the layout describes, then writes the values it's sent into it.
-//!
-//! Usage: fake-celeste LAYOUT [--store-width 4|8]
+//! The fake game: the memory that a layout in `layouts/` describes, built in the harness's own
+//! process for the auto splitter to read, and where each value the reading test sets goes.
 //!
 //! For a vanilla flavour's layout, it builds:
 //! - for each root, code holding the root's signature, then a store into the root's static
-//!   slot, using the store pattern whose address is `--store-width` bytes (by default, the
-//!   first one). The slot holds the root's object.
+//!   slot, using the store pattern whose address has the width asked for (by default, the first
+//!   one). The slot holds the root's object.
 //! - every object along each path from the root's object, with "Celeste" in `Title`.
 //!
 //! The code starts with a decoy: the same code, storing into a slot whose object has another
@@ -16,24 +14,16 @@
 //!
 //! What the auto splitter reads through 32-bit addresses is mapped below 4 GB: everything for a
 //! flavour with 4-byte pointers, and the slot for a 4-byte store.
-//!
-//! Once all of it is mapped, it prints `ready`. Then, for each line `frame {"name": value, ...}`
-//! on stdin, it writes the values into the paths or fields with those names, as their types say,
-//! and prints `ack`. A string's value can be null. It exits when stdin closes.
 
-mod memory;
-
-use std::{
-    collections::BTreeMap,
-    io::{self, BufRead, Write},
-    path::PathBuf,
-    process::ExitCode,
-};
+use std::{collections::BTreeMap, path::Path};
 
 use anyhow::{Context, Result, bail, ensure};
-use harness::{EVEREST_FILE, Everest, Flavour, StringLayout};
-use memory::Arena;
 use serde_json::Value;
+
+use crate::{
+    layout::{self, EVEREST_FILE, Everest, FieldPath, Flavour, StringLayout},
+    memory::{self, Arena},
+};
 
 /// The arena of objects and strings.
 const ARENA_SIZE: usize = 1 << 20;
@@ -72,66 +62,8 @@ const FILLER: usize = 200;
 /// What it puts there: int3, which no store pattern contains.
 const FILLER_BYTE: u8 = 0xcc;
 
-fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("fake-celeste: {e:#}");
-            ExitCode::FAILURE
-        }
-    }
-}
-
-fn run() -> Result<()> {
-    let mut args = std::env::args_os().skip(1);
-    let layout = PathBuf::from(
-        args.next()
-            .context("usage: fake-celeste LAYOUT [--store-width 4|8]")?,
-    );
-    let mut store_width = None;
-    while let Some(arg) = args.next() {
-        match arg.to_str() {
-            Some("--store-width") => {
-                let width = args.next().context("--store-width needs a value")?;
-                store_width = Some(
-                    width
-                        .to_str()
-                        .and_then(|w| w.parse().ok())
-                        .context("--store-width takes 4 or 8")?,
-                );
-            }
-            _ => bail!("unknown argument {}", arg.to_string_lossy()),
-        }
-    }
-
-    let mut game = if layout.file_name().is_some_and(|name| name == EVEREST_FILE) {
-        Game::everest(&harness::read(&layout)?)?
-    } else {
-        Game::vanilla(&harness::read(&layout)?, store_width)?
-    };
-
-    let mut stdout = io::stdout().lock();
-    writeln!(stdout, "ready")?;
-    stdout.flush()?;
-    for line in io::stdin().lock().lines() {
-        let line = line?;
-        let values = line
-            .strip_prefix("frame ")
-            .with_context(|| format!("expected a frame, got {line}"))?;
-        let values: BTreeMap<String, Value> =
-            serde_json::from_str(values).context("parsing a frame")?;
-        for (name, value) in &values {
-            game.set(name, value)
-                .with_context(|| format!("setting {name} to {value}"))?;
-        }
-        writeln!(stdout, "ack")?;
-        stdout.flush()?;
-    }
-    Ok(())
-}
-
-/// The fake game's memory, and where each value the frames set goes.
-struct Game {
+/// The fake game's memory, and where each value the reading test sets goes.
+pub struct Game {
     arena: Arena,
     pointer_size: u64,
     /// How .NET strings are laid out, for a vanilla flavour.
@@ -139,7 +71,7 @@ struct Game {
     fields: BTreeMap<String, Field>,
 }
 
-/// A path or field that frames can set.
+/// A path or field that the reading test can set.
 #[derive(Copy, Clone)]
 enum Field {
     Int {
@@ -175,6 +107,16 @@ enum Int {
 }
 
 impl Game {
+    /// Builds the game that a layout file describes. For a vanilla flavour, the store pattern is
+    /// the one whose slot address has `store_width` bytes.
+    pub fn build(file: &Path, store_width: Option<usize>) -> Result<Self> {
+        if file.file_name().is_some_and(|name| name == EVEREST_FILE) {
+            Self::everest(&layout::read(file)?)
+        } else {
+            Self::vanilla(&layout::read(file)?, store_width)
+        }
+    }
+
     fn vanilla(layout: &Flavour, store_width: Option<usize>) -> Result<Self> {
         let pointer_size = layout.pointer_size;
         ensure!(
@@ -190,7 +132,7 @@ impl Game {
                     Some(width) => root
                         .store
                         .iter()
-                        .find(|store| harness::slot_width(store) == width),
+                        .find(|store| layout::slot_width(store) == width),
                     None => root.store.first(),
                 };
                 let store = store.with_context(|| {
@@ -202,7 +144,7 @@ impl Game {
         let low = pointer_size == 4
             || roots
                 .iter()
-                .any(|(_, _, store)| harness::slot_width(store) == 4);
+                .any(|(_, _, store)| layout::slot_width(store) == 4);
         let mut game = Self {
             arena: Arena::map(ARENA_SIZE, if low { LOW } else { HIGH })?,
             pointer_size,
@@ -223,7 +165,7 @@ impl Game {
             game.write_pointer(slot, object)?;
             slots.push(format!(
                 "{name} at 0x{slot:x}, with a {}-byte store",
-                harness::slot_width(store)
+                layout::slot_width(store)
             ));
 
             // First a copy whose store goes into a slot holding an object with another title,
@@ -260,7 +202,7 @@ impl Game {
         memory::write(code_address, &code);
         memory::make_executable(code_address, code.len())?;
         eprintln!(
-            "fake-celeste: {}: code at 0x{code_address:x}, slots: {}",
+            "fake game: {}: code at 0x{code_address:x}, slots: {}",
             layout.flavour,
             slots.join(", ")
         );
@@ -271,8 +213,9 @@ impl Game {
         Ok(game)
     }
 
-    /// Builds the objects along the path, and returns the field it ends in, if frames can set it.
-    fn build_path(&mut self, mut object: u64, path: &harness::FieldPath) -> Result<Option<Field>> {
+    /// Builds the objects along the path, and returns the field it ends in, if the reading test
+    /// can set it.
+    fn build_path(&mut self, mut object: u64, path: &FieldPath) -> Result<Option<Field>> {
         let (&last, hops) = path.offsets.split_last().context("no offsets")?;
         ensure!(
             path.types.len() == path.offsets.len(),
@@ -306,7 +249,7 @@ impl Game {
             },
             Some("System.Boolean") => Field::Bool { address },
             Some("System.String") => Field::DotnetString { address },
-            // Any other object: it's there, but frames can't set it.
+            // Any other object: it's there, but the reading test can't set it.
             _ => {
                 if self.read_pointer(address) == 0 {
                     let next = self.arena.alloc(OBJECT_SIZE)?;
@@ -333,7 +276,7 @@ impl Game {
             .unwrap_or(0);
         let info = memory::map(size as usize, &[])?;
         memory::write(info, &magic);
-        eprintln!("fake-celeste: everest: info struct at 0x{info:x}");
+        eprintln!("fake game: everest: info struct at 0x{info:x}");
 
         let mut fields = BTreeMap::new();
         for (name, field) in &layout.fields {
@@ -366,11 +309,13 @@ impl Game {
         Ok(game)
     }
 
-    fn set(&mut self, name: &str, value: &Value) -> Result<()> {
+    /// Writes the value into the path or field with that name, as its type says. A string's
+    /// value can be null.
+    pub fn set(&mut self, name: &str, value: &Value) -> Result<()> {
         let field = *self
             .fields
             .get(name)
-            .context("the layout has no such path or field, or frames can't set it")?;
+            .context("the layout has no such path or field, or the reading test can't set it")?;
         self.write(field, value)
     }
 
@@ -470,7 +415,7 @@ fn string_value(value: &Value) -> Result<Option<&str>> {
 /// A pattern's bytes, with the slot's address in its `SS` bytes, and zero for any byte.
 fn pattern_bytes(pattern: &str, slot: u64) -> Result<Vec<u8>> {
     ensure!(
-        harness::slot_width(pattern) != 4 || slot <= u64::from(u32::MAX),
+        layout::slot_width(pattern) != 4 || slot <= u64::from(u32::MAX),
         "a 4-byte store into 0x{slot:x}"
     );
     let mut slot_bytes = slot.to_le_bytes().into_iter();

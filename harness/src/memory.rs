@@ -1,5 +1,5 @@
-//! The fake's own memory: mappings where the auto splitter looks for the game, and an arena for
-//! the game's objects.
+//! The fake game's memory, in the harness's own process: mappings where the auto splitter looks
+//! for the game, and an arena for the game's objects.
 
 use std::ptr;
 
@@ -15,7 +15,7 @@ pub fn map(size: usize, at: &[u64]) -> Result<u64> {
         if let Some(mapped) = sys::map(size, Some(address)) {
             return Ok(mapped);
         }
-        eprintln!("fake-celeste: 0x{address:x} isn't free, trying the next address");
+        eprintln!("fake game: 0x{address:x} isn't free, trying the next address");
     }
     bail!("couldn't map {size} bytes at any of {at:x?}");
 }
@@ -29,8 +29,8 @@ pub fn make_executable(address: u64, size: usize) -> Result<()> {
 }
 
 pub fn write(address: u64, bytes: &[u8]) {
-    // SAFETY: Only ever called on the fake's own mappings, which are read-write until made
-    // executable, and nothing else uses them.
+    // SAFETY: Only ever called on the fake game's mappings, which are read-write until made
+    // executable, and nothing else in the harness uses them.
     unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), address as *mut u8, bytes.len()) }
 }
 
@@ -148,7 +148,7 @@ mod sys {
             )
         };
         if result != libc::KERN_SUCCESS {
-            eprintln!("fake-celeste: vm_allocate at 0x{address:x} returned {result}");
+            eprintln!("fake game: vm_allocate at 0x{address:x} returned {result}");
             return None;
         }
         Some(base as *mut c_void)
@@ -156,7 +156,7 @@ mod sys {
 
     pub fn make_executable(address: u64, size: usize) -> bool {
         let size = size.next_multiple_of(page_size());
-        // SAFETY: Only called on the fake's own mappings, once it's done writing them.
+        // SAFETY: Only called on the fake game's mappings, once it's done writing them.
         unsafe { libc::mprotect(address as *mut c_void, size, PROT_READ | PROT_EXEC) == 0 }
     }
 }
@@ -180,7 +180,7 @@ mod sys {
 
     pub fn make_executable(address: u64, size: usize) -> bool {
         let mut old = 0;
-        // SAFETY: Only called on the fake's own allocations, once it's done writing them.
+        // SAFETY: Only called on the fake game's allocations, once it's done writing them.
         unsafe { VirtualProtect(address as *const c_void, size, PAGE_EXECUTE_READ, &mut old) != 0 }
     }
 }

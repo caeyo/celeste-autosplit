@@ -79,12 +79,9 @@ jobs:
       - name: Build harness
         run: cargo build --release --locked
 
-      # Reading another process's memory needs root on macOS.
       - name: Reading test
         timeout-minutes: 10
-        env:
-          SUDO: ${{ runner.os == 'macOS' && 'sudo' || '' }}
-        run: $SUDO target/release/harness read --wasm "$RUNNER_TEMP/autosplitter/celeste_autosplit.wasm"
+        run: target/release/harness read --wasm "$RUNNER_TEMP/autosplitter/celeste_autosplit.wasm"
 
   clippy:
     name: Check clippy lints

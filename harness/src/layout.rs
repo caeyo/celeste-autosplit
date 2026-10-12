@@ -1,5 +1,4 @@
-//! What the harness and `fake-celeste` share: the formats of the layout files in `layouts/`,
-//! which `layouts/README.md` describes.
+//! The formats of the layout files in `layouts/`, which `layouts/README.md` describes.
 
 use std::{collections::BTreeMap, fs, path::Path};
 

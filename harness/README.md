@@ -1,9 +1,9 @@
 # harness
 
 Runs the auto splitter, `celeste_autosplit.wasm`, on livesplit-core's own
-`Timer`, against `fake-celeste`: a stand-in for the game, built from the
-layouts in [`layouts/`](../layouts/). It's a native program, outside the wasm
-build.
+`Timer`, against a fake game built from the layouts in
+[`layouts/`](../layouts/), in the harness's own process. It's a native program,
+outside the wasm build.
 
 - `livesplit-core` and its auto splitting runtime, `livesplit-auto-splitting`,
   are pinned to one revision in `Cargo.toml`.
@@ -15,16 +15,20 @@ build.
 
 ## The reading test
 
-For each flavour whose layout is for this OS, and for Everest, the harness
-starts `fake-celeste` with that layout, then loads the auto splitter. Each
-frame writes known values into the fake, then runs one update, which must
-report exactly those values in its debug variables, and nothing else.
+For each flavour whose layout is for this OS, and for Everest, the harness runs
+a case in a copy of itself named like the game: `Celeste.exe` on Windows,
+`Celeste.bin.x86_64` on Linux, and `Celeste` on macOS, since the auto splitter
+finds the game by its process name. The case builds the fake game in its own
+memory, then loads the auto splitter, which attaches to the process it runs in.
+Each frame writes known values into the fake game, then runs one update, which
+must report exactly those values in its debug variables, and nothing else.
 
-The fake takes its offsets from the layouts, which the layout probe measured,
-and the auto splitter from [`memory.rs`](../autosplitter/src/memory.rs), which
-is hand-written. So the test checks one against the other: the field offsets,
-the string offsets, and the signatures and store patterns, since the fake writes
-the layout's copies and the auto splitter scans with its own.
+The fake game takes its offsets from the layouts, which the layout probe
+measured, and the auto splitter from
+[`memory.rs`](../autosplitter/src/memory.rs), which is hand-written. So the test
+checks one against the other: the field offsets, the string offsets, and the
+signatures and store patterns, since the fake game holds the layout's copies and
+the auto splitter scans with its own.
 
 | OS | Cases |
 |---|---|
@@ -53,13 +57,10 @@ Build the wasm module first (`cargo b --release` in `autosplitter/`). Then, from
 this folder:
 
 ```sh
-cargo build --release
-target/release/harness read
+cargo run --release -- read
 ```
 
-Or run the `Reading Test` task in VS Code, which builds both first. On macOS,
-run it with `sudo`, since reading another process's memory needs root there. That
-leaves `target/release/fake/` owned by root.
+Or run the `Reading Test` task in VS Code, which builds the wasm module first.
 
 It prints `ok` or the differences for each case, and exits with 1 if any case
 failed. Options:
@@ -71,14 +72,13 @@ failed. Options:
   objects become maps and arrays lists (default: none).
 - `--timeout SECONDS`: how long each case may take (default: 60).
 
-## fake-celeste
+## The fake game
 
-The harness copies it to `target/release/fake/`, under the game's process name,
-which the auto splitter looks for: `Celeste.exe` on Windows, `Celeste.bin.x86_64`
-on Linux, and `Celeste` on macOS. It starts it as a child process, since on
-Linux only a parent can read a process's memory, and loads the auto splitter
-once it's ready. The runtime only lists processes, and each process's memory
-ranges, once a second.
+The harness copies itself to `target/release/game/`, under the game's process
+name, and runs each case there as `case INDEX`, with the same options. A
+process for each case also keeps each case's fake game from the others. The case
+builds the whole fake game before it loads the auto splitter, since the runtime
+only lists processes, and each process's memory ranges, once a second.
 
 From a vanilla flavour's layout, it builds:
 
@@ -99,7 +99,5 @@ the auto splitter has to take the earlier match.
 From Everest's, it builds the info struct, with its magic and version, at the
 start of a mapping of its own.
 
-It talks over stdin and stdout. Once everything is mapped, it prints `ready`.
-For each line `frame {"name": value, ...}`, it writes each value into the path or
-field with that name, as its type says, and prints `ack`. Everest's flags are
-named like `ChapterFlags.TimerActive`. It exits when stdin closes.
+Each frame writes its values into the paths or fields with those names, as their
+types say. Everest's flags are named like `ChapterFlags.TimerActive`.

@@ -1,13 +1,12 @@
 //! The reading test. For each layout usable on this OS, the auto splitter reads a fake game built
-//! from it, one update per frame. Each frame writes known values into the fake, and the debug
+//! from it, one update per frame. Each frame writes known values into the fake game, and the debug
 //! variables the auto splitter reports must be exactly those values.
 //!
-//! The fake's offsets come from the layouts, and the auto splitter's from its own hand-written
-//! `memory.rs`, so the test checks one against the other.
+//! The fake game's offsets come from the layouts, and the auto splitter's from its own
+//! hand-written `memory.rs`, so the test checks one against the other.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    ffi::OsString,
     fs,
     path::{Path, PathBuf},
     thread,
@@ -15,11 +14,14 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use harness::{EVEREST_FILE, Everest, Flavour};
 use livesplit_auto_splitting::{Config, Runtime, settings};
 use serde_json::{Value, json};
 
-use crate::{fake::Fake, timer::HarnessTimer};
+use crate::{
+    game::Game,
+    layout::{self, EVEREST_FILE, Everest, Flavour},
+    timer::HarnessTimer,
+};
 
 /// The vanilla paths the auto splitter reports, and the debug variable it reports each one as.
 const VANILLA: &[(&str, &str)] = &[
@@ -115,7 +117,7 @@ pub fn cases(layouts: &Path) -> Result<Vec<Case>> {
         {
             continue;
         }
-        let flavour: Flavour = harness::read(&file)?;
+        let flavour: Flavour = layout::read(&file)?;
         if flavour.os != os {
             continue;
         }
@@ -123,7 +125,7 @@ pub fn cases(layouts: &Path) -> Result<Vec<Case>> {
         let widths = flavour
             .roots
             .values()
-            .flat_map(|root| root.store.iter().map(|store| harness::slot_width(store)))
+            .flat_map(|root| root.store.iter().map(|store| layout::slot_width(store)))
             .collect::<BTreeSet<_>>();
         for &width in &widths {
             // A 64-bit macOS process can't map anything below 4 GB, and the game on macOS
@@ -150,7 +152,7 @@ pub fn cases(layouts: &Path) -> Result<Vec<Case>> {
     let file = layouts.join(EVEREST_FILE);
     cases.push(Case {
         name: "everest".to_owned(),
-        values: everest_values(&harness::read(&file)?)?,
+        values: everest_values(&layout::read(&file)?)?,
         layout: file,
         store_width: None,
         null_string: Some(""),
@@ -326,34 +328,26 @@ fn differences_from(
     differences
 }
 
-/// Runs a case: the fake, and the auto splitter with a timer of its own. Returns each frame's
-/// differences, prefixed with the frame's name. Fails if the case takes longer than the timeout,
-/// or the fake or the auto splitter stop.
+/// Runs a case in this process, which has to run as the game: the fake game, and the auto
+/// splitter with a timer of its own. Returns each frame's differences, prefixed with the frame's
+/// name. Fails if the case takes longer than the timeout, or the auto splitter stops.
 pub fn run(
     case: &Case,
-    fake: &Path,
     wasm: &[u8],
     settings: Option<&settings::Map>,
     timeout: Duration,
     timer: &HarnessTimer,
 ) -> Result<Vec<String>> {
     let deadline = Instant::now() + timeout;
-    let mut args = vec![OsString::from(&case.layout)];
-    if let Some(width) = case.store_width {
-        args.extend(["--store-width".into(), width.to_string().into()]);
-    }
-    let args = args.iter().map(OsString::as_os_str).collect::<Vec<_>>();
-    let mut fake = Fake::start(fake, &args, deadline)?;
+    let mut game = Game::build(&case.layout, case.store_width)?;
 
-    // Only now that the fake has mapped everything: the runtime lists the processes when it's
-    // created, and each process's memory ranges when they're first asked for, then only once
-    // a second.
+    // Only now that the game is mapped: the runtime lists the processes when it's created, and
+    // each process's memory ranges when they're first asked for, then only once a second.
     let auto_splitter = Runtime::new(Config::default())?
         .compile(wasm)?
         .instantiate(timer.clone(), settings.cloned(), None)?;
     // A runtime stepped by hand has no watchdog of its own, so this interrupts the auto splitter
-    // if it's still running at the deadline. Each case's runtime has an engine of its own, so
-    // this can't interrupt another case.
+    // if it's still running at the deadline.
     let interrupt = auto_splitter.interrupt_handle();
     thread::spawn(move || {
         thread::sleep(deadline.saturating_duration_since(Instant::now()));
@@ -362,13 +356,10 @@ pub fn run(
 
     let mut differences = Vec::new();
     for (name, values) in frames(&case.values) {
-        let named = case
-            .values
-            .iter()
-            .zip(&values)
-            .map(|(reported, value)| (reported.name.to_owned(), value.clone()))
-            .collect();
-        fake.frame(&Value::Object(named), deadline)?;
+        for (reported, value) in case.values.iter().zip(&values) {
+            game.set(reported.name, value)
+                .with_context(|| format!("setting {} to {value}", reported.name))?;
+        }
         timer.clear_variables();
         if let Err(e) = auto_splitter.lock().update() {
             if Instant::now() >= deadline {

@@ -20,7 +20,7 @@ An auto splitter for Celeste that runs on every LiveSplit host.
 ```sh
 cd autosplitter && cargo b --release    # wasm module
 cd component && dotnet build            # LiveSplit component (+ dotnet test, after the wasm)
-cd harness && cargo build --release     # reading test (target/release/harness read, after the wasm)
+cd harness && cargo run -r -- read      # reading test, after the wasm
 node site/serve.mjs                     # website at http://localhost:8000
 ```
 
