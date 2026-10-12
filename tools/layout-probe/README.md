@@ -15,13 +15,14 @@ In order, it:
    - every path's offsets, with `ldflda` on uninitialized objects, since
      `Marshal.OffsetOf` doesn't work on auto-layout classes;
    - where strings hold their length and characters;
-3. for each root, compiles the anchor method, finds where its code references
-   the static slot, and checks that the flavour's hand-written signature
-   matches once before it;
+3. for each root, compiles the anchor method and checks the flavour's
+   hand-written signature against its code, as the auto splitter will use it:
+   the signature must match once, and the first store pattern to match after it
+   must hold the static slot's address;
 4. constructs the game (`new Celeste()`), writes distinctive values into every
    field that still holds its default, and reads every path back raw from the
-   slot whose address the code holds, as the auto splitter does. It does this
-   twice, with different values;
+   slot whose address the store holds. It does this twice, with different
+   values;
 5. prints the layout, and writes it if `--out` is given.
 
 It prints what it finds along the way, including every field of each type along
@@ -36,16 +37,25 @@ static field that the auto splitter finds through machine code:
 - **`Field`**: the static field, as `Namespace.Type::Field`.
 - **`Anchor`**: the method whose compiled code holds the field's address, as
   `Namespace.Type::Name(ParameterType, ...)`.
-- **`Signatures`**: per flavour, the hand-written signature that finds the
-  anchor's code: hex bytes, with `??` for any byte. They're copies of the ones
-  in [`memory.rs`](../../autosplitter/src/memory.rs). Each must match the
-  anchor's code once, followed by a reference to the field.
+- **`Signatures`**: per flavour, how the auto splitter finds the field's
+  address in the anchor's code. They're copies of the ones in
+  [`memory.rs`](../../autosplitter/src/memory.rs). Each has:
+  - a signature that matches the anchor's code once: hex bytes, with `??` for
+    any byte;
+  - store patterns for the code that stores into the field after it, with `SS`
+    for the field's address: 4 or 8 bytes in a row. The first one to match
+    after the signature holds the address. They're searched for rather than
+    expected at a fixed distance, because the instructions in between can
+    change length. On Linux, an address takes 4 or 8 bytes depending on where
+    the heap is.
 - **`Paths`**: instance fields to read from the root's object, joined with dots.
   Each name is looked up in the previous field's type, or its nearest base
   class with that field. A path only goes through objects of concrete classes,
   and ends in a `string`, `bool`, `int`, `long` or object.
 
 A new root needs a signature for every flavour, both here and in `memory.rs`.
+The probe prints where the field's address appears in the anchor's code, to
+help write the store patterns.
 
 ## Building
 

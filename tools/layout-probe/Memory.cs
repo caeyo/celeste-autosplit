@@ -70,8 +70,6 @@ namespace LayoutProbe
 
         public static int ReadInt32(ulong address) => Marshal.ReadInt32(ToPointer(address));
 
-        public static uint ReadUInt32(ulong address) => (uint)Marshal.ReadInt32(ToPointer(address));
-
         public static byte ReadByte(ulong address) => Marshal.ReadByte(ToPointer(address));
 
         public static char ReadChar(ulong address) => (char)Marshal.ReadInt16(ToPointer(address));

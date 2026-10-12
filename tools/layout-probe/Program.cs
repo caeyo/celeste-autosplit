@@ -189,7 +189,7 @@ namespace LayoutProbe
 
         private static Root ResolveRoot(ManifestRoot entry)
         {
-            if (!entry.Signatures.TryGetValue(flavour, out string signature))
+            if (!entry.Signatures.TryGetValue(flavour, out Signature signature))
             {
                 throw new ProbeException(entry.Field + " has no signature for " + flavour + ": add one to Manifest.cs and to memory.rs");
             }
@@ -198,7 +198,7 @@ namespace LayoutProbe
                 Name = entry.Field,
                 Field = Names.StaticField(game, entry.Field),
                 Anchor = Names.Method(game, entry.Anchor),
-                Signature = new Signature(signature),
+                Signature = signature,
             };
             CheckObjectType(root.Field.FieldType, root.Name);
             Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), entry.Anchor);
@@ -345,26 +345,33 @@ namespace LayoutProbe
             MachineCode.HexDump(code, Console.WriteLine);
 
             List<SlotReference> references = MachineCode.FindSlotReferences(code, root.Slot);
-            Console.WriteLine("slot references: " + (references.Count == 0 ? "none" : string.Join(", ", references.Select(r => "+0x" + r.Offset.ToString("x") + " " + r).ToArray())));
-            int[] matches = root.Signature.Matches(code).ToArray();
-            Console.WriteLine("signature {0}: {1}", root.Signature, matches.Length == 0 ? "no match" : "matches at " + string.Join(", ", matches.Select(m => "+0x" + m.ToString("x")).ToArray()));
+            Console.WriteLine("slot's address in the code: " + (references.Count == 0 ? "nowhere" : string.Join(", ", references.Select(r => r.ToString()).ToArray())));
+            int[] matches = root.Signature.Code.Matches(code).ToArray();
+            Console.WriteLine("signature {0}: {1}", root.Signature.Code, matches.Length == 0 ? "no match" : "matches at " + string.Join(", ", matches.Select(m => "+0x" + m.ToString("x")).ToArray()));
             if (matches.Length != 1)
             {
                 throw new ProbeException(matches.Length == 0 ? "the signature doesn't match the anchor's code" : "the signature matches the anchor's code more than once");
             }
             root.Match = matches[0];
 
-            // The auto splitter reads the slot's address at a fixed displacement from the match,
-            // so the first reference after it is the one. An absolute u32 and u64 at the same
-            // place both read the slot. The u64 is kept: a 64-bit immediate still holds the slot
-            // in a run where it's above 4 GB, and the u32 doesn't.
-            root.Reference = references
-                .Where(r => r.Offset >= root.Match)
-                .OrderBy(r => r.Offset)
-                .ThenByDescending(r => r.Width)
+            // As the auto splitter does: the store is the first store pattern to match after the
+            // signature, and must hold the slot's address.
+            int after = root.Match + root.Signature.Code.Length;
+            var store = root.Signature.Store
+                .Select(p => new { Pattern = p, Match = p.Matches(code, after).DefaultIfEmpty(-1).First() })
+                .Where(s => s.Match >= 0)
+                .OrderBy(s => s.Match)
                 .FirstOrDefault()
-                ?? throw new ProbeException("the slot isn't referenced after the signature's match");
-            Console.WriteLine("slot reference: +{0} from the match, {1}", root.Displacement, root.Reference);
+                ?? throw new ProbeException("no store pattern matches after the signature");
+            root.Store = store.Pattern;
+            root.StoreMatch = store.Match;
+            Console.WriteLine("store {0}: matches first, at +0x{1:x}, {2} bytes after the signature", root.Store, root.StoreMatch, root.StoreMatch - after);
+            ulong slot = root.Store.Slot(code, root.StoreMatch);
+            if (slot != root.Slot)
+            {
+                throw new ProbeException("the store's address is 0x" + slot.ToString("x") + ", but the slot is at 0x" + root.Slot.ToString("x"));
+            }
+            Console.WriteLine("the store's address is the slot's");
         }
 
         private sealed class PathCheck
@@ -445,12 +452,11 @@ namespace LayoutProbe
                 foreach (Root root in roots)
                 {
                     // The slot and the object in it are checked before anything is read through
-                    // them, so a wrong displacement or encoding fails here instead of crashing
-                    // the process.
+                    // them, so a wrong address fails here instead of crashing the process.
                     ulong slot = SlotFromCode(root);
                     if (slot != root.Slot)
                     {
-                        Console.WriteLine("  {0}: the code's reference reads 0x{1:x}, but the slot is at 0x{2:x}", root.Name, slot, root.Slot);
+                        Console.WriteLine("  {0}: the store's address is 0x{1:x}, but the slot is at 0x{2:x}", root.Name, slot, root.Slot);
                         mismatches.Add(root.Name);
                         continue;
                     }
@@ -462,7 +468,7 @@ namespace LayoutProbe
                         mismatches.Add(root.Name);
                         continue;
                     }
-                    Console.WriteLine("  {0}: the code's reference reads the slot, which holds the object at 0x{1:x}", root.Name, instance);
+                    Console.WriteLine("  {0}: the store's address is the slot, which holds the object at 0x{1:x}", root.Name, instance);
                     foreach (PathCheck check in checks.Where(c => c.Root == root))
                     {
                         object value = Expected(check);
@@ -506,17 +512,9 @@ namespace LayoutProbe
             return type.IsValueType || type == typeof(string) ? value : (object)Memory.AddressOf(value);
         }
 
-        /// <summary>The address in the slot reference the auto splitter reads, decoded the way it does.</summary>
-        private static ulong SlotFromCode(Root root)
-        {
-            ulong at = root.Code + (ulong)root.Match + (ulong)root.Displacement;
-            switch (root.Reference.Encoding)
-            {
-                case "absolute_u32": return Memory.ReadUInt32(at);
-                case "absolute_u64": return (ulong)Memory.ReadInt64(at);
-                default: throw new ProbeException("unknown slot encoding " + root.Reference.Encoding);
-            }
-        }
+        /// <summary>The slot's address, read raw from the store in the anchor's code.</summary>
+        private static ulong SlotFromCode(Root root) =>
+            root.Store.Slot(Memory.ReadMapped(root.Code + (ulong)root.StoreMatch, root.Store.Length), 0);
 
         /// <summary>Reads a path raw from its root's object, through the measured offsets.</summary>
         private static object ReadPath(ulong instance, FieldPath path)
@@ -592,8 +590,8 @@ namespace LayoutProbe
         {
             IEnumerable<string> rootsJson = roots.Select(root =>
                 "    " + Quote(root.Name) + ": {\n" +
-                "      \"signature\": " + Quote(root.Signature.ToString()) + ",\n" +
-                "      \"slot\": { \"displacement\": " + root.Displacement + ", \"encoding\": " + Quote(root.Reference.Encoding) + " },\n" +
+                "      \"signature\": " + Quote(root.Signature.Code.ToString()) + ",\n" +
+                "      \"store\": [" + string.Join(", ", root.Signature.Store.Select(p => Quote(p.ToString())).ToArray()) + "],\n" +
                 "      \"paths\": {\n" +
                 string.Join(",\n", root.Paths.Select(path =>
                     "        " + Quote(path.Name) + ": { " +
