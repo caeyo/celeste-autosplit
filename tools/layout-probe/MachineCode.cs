@@ -5,99 +5,103 @@ using System.Text;
 
 namespace LayoutProbe
 {
-    /// <summary>A hand-written signature, and where the static slot's address follows it.</summary>
-    internal sealed class Signature
+    /// <summary>
+    /// A hand-written byte pattern: hex bytes separated by spaces, with ?? for any byte, and SS
+    /// for the bytes of a static slot's address, 4 or 8 of them in a row.
+    /// </summary>
+    internal sealed class Pattern
     {
-        public readonly string Name;
-        public readonly int?[] Pattern;
-        public readonly int SlotDisplacement;
+        private const int AnyByte = -1;
+        private const int SlotByte = -2;
+
+        private readonly int[] bytes;
+
+        /// <summary>Where the slot's address starts in the pattern, if it has one.</summary>
+        public readonly int SlotOffset;
+
+        /// <summary>The slot address's width: 4, 8, or 0 without one.</summary>
         public readonly int SlotWidth;
 
-        public Signature(string name, string pattern, int slotDisplacement, int slotWidth)
+        public Pattern(string pattern)
         {
-            Name = name;
-            Pattern = pattern.Split(' ').Select(b => b == "??" ? (int?)null : Convert.ToInt32(b, 16)).ToArray();
-            SlotDisplacement = slotDisplacement;
-            SlotWidth = slotWidth;
+            bytes = pattern.Split(' ').Select(b => b == "??" ? AnyByte : b == "SS" ? SlotByte : Convert.ToInt32(b, 16)).ToArray();
+            SlotOffset = Array.IndexOf(bytes, SlotByte);
+            SlotWidth = bytes.Count(b => b == SlotByte);
+            if (SlotWidth != 0 && (SlotWidth != 4 && SlotWidth != 8 || bytes.Skip(SlotOffset).Take(SlotWidth).Any(b => b != SlotByte)))
+            {
+                throw new ArgumentException(pattern + ": SS should be 4 or 8 bytes in a row");
+            }
         }
 
-        public IEnumerable<int> Matches(byte[] code)
+        public int Length => bytes.Length;
+
+        public IEnumerable<int> Matches(byte[] code, int from = 0)
         {
-            for (int start = 0; start + Pattern.Length <= code.Length; start++)
+            for (int start = from; start + bytes.Length <= code.Length; start++)
             {
                 int i = 0;
-                while (i < Pattern.Length && (Pattern[i] == null || Pattern[i] == code[start + i]))
+                while (i < bytes.Length && (bytes[i] < 0 || bytes[i] == code[start + i]))
                 {
                     i++;
                 }
-                if (i == Pattern.Length)
+                if (i == bytes.Length)
                 {
                     yield return start;
                 }
             }
         }
+
+        /// <summary>The slot's address in a match of the pattern.</summary>
+        public ulong Slot(byte[] code, int match) =>
+            SlotWidth == 4 ? BitConverter.ToUInt32(code, match + SlotOffset) : BitConverter.ToUInt64(code, match + SlotOffset);
+
+        /// <summary>The pattern in lower case, however it was written.</summary>
+        public override string ToString() =>
+            string.Join(" ", bytes.Select(b => b == AnyByte ? "??" : b == SlotByte ? "SS" : b.ToString("x2")).ToArray());
     }
 
-    /// <summary>Where a static slot's address appears in machine code, and how it's encoded.</summary>
+    /// <summary>
+    /// How to find a static slot in compiled code. The signature matches the anchor's code once.
+    /// The store into the slot follows it, at a distance that can depend on the length of the
+    /// instructions in between: it's the earliest match of any store pattern after the
+    /// signature, and its SS bytes are the slot's address. Earliest, not the first pattern
+    /// listed, because patterns can overlap: a 4-byte store pattern can also match inside an
+    /// 8-byte store, when the address's fourth byte happens to be the 4-byte form's opcode.
+    /// </summary>
+    internal sealed class Signature
+    {
+        public readonly Pattern Code;
+        public readonly Pattern[] Store;
+
+        public Signature(string code, params string[] store)
+        {
+            Code = new Pattern(code);
+            Store = store.Select(s => new Pattern(s)).ToArray();
+            if (Code.SlotWidth != 0 || Store.Length == 0 || Store.Any(s => s.SlotWidth == 0))
+            {
+                throw new ArgumentException(code + ": the signature has no SS, and each store pattern has them");
+            }
+        }
+    }
+
+    /// <summary>Where a static slot's address appears in machine code.</summary>
     internal sealed class SlotReference
     {
         public int Offset;
         public int Width;
-        public bool RipRelative;
 
-        public override string ToString() => (RipRelative ? "rip-relative " : "absolute ") + "u" + Width * 8;
+        public override string ToString() => "+0x" + Offset.ToString("x") + " (" + Width + " bytes)";
     }
 
     internal static class MachineCode
     {
         /// <summary>
-        /// Follows jumps from a method's entry point to its compiled code. On .NET Framework,
-        /// GetFunctionPointer returns a precode stub that jumps to the code once it's compiled.
+        /// Every place the slot's address appears in the code: as a u32, and in 64-bit processes
+        /// also as a u64. For reference when writing store patterns. On these runtimes it's never
+        /// relative to the instruction: x86 has no RIP-relative addressing, and Mono's JIT writes
+        /// a static's address into the instruction.
         /// </summary>
-        public static ulong FollowJumps(ulong entry, Action<string> log)
-        {
-            ulong address = entry;
-            for (int hop = 0; hop < 8; hop++)
-            {
-                byte[] b = Memory.ReadMapped(address, 16);
-                ulong next;
-                if (b.Length >= 5 && b[0] == 0xE9)
-                {
-                    // jmp rel32
-                    next = address + 5 + (ulong)(long)BitConverter.ToInt32(b, 1);
-                }
-                else if (b.Length >= 10 && b[0] == 0xB8 && b[5] == 0xE9)
-                {
-                    // mov eax, imm32; jmp rel32: an x86 stub precode
-                    next = address + 10 + (ulong)(long)BitConverter.ToInt32(b, 6);
-                }
-                else if (b.Length >= 6 && b[0] == 0xFF && b[1] == 0x25)
-                {
-                    // jmp [mem]: an absolute address on x86, RIP-relative on x64
-                    ulong target = IntPtr.Size == 4
-                        ? BitConverter.ToUInt32(b, 2)
-                        : address + 6 + (ulong)(long)BitConverter.ToInt32(b, 2);
-                    next = Memory.ReadPointer(target);
-                }
-                else
-                {
-                    return address;
-                }
-                if (IntPtr.Size == 4)
-                {
-                    next &= uint.MaxValue;
-                }
-                log(string.Format("jump at 0x{0:x}: {1}-> 0x{2:x}", address, Hex(b, 0, Math.Min(b.Length, 10)), next));
-                address = next;
-            }
-            return address;
-        }
-
-        /// <summary>
-        /// Every place the slot's address appears in the code: as an absolute u32 or u64, or as
-        /// a rel32 displacement from the end of the instruction (assumed to end right after it).
-        /// </summary>
-        public static List<SlotReference> FindSlotReferences(byte[] code, ulong codeAddress, ulong slot)
+        public static List<SlotReference> FindSlotReferences(byte[] code, ulong slot)
         {
             var references = new List<SlotReference>();
             for (int i = 0; i + 4 <= code.Length; i++)
@@ -106,13 +110,9 @@ namespace LayoutProbe
                 {
                     references.Add(new SlotReference { Offset = i, Width = 4 });
                 }
-                if (i + 8 <= code.Length && BitConverter.ToUInt64(code, i) == slot)
+                if (IntPtr.Size == 8 && i + 8 <= code.Length && BitConverter.ToUInt64(code, i) == slot)
                 {
                     references.Add(new SlotReference { Offset = i, Width = 8 });
-                }
-                if (IntPtr.Size == 8 && codeAddress + (ulong)(i + 4) + (ulong)(long)BitConverter.ToInt32(code, i) == slot)
-                {
-                    references.Add(new SlotReference { Offset = i, Width = 4, RipRelative = true });
                 }
             }
             return references;
