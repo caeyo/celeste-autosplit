@@ -84,28 +84,74 @@ mod sys {
         // A page with no access on each side, so that the mapping can't merge with a neighbour
         // that has the same protection: the auto splitter must see where it starts.
         let total = size + 2 * page;
-        let hint = at.map_or(ptr::null_mut(), |address| {
-            (address as usize - page) as *mut c_void
-        });
-        // SAFETY: A new mapping, which only replaces nothing, as there's no MAP_FIXED. The kernel
-        // takes the address as a hint, and uses it if it's free.
-        let base = unsafe { libc::mmap(hint, total, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0) };
-        if base == MAP_FAILED {
-            return None;
-        }
+        let base = match at {
+            Some(address) => reserve_at(address as usize - page, total)?,
+            None => {
+                // SAFETY: A new mapping, anywhere.
+                let base = unsafe {
+                    libc::mmap(
+                        ptr::null_mut(),
+                        total,
+                        PROT_NONE,
+                        MAP_PRIVATE | MAP_ANON,
+                        -1,
+                        0,
+                    )
+                };
+                (base != MAP_FAILED).then_some(base)?
+            }
+        };
         // SAFETY: The mapping just made, which nothing uses yet.
         unsafe {
-            if !hint.is_null() && base != hint {
-                libc::munmap(base, total);
-                return None;
-            }
             let start = base.byte_add(page);
-            if libc::mprotect(start, size, PROT_READ | PROT_WRITE) != 0 {
+            if libc::mprotect(base, total, PROT_NONE) != 0
+                || libc::mprotect(start, size, PROT_READ | PROT_WRITE) != 0
+            {
                 libc::munmap(base, total);
                 return None;
             }
             Some(start as u64)
         }
+    }
+
+    /// Maps `total` bytes at exactly the address, if nothing's there.
+    #[cfg(not(target_os = "macos"))]
+    fn reserve_at(address: usize, total: usize) -> Option<*mut c_void> {
+        let hint = address as *mut c_void;
+        // SAFETY: A new mapping, which replaces nothing, as there's no MAP_FIXED. The kernel takes
+        // the address as a hint, and uses it if it's free.
+        let base = unsafe { libc::mmap(hint, total, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0) };
+        if base == MAP_FAILED {
+            return None;
+        }
+        if base != hint {
+            // SAFETY: The mapping just made, in the wrong place.
+            unsafe { libc::munmap(base, total) };
+            return None;
+        }
+        Some(base)
+    }
+
+    /// Maps `total` bytes at exactly the address, if nothing's there. macOS doesn't take an
+    /// mmap address as a hint, but vm_allocate maps exactly there, unless something already is.
+    #[cfg(target_os = "macos")]
+    #[allow(deprecated)]
+    fn reserve_at(address: usize, total: usize) -> Option<*mut c_void> {
+        let mut base = address;
+        // SAFETY: A new mapping. Without VM_FLAGS_ANYWHERE, it fails if anything is there.
+        let result = unsafe {
+            libc::vm_allocate(
+                libc::mach_task_self(),
+                &mut base,
+                total,
+                libc::VM_FLAGS_FIXED,
+            )
+        };
+        if result != libc::KERN_SUCCESS {
+            eprintln!("fake-celeste: vm_allocate at 0x{address:x} returned {result}");
+            return None;
+        }
+        Some(base as *mut c_void)
     }
 
     pub fn make_executable(address: u64, size: usize) -> bool {

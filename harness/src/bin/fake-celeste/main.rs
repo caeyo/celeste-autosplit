@@ -51,9 +51,11 @@ const LOW: &[u64] = &[
 /// store's opcode, so that the 4-byte pattern also matches inside an 8-byte store into it. The
 /// auto splitter has to take the earlier match.
 const HIGH: &[u64] = &[
+    0x2_b800_0000,
+    0x4_b800_0000,
+    0x8_b800_0000,
     0x10_b800_0000,
     0x20_b800_0000,
-    0x30_b800_0000,
     0x40_b800_0000,
 ];
 
@@ -449,10 +451,9 @@ fn string_value(value: &Value) -> Result<Option<&str>> {
 
 /// A pattern's bytes, with the slot's address in its `SS` bytes, and zero for any byte.
 fn pattern_bytes(pattern: &str, slot: u64) -> Result<Vec<u8>> {
-    let width = harness::slot_width(pattern);
     ensure!(
-        width == 8 || slot <= u64::from(u32::MAX),
-        "a {width}-byte store into 0x{slot:x}"
+        harness::slot_width(pattern) != 4 || slot <= u64::from(u32::MAX),
+        "a 4-byte store into 0x{slot:x}"
     );
     let mut slot_bytes = slot.to_le_bytes().into_iter();
     pattern
