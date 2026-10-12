@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.InteropServices;
@@ -35,51 +34,6 @@ namespace LayoutProbe
             il.Emit(OpCodes.Ret);
             var offsetOf = (Func<object, IntPtr>)method.CreateDelegate(typeof(Func<object, IntPtr>));
             return offsetOf(instance).ToInt64();
-        }
-
-        /// <summary>Offset of an array's first element from the array's address.</summary>
-        public static long ElementOffset(Array array)
-        {
-            var method = new DynamicMethod("ElementOffset", typeof(IntPtr), new[] { typeof(object) }, typeof(Memory).Module, true);
-            ILGenerator il = method.GetILGenerator();
-            // &array[0] - array, both in one method so the GC can't move the array in between.
-            il.Emit(OpCodes.Ldarg_0);
-            il.Emit(OpCodes.Castclass, array.GetType());
-            il.Emit(OpCodes.Ldc_I4_0);
-            il.Emit(OpCodes.Ldelema, array.GetType().GetElementType());
-            il.Emit(OpCodes.Conv_U);
-            il.Emit(OpCodes.Ldarga_S, (byte)0);
-            il.Emit(OpCodes.Ldind_I);
-            il.Emit(OpCodes.Sub);
-            il.Emit(OpCodes.Ret);
-            var offsetOf = (Func<object, IntPtr>)method.CreateDelegate(typeof(Func<object, IntPtr>));
-            return offsetOf(array).ToInt64();
-        }
-
-        /// <summary>
-        /// Offset of an array's length from the array's address. No IL gives its address, so this
-        /// looks for the length in the header, before the first element. The array's length should
-        /// be one that nothing else there could hold.
-        /// </summary>
-        public static long LengthOffset(Array array, long elementOffset)
-        {
-            var found = new List<long>();
-            // Right after a collection the list's few small allocations can't start another, so
-            // the array doesn't move while it's read.
-            GC.Collect();
-            ulong address = AddressOf(array);
-            for (long offset = 0; offset + 4 <= elementOffset; offset += 4)
-            {
-                if (ReadInt32(address + (ulong)offset) == array.Length)
-                {
-                    found.Add(offset);
-                }
-            }
-            if (found.Count != 1)
-            {
-                throw new ProbeException("expected one place in the array header to hold its length, found " + found.Count);
-            }
-            return found[0];
         }
 
         /// <summary>Address of a static field's storage, which never moves.</summary>

@@ -14,7 +14,7 @@ In order, it:
 2. resolves the manifest's names in `Celeste.exe`, and measures:
    - every path's offsets, with `ldflda` on uninitialized objects, since
      `Marshal.OffsetOf` doesn't work on auto-layout classes;
-   - where strings and arrays hold their lengths and contents;
+   - where strings hold their length and characters;
 3. for each root, compiles the anchor method, finds where its code references
    the static slot, and checks that the flavour's hand-written signature
    matches once before it;

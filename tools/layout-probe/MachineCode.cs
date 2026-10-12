@@ -36,18 +36,18 @@ namespace LayoutProbe
             string.Join(" ", pattern.Select(b => b == null ? "??" : b.Value.ToString("x2")).ToArray());
     }
 
-    /// <summary>Where a static slot's address appears in machine code, and how it's encoded.</summary>
+    /// <summary>Where a static slot's address appears in machine code, and its width.</summary>
     internal sealed class SlotReference
     {
         public int Offset;
         public int Width;
-        public bool RipRelative;
 
         /// <summary>
-        /// absolute_u32 or absolute_u64: the slot's address itself. rip_relative: a signed 32-bit
-        /// displacement from the end of the reference.
+        /// absolute_u32 or absolute_u64: the slot's address itself. Code on these runtimes never
+        /// reaches a static relative to the instruction: x86 has no RIP-relative addressing, and
+        /// Mono's JIT writes the static's address into the instruction.
         /// </summary>
-        public string Encoding => RipRelative ? "rip_relative" : "absolute_u" + Width * 8;
+        public string Encoding => "absolute_u" + Width * 8;
 
         public override string ToString() => Encoding;
     }
@@ -55,54 +55,10 @@ namespace LayoutProbe
     internal static class MachineCode
     {
         /// <summary>
-        /// Follows jumps from a method's entry point to its compiled code. On .NET Framework,
-        /// GetFunctionPointer can return a precode stub that jumps to the code once it's compiled.
+        /// Every place the slot's address appears in the code: as a u32, and in 64-bit processes
+        /// also as a u64.
         /// </summary>
-        public static ulong FollowJumps(ulong entry, Action<string> log)
-        {
-            ulong address = entry;
-            for (int hop = 0; hop < 8; hop++)
-            {
-                byte[] b = Memory.ReadMapped(address, 16);
-                ulong next;
-                if (b.Length >= 5 && b[0] == 0xE9)
-                {
-                    // jmp rel32
-                    next = address + 5 + (ulong)(long)BitConverter.ToInt32(b, 1);
-                }
-                else if (b.Length >= 10 && b[0] == 0xB8 && b[5] == 0xE9)
-                {
-                    // mov eax, imm32; jmp rel32: an x86 stub precode
-                    next = address + 10 + (ulong)(long)BitConverter.ToInt32(b, 6);
-                }
-                else if (b.Length >= 6 && b[0] == 0xFF && b[1] == 0x25)
-                {
-                    // jmp [mem]: an absolute address on x86, RIP-relative on x64
-                    ulong target = IntPtr.Size == 4
-                        ? BitConverter.ToUInt32(b, 2)
-                        : address + 6 + (ulong)(long)BitConverter.ToInt32(b, 2);
-                    next = Memory.ReadPointer(target);
-                }
-                else
-                {
-                    return address;
-                }
-                if (IntPtr.Size == 4)
-                {
-                    next &= uint.MaxValue;
-                }
-                log(string.Format("jump at 0x{0:x}: {1}-> 0x{2:x}", address, Hex(b, 0, Math.Min(b.Length, 10)), next));
-                address = next;
-            }
-            return address;
-        }
-
-        /// <summary>
-        /// Every place the slot's address appears in the code: as an absolute u32, and in 64-bit
-        /// processes also as an absolute u64 or a rel32 displacement from the end of the
-        /// instruction (assumed to end right after it).
-        /// </summary>
-        public static List<SlotReference> FindSlotReferences(byte[] code, ulong codeAddress, ulong slot)
+        public static List<SlotReference> FindSlotReferences(byte[] code, ulong slot)
         {
             var references = new List<SlotReference>();
             for (int i = 0; i + 4 <= code.Length; i++)
@@ -114,10 +70,6 @@ namespace LayoutProbe
                 if (IntPtr.Size == 8 && i + 8 <= code.Length && BitConverter.ToUInt64(code, i) == slot)
                 {
                     references.Add(new SlotReference { Offset = i, Width = 8 });
-                }
-                if (IntPtr.Size == 8 && codeAddress + (ulong)(i + 4) + (ulong)(long)BitConverter.ToInt32(code, i) == slot)
-                {
-                    references.Add(new SlotReference { Offset = i, Width = 4, RipRelative = true });
                 }
             }
             return references;

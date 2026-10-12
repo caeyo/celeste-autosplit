@@ -35,9 +35,6 @@ namespace LayoutProbe
         // Windows, 0x15a on Linux and 0x1e9 on macOS.
         private const int AnchorCodeLength = 768;
 
-        // A length nothing else in an array's header could hold.
-        private const int SampleArrayLength = 713;
-
         private static string outDirectory;
         private static string gamePath;
         private static int holdSeconds;
@@ -49,8 +46,6 @@ namespace LayoutProbe
         private static Root[] roots;
         private static long stringLength;
         private static long stringChars;
-        private static long arrayLength;
-        private static long arrayData;
 
         private static int Main(string[] args)
         {
@@ -266,21 +261,6 @@ namespace LayoutProbe
             }
             Console.WriteLine("string: length at 0x{0:x}, chars at 0x{1:x}", stringLength, stringChars);
 
-            // Readers of arrays get one data offset, so it must be the same for every element type.
-            long[] dataOffsets =
-            {
-                Memory.ElementOffset(new int[SampleArrayLength]),
-                Memory.ElementOffset(new long[SampleArrayLength]),
-                Memory.ElementOffset(new string[SampleArrayLength]),
-            };
-            if (dataOffsets.Distinct().Count() != 1)
-            {
-                throw new ProbeException("int, long and string arrays start their elements at different offsets: " + string.Join(", ", dataOffsets.Select(o => "0x" + o.ToString("x")).ToArray()));
-            }
-            arrayData = dataOffsets[0];
-            arrayLength = Memory.LengthOffset(new int[SampleArrayLength], arrayData);
-            Console.WriteLine("array: length at 0x{0:x}, data at 0x{1:x}", arrayLength, arrayData);
-
             // Offsets need an instance of each type along the paths, but not a constructed one.
             var instances = new Dictionary<Type, object>();
             foreach (Root root in roots)
@@ -355,16 +335,16 @@ namespace LayoutProbe
             root.Slot = Memory.StaticFieldAddress(root.Field);
             Console.WriteLine("slot: 0x{0:x}", root.Slot);
 
+            // Once the method is compiled, both runtimes return its code here rather than a stub
+            // that jumps to it. A stub would show in the dump, and the signature wouldn't match.
             RuntimeHelpers.PrepareMethod(root.Anchor.MethodHandle);
-            ulong entry = Memory.ToAddress(root.Anchor.MethodHandle.GetFunctionPointer());
-            Console.WriteLine("anchor entry: 0x{0:x}", entry);
-            root.Code = MachineCode.FollowJumps(entry, Console.WriteLine);
+            root.Code = Memory.ToAddress(root.Anchor.MethodHandle.GetFunctionPointer());
             // Printed for debugging only: it holds addresses that change from run to run.
             byte[] code = Memory.ReadMapped(root.Code, AnchorCodeLength);
             Console.WriteLine("anchor code at 0x{0:x} ({1} bytes read):", root.Code, code.Length);
             MachineCode.HexDump(code, Console.WriteLine);
 
-            List<SlotReference> references = MachineCode.FindSlotReferences(code, root.Code, root.Slot);
+            List<SlotReference> references = MachineCode.FindSlotReferences(code, root.Slot);
             Console.WriteLine("slot references: " + (references.Count == 0 ? "none" : string.Join(", ", references.Select(r => "+0x" + r.Offset.ToString("x") + " " + r).ToArray())));
             int[] matches = root.Signature.Matches(code).ToArray();
             Console.WriteLine("signature {0}: {1}", root.Signature, matches.Length == 0 ? "no match" : "matches at " + string.Join(", ", matches.Select(m => "+0x" + m.ToString("x")).ToArray()));
@@ -534,7 +514,6 @@ namespace LayoutProbe
             {
                 case "absolute_u32": return Memory.ReadUInt32(at);
                 case "absolute_u64": return (ulong)Memory.ReadInt64(at);
-                case "rip_relative": return at + 4 + (ulong)(long)Memory.ReadInt32(at);
                 default: throw new ProbeException("unknown slot encoding " + root.Reference.Encoding);
             }
         }
@@ -628,7 +607,6 @@ namespace LayoutProbe
                 "  \"game\": { \"version\": " + Quote(gameVersion) + ", \"mvid\": " + Quote(game.ManifestModule.ModuleVersionId.ToString()) + " },\n" +
                 "  \"pointer_size\": " + IntPtr.Size + ",\n" +
                 "  \"string\": { \"length\": " + stringLength + ", \"chars\": " + stringChars + " },\n" +
-                "  \"array\": { \"length\": " + arrayLength + ", \"data\": " + arrayData + " },\n" +
                 "  \"roots\": {\n" +
                 string.Join(",\n", rootsJson.ToArray()) + "\n" +
                 "  }\n" +
