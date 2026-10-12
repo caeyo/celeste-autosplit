@@ -1,0 +1,129 @@
+# layouts
+
+The memory layouts the auto splitter reads, one file per game flavour, and the
+manifest that says what to measure.
+
+| File | What | Made by |
+|---|---|---|
+| `manifest.json` | What the auto splitter reads, by .NET names. | Hand-written. |
+| `windows-xna.json`, `windows-fna.json`, `linux.json`, `macos.json` | Each vanilla flavour's measured layout. | The [layout probe](../tools/layout-probe/), through the Layouts workflow. Don't edit them by hand. |
+| `everest.json` | Everest's own info struct. | Transcribed from Everest's source. |
+
+## Regenerating
+
+Run the Layouts workflow, from the Actions tab or with:
+
+```sh
+gh workflow run layouts.yml --ref <branch>
+```
+
+It runs the probe on every vanilla flavour, then opens a pull request into
+`<branch>` with the regenerated files, from the branch `layouts/<branch>`. If
+nothing changed, it says so and opens nothing. A later run updates an open pull
+request instead of opening another. The run uses `<branch>`'s workflow and
+manifest, so changes can be tried before they're merged.
+
+For each flavour, the probe runs inside the game's own runtime, next to the real
+game files. It:
+
+1. resolves every name in the manifest, and measures each path's offsets;
+2. checks that the flavour's hand-written signature matches the root's anchor
+   method once, in its compiled code, and finds the slot's address after the match;
+3. constructs the game for real (`new Celeste()`), in a process named like the
+   game. Then it writes distinctive values into every field that still holds its
+   default, and reads every path back raw from the slot, as the auto splitter does.
+
+Any failure fails the run, and no pull request is opened. To run the probe
+yourself, see its [README](../tools/layout-probe/README.md).
+
+## `manifest.json`
+
+```json
+{
+  "roots": [
+    {
+      "field": "Celeste.Celeste::Instance",
+      "anchor": "Celeste.Celeste::.ctor()",
+      "paths": ["Title", "AutoSplitterInfo.Chapter", "..."]
+    }
+  ]
+}
+```
+
+Each root is a static field that the auto splitter finds through machine code:
+
+- **`field`**: the static field, as `Namespace.Type::Field`.
+- **`anchor`**: the method whose compiled code holds the field's address, as
+  `Namespace.Type::Name(ParameterType, ...)`. The auto splitter finds that code with a
+  hand-written signature, and reads the address at a fixed displacement from it.
+- **`paths`**: instance fields to read from the root's object, joined with dots.
+  Each name is looked up in the previous field's type, or its nearest base class
+  with that field. A path only goes through objects of concrete classes, and ends
+  in a `string`, `bool`, `int`, `long` or object.
+
+A new root also needs a hand-written signature for every flavour, in both the
+probe's [`Signatures.cs`](../tools/layout-probe/Signatures.cs) and
+[`memory.rs`](../autosplitter/src/memory.rs).
+
+## `<flavour>.json`
+
+Abbreviated from `windows-fna.json`:
+
+```json
+{
+  "flavour": "windows-fna",
+  "os": "windows",
+  "game": { "version": "1.4.0.0", "mvid": "d7b2abb4-05ec-4c97-9545-49f0a02e4a41" },
+  "pointer_size": 4,
+  "string": { "length": 4, "chars": 8 },
+  "array": { "length": 4, "data": 8 },
+  "roots": {
+    "Celeste.Celeste::Instance": {
+      "signature": "68 38 04 00 00 68 c0 03 00 00 68 1c 02 00 00 ff 35",
+      "slot": { "displacement": 99, "encoding": "absolute_u32" },
+      "paths": {
+        "Title": { "offsets": [132], "types": ["System.String"] },
+        "AutoSplitterInfo.Chapter": { "offsets": [160, 24], "types": ["Celeste.AutoSplitterInfo", "System.Int32"] }
+      }
+    }
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `flavour` | `windows-xna`, `windows-fna`, `linux` or `macos`. |
+| `os` | `windows`, `linux` or `macos`, as `asr::get_os()` names them. |
+| `game` | The probed `Celeste.exe`: its version, and its module version ID. The three FNA flavours share one `Celeste.exe`. |
+| `pointer_size` | 4 or 8 bytes. |
+| `string` | Where a string object holds its length (an `i32`) and its UTF-16 characters. |
+| `array` | Where an array object holds its length (an `i32`) and its first element. |
+| `roots` | Per manifest root, by its `field`: |
+| &emsp;`signature` | The probe's copy of the hand-written signature: hex bytes, `??` for any byte. |
+| &emsp;`slot.displacement` | From the start of the signature's match to the slot's address in the code. |
+| &emsp;`slot.encoding` | `absolute_u32` or `absolute_u64`: the address itself. `rip_relative`: a signed 32-bit displacement from the end of those 4 bytes. |
+| &emsp;`paths` | Per manifest path: each field's offset and .NET type, one per hop. |
+
+All offsets are in bytes, from the address a reference to the object holds. To read
+a path, read the root's object from the slot. Then each offset but the last leads to
+a pointer to the next object, and the last one to the value.
+
+The anchor's machine code isn't stored: it embeds addresses that change on every
+run. The probe prints it in the run's log.
+
+## `everest.json`
+
+Everest publishes its own struct, `CoreAutoSplitterInfo`, at the start of a memory
+mapping of its own. The auto splitter finds it by checking the start of each memory
+region for the magic bytes. The file is transcribed by hand from the source linked in
+`source`. To update it, transcribe the struct again at a newer commit, and update the
+link.
+
+| Key | Meaning |
+|---|---|
+| `source` | The struct's source, at a pinned commit, and the Everest release it's from. |
+| `pointer_size` | 8: Everest runs on 64-bit .NET. |
+| `magic` | The struct's first 20 bytes. |
+| `info_version` | The struct's version, in `InfoVersion`. |
+| `updating_info_version` | What `InfoVersion` holds while Everest updates the struct. |
+| `fields` | Each field's offset from the struct's start, and its type: `u8`, `u32`, `i32`, `i64`, or `utf8_ptr`, a pointer to a NUL-terminated UTF-8 string with its length in bytes in the `u16` before it, 0 for no string. Flag fields list each flag's bit number. |
