@@ -9,7 +9,7 @@ use std::{
     process::{Child, ChildStdin, Command, Stdio},
     sync::mpsc::{self, Receiver, RecvTimeoutError},
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, bail};
@@ -81,6 +81,8 @@ impl Fake {
 
     /// Writes the values into the fake game, by path or field name.
     pub fn frame(&mut self, values: &serde_json::Value, deadline: Instant) -> Result<()> {
+        // A frame is far smaller than the pipe's buffer, so this can't block, even if the fake
+        // has stopped reading.
         writeln!(self.stdin, "frame {values}")
             .and_then(|()| self.stdin.flush())
             .context("sending a frame to fake-celeste")?;
@@ -97,12 +99,16 @@ impl Fake {
             Err(RecvTimeoutError::Timeout) => {
                 bail!("timed out waiting for fake-celeste to say {expected}")
             }
-            Err(RecvTimeoutError::Disconnected) => match self.child.try_wait()? {
-                Some(status) => {
-                    bail!("fake-celeste exited ({status}) instead of saying {expected}")
+            Err(RecvTimeoutError::Disconnected) => {
+                // Its output closed, so it's exiting.
+                while Instant::now() < deadline {
+                    if let Some(status) = self.child.try_wait()? {
+                        bail!("fake-celeste exited ({status}) instead of saying {expected}");
+                    }
+                    thread::sleep(Duration::from_millis(10));
                 }
-                None => bail!("fake-celeste closed its output instead of saying {expected}"),
-            },
+                bail!("fake-celeste closed its output instead of saying {expected}")
+            }
         }
     }
 }

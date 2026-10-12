@@ -9,6 +9,9 @@
 //!   first one). The slot holds the root's object.
 //! - every object along each path from the root's object, with "Celeste" in `Title`.
 //!
+//! The code starts with a decoy: the same code, storing into a slot whose object has another
+//! title.
+//!
 //! For Everest's, it builds the info struct, at the start of a mapping of its own.
 //!
 //! What the auto splitter reads through 32-bit addresses is mapped below 4 GB: everything for a
@@ -38,6 +41,9 @@ const ARENA_SIZE: usize = 1 << 20;
 /// Each object's size. Every offset in the layouts is far below it.
 const OBJECT_SIZE: u64 = 0x1000;
 
+/// The path to the game's title, which the auto splitter checks for "Celeste".
+const TITLE: &str = "Title";
+
 /// Where to map what has to be below 4 GB, in order of preference.
 const LOW: &[u64] = &[
     0x1000_0000,
@@ -59,9 +65,9 @@ const HIGH: &[u64] = &[
     0x40_b800_0000,
 ];
 
-/// How many bytes the fake puts between a signature and its store. The game has 80 to 144,
-/// depending on the flavour.
-const FILLER: usize = 144;
+/// How many bytes the fake puts between a signature and its store: more than the game has, 80
+/// to 144 depending on the flavour, and none of those, so that only a search finds the store.
+const FILLER: usize = 200;
 
 /// What it puts there: int3, which no store pattern contains.
 const FILLER_BYTE: u8 = 0xcc;
@@ -134,6 +140,7 @@ struct Game {
 }
 
 /// A path or field that frames can set.
+#[derive(Copy, Clone)]
 enum Field {
     Int {
         address: u64,
@@ -219,10 +226,18 @@ impl Game {
                 harness::slot_width(store)
             ));
 
-            // First a copy whose store goes into a slot that's still null, as the game's is
-            // before its constructor runs. The auto splitter has to move on to the next match.
-            let null_slot = game.arena.alloc(8)?;
-            for slot in [null_slot, slot] {
+            // First a copy whose store goes into a slot holding an object with another title,
+            // which the auto splitter has to skip for the next match.
+            let decoy_slot = game.arena.alloc(8)?;
+            let decoy = game.arena.alloc(OBJECT_SIZE)?;
+            game.write_pointer(decoy_slot, decoy)?;
+            if let Some(path) = root.paths.get(TITLE) {
+                let title = game
+                    .build_path(decoy, path)?
+                    .context("the title isn't a string")?;
+                game.write(title, &Value::from("Not Celeste"))?;
+            }
+            for slot in [decoy_slot, slot] {
                 code.extend(pattern_bytes(&root.signature, slot)?);
                 code.extend([FILLER_BYTE; FILLER]);
                 code.extend(pattern_bytes(store, slot)?);
@@ -250,9 +265,8 @@ impl Game {
             slots.join(", ")
         );
 
-        // The game's title, which the auto splitter checks for.
-        if game.fields.contains_key("Title") {
-            game.set("Title", &Value::from("Celeste"))?;
+        if game.fields.contains_key(TITLE) {
+            game.set(TITLE, &Value::from("Celeste"))?;
         }
         Ok(game)
     }
@@ -353,11 +367,15 @@ impl Game {
     }
 
     fn set(&mut self, name: &str, value: &Value) -> Result<()> {
-        let field = self
+        let field = *self
             .fields
             .get(name)
             .context("the layout has no such path or field, or frames can't set it")?;
-        match *field {
+        self.write(field, value)
+    }
+
+    fn write(&mut self, field: Field, value: &Value) -> Result<()> {
+        match field {
             Field::Int { address, ty } => {
                 let int = value.as_i64().context("expected an integer")?;
                 let bytes = match ty {

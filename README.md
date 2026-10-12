@@ -30,11 +30,11 @@ See each folder's README for details.
 
 | Workflow | Runs |
 |---|---|
-| `autosplitter.yml` | Build, clippy and fmt on changes to `autosplitter/`, `harness/` or `layouts/`. Then the reading test, on Windows, Linux and macOS. |
+| `autosplitter.yml` | On changes to `autosplitter/`, `harness/` or `layouts/`: the wasm module's build, clippy and fmt, then the reading test on Windows, Linux and macOS. |
 | `component.yml` | Build and test on Windows on changes to `component/`, `schema/` or `autosplitter/` (the tests run the wasm module). |
 | `site.yml` | Deploys `site/` (plus the schema) to GitHub Pages on pushes to `master`. |
 | `layouts.yml` | Dispatch only. Runs the layout probe against each vanilla flavour's real game files, which come from a private repository, and opens a pull request with the regenerated layouts. |
-| `release.yml` | On a `v*` tag: builds both, then publishes `celeste-autosplit.dll` and `celeste_autosplit.wasm` together. |
+| `release.yml` | On a `v*` tag: builds and tests both, then publishes `celeste-autosplit.dll` and `celeste_autosplit.wasm` together. |
 
 Releasing:
 

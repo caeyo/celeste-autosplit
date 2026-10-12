@@ -489,7 +489,7 @@ const FLAVOURS: &[Flavour] = &[
 ];
 
 /// How much of the code after a signature is searched for the store. Today's stores start 80
-/// to 144 bytes after their signatures.
+/// to 144 bytes after their signatures, and the layout probe checks that they end within this.
 const STORE_WINDOW: u64 = 256;
 
 impl Flavour {

@@ -379,6 +379,11 @@ namespace LayoutProbe
                 throw new ProbeException("the store's address is 0x" + slot.ToString("x") + ", but the slot is at 0x" + root.Slot.ToString("x"));
             }
             Console.WriteLine("the store's address is the slot's");
+            int end = root.StoreMatch + root.Store.Length - after;
+            if (end > Manifest.StoreWindow)
+            {
+                throw new ProbeException("the store ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.StoreWindow + ": widen its STORE_WINDOW, and StoreWindow in Manifest.cs");
+            }
         }
 
         private sealed class PathCheck

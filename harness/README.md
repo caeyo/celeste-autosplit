@@ -58,7 +58,8 @@ target/release/harness read
 ```
 
 Or run the `Reading Test` task in VS Code, which builds both first. On macOS,
-run it with `sudo`, since reading another process's memory needs root there.
+run it with `sudo`, since reading another process's memory needs root there. That
+leaves `target/release/fake/` owned by root.
 
 It prints `ok` or the differences for each case, and exits with 1 if any case
 failed. Options:
@@ -81,11 +82,12 @@ ranges, once a second.
 
 From a vanilla flavour's layout, it builds:
 
-- for each root, code holding the root's signature, 144 bytes of filler (the
-  game has 80 to 144), and a store into the root's static slot, with the slot's
-  address in the store's `SS` bytes. The slot holds the root's object. Before
-  it, the same code stores into a slot that's still null, which the auto
-  splitter has to skip;
+- for each root, code holding the root's signature, 200 bytes of filler, and a
+  store into the root's static slot, with the slot's address in the store's `SS`
+  bytes. The slot holds the root's object. The game has 80 to 144 bytes between
+  the two, depending on the flavour, so only a search for the store finds it.
+  Before that code, the same code stores into a slot holding an object whose
+  title is "Not Celeste", which the auto splitter has to skip;
 - every object along each path, and "Celeste" in `Title`.
 
 What the auto splitter reads through 32-bit addresses is mapped below 4 GB:

@@ -30,7 +30,8 @@ game files. It:
 1. resolves every name in the manifest, and measures each path's offsets;
 2. checks that the flavour's hand-written signature matches the root's anchor
    method once, in its compiled code, and that the earliest store pattern match
-   after it holds the slot's address;
+   after it holds the slot's address, within the 256 bytes the auto splitter
+   searches;
 3. constructs the game for real (`new Celeste()`), in a process named like the
    game. Then it writes distinctive values into every field that still holds its
    default, and reads every path back raw from the slot, as the auto splitter does.

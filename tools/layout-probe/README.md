@@ -18,7 +18,7 @@ In order, it:
 3. for each root, compiles the anchor method and checks the flavour's
    hand-written signature against its code: the signature must match once, and
    the earliest store pattern match after it must hold the static slot's
-   address;
+   address, and end within the 256 bytes that `memory.rs` searches;
 4. constructs the game (`new Celeste()`), writes distinctive values into every
    number and flag, and into strings that are still null, then reads every path
    back raw from the slot whose address the store holds. It does this twice,
@@ -50,7 +50,9 @@ static field that the auto splitter finds through machine code:
     the heap is.
 
   [`memory.rs`](../../autosplitter/src/memory.rs) has the same signatures and
-  store patterns, and finds the address from them the same way.
+  store patterns, and finds the address from them the same way, but only
+  searches the 256 bytes after each signature match: `StoreWindow` in
+  `Manifest.cs`.
 - **`Paths`**: instance fields to read from the root's object, joined with dots.
   Each name is looked up in the previous field's type, or its nearest base
   class with that field. A path only goes through objects of concrete classes,
