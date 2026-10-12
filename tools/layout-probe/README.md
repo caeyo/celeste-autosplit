@@ -1,19 +1,33 @@
 # layout-probe
 
-Prints the memory layout the auto splitter reads, measured inside the game's own
-runtime. For now it's a spike: it prints text, and the
+Measures the memory layout the auto splitter reads, inside the game's own
+runtime, and writes it as `<flavour>.json`. What it measures comes from
+[`layouts/manifest.json`](../../layouts/manifest.json). The
 [`layouts.yml`](../../.github/workflows/layouts.yml) workflow runs it against
-every vanilla flavour.
+every vanilla flavour and opens a pull request with the results. The
+[layouts README](../../layouts/README.md) describes both files.
 
-It prints:
+In order, it:
 
-- every instance field of `Celeste.Celeste` and `Celeste.AutoSplitterInfo`, and
-  `String`'s length and characters, at their offsets from the object's address.
-  The offsets are measured with `ldflda`, then checked against values written
-  through reflection;
-- the address of the `Celeste.Instance` slot, the `Celeste` constructor's
-  compiled code, where the slot's address appears in it, and whether the
-  hand-written signatures in `autosplitter/src/memory.rs` agree.
+1. detects the flavour: `windows-xna` or `windows-fna` from the game's
+   references, `linux` or `macos` from the kernel;
+2. resolves the manifest's names in `Celeste.exe`, and measures:
+   - every path's offsets, with `ldflda` on uninitialized objects, since
+     `Marshal.OffsetOf` doesn't work on auto-layout classes;
+   - where strings and arrays hold their lengths and contents;
+3. for each root, compiles the anchor method, finds where its code references
+   the static slot, and checks that the flavour's hand-written signature
+   ([`Signatures.cs`](Signatures.cs), a copy of the ones in
+   `autosplitter/src/memory.rs`) matches once before it;
+4. constructs the game (`new Celeste()`), writes distinctive values into every
+   field that still holds its default, and reads every path back raw from the
+   slot whose address the code holds, as the auto splitter does. It does this
+   twice, with different values;
+5. prints the layout, and writes it if `--out` is given.
+
+It prints what it finds along the way, including every field of each type along
+the paths, and the anchor's machine code. It stops at the first failure, and
+exits with 1.
 
 ## Building
 
@@ -27,21 +41,31 @@ Output: `tools/layout-probe/bin/Release/net45/LayoutProbe.exe`.
 
 ## Running
 
-It has to run in the game's own runtime, from the game's folder:
+It has to run in the game's own runtime, from the game's folder. The auto
+splitter finds the game by process name, so the probe runs as the game: it
+becomes `Celeste.exe`, the game's own `Celeste.exe` moves to `real/`, and it's
+started the way players start the game.
 
 | Flavour | How |
 |---|---|
-| Windows (XNA or FNA) | Copy `LayoutProbe.exe` next to `Celeste.exe` and run it. It's 32-bit, as the game is. XNA builds need the XNA 4.0 redistributable. |
-| Linux | Copy `LayoutProbe.exe` next to `Celeste.exe`, copy `Celeste.bin.x86_64` to `LayoutProbe.bin.x86_64`, and run that. The game's launcher runs the `.exe` named after itself, with the game's own Mono. |
-| macOS | Copy `LayoutProbe.exe` into `Celeste.app/Contents/Resources/`, copy `Contents/MacOS/Celeste` to `Contents/MacOS/LayoutProbe`, and run that. |
+| Windows (XNA or FNA) | Move `Celeste.exe` (and `Celeste.exe.config`, if there is one) to `real/`, copy `LayoutProbe.exe` to `Celeste.exe`, and run it. It's 32-bit, like the game. XNA builds need the XNA 4.0 redistributable. |
+| Linux | Move `Celeste.exe` and `Celeste.exe.config` to `real/`, copy `LayoutProbe.exe` to `Celeste.exe`, and run the `Celeste` script. FNA needs a display for its window: Xvfb works. |
+| macOS | In `Celeste.app/Contents/Resources/`, move `Celeste.exe` to `real/` and copy `LayoutProbe.exe` to `Celeste.exe`. Then run `Celeste.app/Contents/MacOS/Celeste`. |
+
+For example, on Windows, from the game's folder:
+
+```sh
+./Celeste.exe --game real/Celeste.exe --manifest <repo>/layouts/manifest.json --out <repo>/layouts
+```
 
 Options:
 
-- `--construct`: also runs `new Celeste()` and reads the result back through
-  the slot, as the auto splitter does. Linux needs a display for FNA's window
-  (Xvfb works).
-- `--game PATH`: the game's `Celeste.exe`, relative to the probe. The auto
-  splitter finds the game by process name, so for it to attach to the probe,
-  the probe has to be `Celeste.exe` and launched like the game, with the game's
-  assembly moved elsewhere (for example `--game real/Celeste.exe`).
-- `--hold SECONDS`: stays alive afterwards.
+- `--manifest PATH`: the manifest. Required.
+- `--out DIR`: writes `DIR/<flavour>.json`, once every check has passed.
+- `--game PATH`: the game's `Celeste.exe`, relative to the probe (default:
+  `Celeste.exe` next to it).
+- `--hold SECONDS`: stays alive afterwards, so the process can be read from
+  outside. It prints `holding for N s` once it's ready.
+
+The Linux script changes to the game's folder first, and passes its arguments on
+unquoted, so give absolute paths without spaces.

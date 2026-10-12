@@ -5,37 +5,35 @@ using System.Text;
 
 namespace LayoutProbe
 {
-    /// <summary>A hand-written signature, and where the static slot's address follows it.</summary>
+    /// <summary>A hand-written signature: hex bytes separated by spaces, with ?? for any byte.</summary>
     internal sealed class Signature
     {
-        public readonly string Name;
-        public readonly int?[] Pattern;
-        public readonly int SlotDisplacement;
-        public readonly int SlotWidth;
+        private readonly int?[] pattern;
 
-        public Signature(string name, string pattern, int slotDisplacement, int slotWidth)
+        public Signature(string pattern)
         {
-            Name = name;
-            Pattern = pattern.Split(' ').Select(b => b == "??" ? (int?)null : Convert.ToInt32(b, 16)).ToArray();
-            SlotDisplacement = slotDisplacement;
-            SlotWidth = slotWidth;
+            this.pattern = pattern.Split(' ').Select(b => b == "??" ? (int?)null : Convert.ToInt32(b, 16)).ToArray();
         }
 
         public IEnumerable<int> Matches(byte[] code)
         {
-            for (int start = 0; start + Pattern.Length <= code.Length; start++)
+            for (int start = 0; start + pattern.Length <= code.Length; start++)
             {
                 int i = 0;
-                while (i < Pattern.Length && (Pattern[i] == null || Pattern[i] == code[start + i]))
+                while (i < pattern.Length && (pattern[i] == null || pattern[i] == code[start + i]))
                 {
                     i++;
                 }
-                if (i == Pattern.Length)
+                if (i == pattern.Length)
                 {
                     yield return start;
                 }
             }
         }
+
+        /// <summary>The pattern in lower case, however it was written.</summary>
+        public override string ToString() =>
+            string.Join(" ", pattern.Select(b => b == null ? "??" : b.Value.ToString("x2")).ToArray());
     }
 
     /// <summary>Where a static slot's address appears in machine code, and how it's encoded.</summary>
@@ -45,14 +43,20 @@ namespace LayoutProbe
         public int Width;
         public bool RipRelative;
 
-        public override string ToString() => (RipRelative ? "rip-relative " : "absolute ") + "u" + Width * 8;
+        /// <summary>
+        /// absolute_u32 or absolute_u64: the slot's address itself. rip_relative: a signed 32-bit
+        /// displacement from the end of the reference.
+        /// </summary>
+        public string Encoding => RipRelative ? "rip_relative" : "absolute_u" + Width * 8;
+
+        public override string ToString() => Encoding;
     }
 
     internal static class MachineCode
     {
         /// <summary>
         /// Follows jumps from a method's entry point to its compiled code. On .NET Framework,
-        /// GetFunctionPointer returns a precode stub that jumps to the code once it's compiled.
+        /// GetFunctionPointer can return a precode stub that jumps to the code once it's compiled.
         /// </summary>
         public static ulong FollowJumps(ulong entry, Action<string> log)
         {
@@ -94,8 +98,9 @@ namespace LayoutProbe
         }
 
         /// <summary>
-        /// Every place the slot's address appears in the code: as an absolute u32 or u64, or as
-        /// a rel32 displacement from the end of the instruction (assumed to end right after it).
+        /// Every place the slot's address appears in the code: as an absolute u32, and in 64-bit
+        /// processes also as an absolute u64 or a rel32 displacement from the end of the
+        /// instruction (assumed to end right after it).
         /// </summary>
         public static List<SlotReference> FindSlotReferences(byte[] code, ulong codeAddress, ulong slot)
         {
@@ -106,7 +111,7 @@ namespace LayoutProbe
                 {
                     references.Add(new SlotReference { Offset = i, Width = 4 });
                 }
-                if (i + 8 <= code.Length && BitConverter.ToUInt64(code, i) == slot)
+                if (IntPtr.Size == 8 && i + 8 <= code.Length && BitConverter.ToUInt64(code, i) == slot)
                 {
                     references.Add(new SlotReference { Offset = i, Width = 8 });
                 }
