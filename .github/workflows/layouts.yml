@@ -13,10 +13,6 @@ name: Layouts
 
 on:
   workflow_dispatch:
-  # Only while the spike is in progress: a dispatch needs the workflow on master first.
-  push:
-    branches:
-      - 'i1-layout-probe-spike'
 
 permissions:
   contents: read
