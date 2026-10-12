@@ -1,22 +1,15 @@
 name: Autosplitter
 
-# The reading test runs the wasm module against fakes built from layouts/, so changes to the
-# harness or the layouts run it too. That includes the layouts workflow's pull requests: they're
-# opened with GITHUB_TOKEN, so their runs wait for someone to approve them.
 on:
   pull_request:
     paths:
       - 'autosplitter/**'
-      - 'harness/**'
-      - 'layouts/**'
       - '.github/workflows/autosplitter.yml'
   push:
     branches:
       - 'master'
     paths:
       - 'autosplitter/**'
-      - 'harness/**'
-      - 'layouts/**'
       - '.github/workflows/autosplitter.yml'
   workflow_call:
 
@@ -47,44 +40,6 @@ jobs:
           name: autosplitter
           path: autosplitter/target/wasm32-unknown-unknown/release/celeste_autosplit.wasm
           if-no-files-found: error
-
-  # Needs no game files, so it runs for pull requests from forks too.
-  harness:
-    name: Reading test (${{ matrix.os }})
-    needs: build
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-    defaults:
-      run:
-        working-directory: harness
-        shell: bash
-    steps:
-      - name: Checkout Commit
-        uses: actions/checkout@v7
-
-      - name: Install Rust
-        uses: hecrj/setup-rust-action@v2
-        with:
-          rust-version: stable
-
-      - name: Download wasm module
-        uses: actions/download-artifact@v8
-        with:
-          name: autosplitter
-          path: ${{ runner.temp }}/autosplitter
-
-      - name: Build harness
-        run: cargo build --release --locked
-
-      # Reading another process's memory needs root on macOS.
-      - name: Reading test
-        timeout-minutes: 10
-        env:
-          SUDO: ${{ runner.os == 'macOS' && 'sudo' || '' }}
-        run: $SUDO target/release/harness read --wasm "$RUNNER_TEMP/autosplitter/celeste_autosplit.wasm"
 
   clippy:
     name: Check clippy lints

@@ -1,105 +1,74 @@
 # harness
 
-Runs the auto splitter, `celeste_autosplit.wasm`, on livesplit-core's own
-`Timer`, against `fake-celeste`: a stand-in for the game, built from the
-layouts in [`layouts/`](../layouts/). It's a native program, outside the wasm
-build.
+The live check: checks the auto splitter, `celeste_autosplit.wasm`, against the
+real game. It's a native program, outside the wasm build.
 
-- `livesplit-core` and its auto splitting runtime, `livesplit-auto-splitting`,
-  are pinned to one revision in `Cargo.toml`.
-- The runtime is stepped by hand: one `update()` at a time, with a timeout for
-  each case, since a runtime stepped by hand has no watchdog of its own.
-- The timer is livesplit-core's, behind the runtime's `Timer` trait, as in
-  livesplit-core's own auto splitting. The debug variables the auto splitter sets
-  and what it logs are also recorded, for the tests.
+The [layout probe](../tools/layout-probe/) constructs the real game, in the
+game's own runtime. It sets every number, flag and string the auto splitter
+reads through .NET's own reflection, and reads each one back raw, as the auto
+splitter does. With `--values`, it then writes the values the game holds, as
+reflection reads them, and with `--hold` it keeps the game and its process
+alive. The probe runs as the game, so the harness loads the auto splitter, which
+finds the probe's process by the game's name. Its debug variables must be
+exactly those values.
 
-## The reading test
+So a pass rests on the game's own runtime and one comparison, with no stand-in
+for the game. It checks:
 
-For each flavour whose layout is for this OS, and for Everest, the harness
-starts `fake-celeste` with that layout, then loads the auto splitter. Each
-frame writes known values into the fake, then runs one update, which must
-report exactly those values in its debug variables, and nothing else.
+- finding `Celeste.Instance`: the signature, the store into its slot, and the
+  title, which tells XNA and FNA apart;
+- every offset and pointer size `memory.rs` reads through;
+- reading .NET strings, numbers and flags;
+- attaching to the game's process, on each OS.
 
-The fake takes its offsets from the layouts, which the layout probe measured,
-and the auto splitter from [`memory.rs`](../autosplitter/src/memory.rs), which
-is hand-written. So the test checks one against the other: the field offsets,
-the string offsets, and the signatures and store patterns, since the fake writes
-the layout's copies and the auto splitter scans with its own.
+The auto splitter runs on livesplit-core's own `Timer`, behind the runtime's
+`Timer` trait, as in livesplit-core's own auto splitting, and both are pinned to
+one revision in `Cargo.toml`. The harness records the debug variables the auto
+splitter sets and what it logs. It steps the runtime by hand, until the auto
+splitter reports, and interrupts it at the timeout, since a runtime stepped by
+hand has no watchdog of its own.
 
-| OS | Cases |
-|---|---|
-| Windows | `windows-fna`, `windows-xna`, `everest` |
-| Linux | `linux` with a 4-byte store, `linux` with an 8-byte store, `everest` |
-| macOS | `macos`, with an 8-byte store, and `everest` |
+## In CI
 
-The frames set:
+The [Layouts workflow](../.github/workflows/layouts.yml) runs the live check
+on every vanilla flavour, right after the probe. It runs on dispatch, and on
+pull requests from this repository that change the auto splitter, the harness
+or the probe. The game files never reach pull requests from forks. On Linux and
+macOS, the check runs as root, which reading another process's memory needs
+there.
 
-- every number and flag to zero, and every string to null, as at the title
-  screen;
-- distinct values: the n-th number to n × `0x01010101` (or
-  `0x0101010101010101` for a 64-bit one), so that neighbouring fields differ in
-  every byte, flags alternately, and strings to different ones. Then the same
-  negated, with each flag flipped and non-ASCII strings;
-- every number to -1 (chapter -1 is "not in a chapter"), and every string empty;
-- every number to its minimum, then its maximum;
-- each flag alone.
+## Running it
 
-A .NET string that's null isn't reported at all, and Everest's is reported
-empty.
+Set up the probe in the game's folder, as its README describes, and start it.
+On Windows, for example:
 
-### Running it
+```sh
+./Celeste.exe --game real/Celeste.exe --values values.json --hold 600
+```
 
-Build the wasm module first (`cargo b --release` in `autosplitter/`). Then, from
+Then, with the wasm module built (`cargo b --release` in `autosplitter/`), from
 this folder:
 
 ```sh
-cargo build --release
-target/release/harness read
+cargo run --release -- live --values <game folder>/values.json
 ```
 
-Or run the `Reading Test` task in VS Code, which builds both first. On macOS,
-run it with `sudo`, since reading another process's memory needs root there. That
-leaves `target/release/fake/` owned by root.
+It waits for the values file, which the probe writes once every check has
+passed. It prints `ok`, or the differences and the auto splitter's log, and
+exits with 1 if they differ. Options:
 
-It prints `ok` or the differences for each case, and exits with 1 if any case
-failed. Options:
-
+- `--values FILE`: the values the probe holds.
 - `--wasm FILE`: the auto splitter (default: the release build in
   `autosplitter/`).
-- `--layouts DIR`: the layouts (default: `layouts/`).
-- `--settings FILE`: settings for the auto splitter, as a JSON object, whose
-  objects become maps and arrays lists (default: none).
-- `--timeout SECONDS`: how long each case may take (default: 60).
+- `--timeout SECONDS`: how long to wait for the values, and then for the auto
+  splitter to report them (default: 120).
 
-## fake-celeste
+## What it doesn't check
 
-The harness copies it to `target/release/fake/`, under the game's process name,
-which the auto splitter looks for: `Celeste.exe` on Windows, `Celeste.bin.x86_64`
-on Linux, and `Celeste` on macOS. It starts it as a child process, since on
-Linux only a parent can read a process's memory, and loads the auto splitter
-once it's ready. The runtime only lists processes, and each process's memory
-ranges, once a second.
-
-From a vanilla flavour's layout, it builds:
-
-- for each root, code holding the root's signature, 200 bytes of filler, and a
-  store into the root's static slot, with the slot's address in the store's `SS`
-  bytes. The slot holds the root's object. The game has 80 to 144 bytes between
-  the two, depending on the flavour, so only a search for the store finds it.
-  Before that code, the same code stores into a slot holding an object whose
-  title is "Not Celeste", which the auto splitter has to skip;
-- every object along each path, and "Celeste" in `Title`.
-
-What the auto splitter reads through 32-bit addresses is mapped below 4 GB:
-everything on Windows, where pointers are 32-bit, and the slot on Linux with a
-4-byte store. With an 8-byte store, the slot's address has `b8` as its fourth
-byte, so that the 4-byte store pattern also matches inside the 8-byte store, and
-the auto splitter has to take the earlier match.
-
-From Everest's, it builds the info struct, with its magic and version, at the
-start of a mapping of its own.
-
-It talks over stdin and stdout. Once everything is mapped, it prints `ready`.
-For each line `frame {"name": value, ...}`, it writes each value into the path or
-field with that name, as its type says, and prints `ack`. Everest's flags are
-named like `ChapterFlags.TimerActive`. It exits when stdin closes.
+- Everest, since no probe constructs it. Its offsets rest on the transcription
+  in [`layouts/everest.json`](../layouts/everest.json).
+- Values the probe doesn't hold: it holds one set, the same on every run. So
+  empty strings, and the smallest and largest numbers, are never read.
+- The rules for code the game doesn't have: a second match of the signature,
+  and a 4-byte store pattern matching inside an 8-byte store. The probe checks
+  that the real store is within the 256 bytes `memory.rs` searches.

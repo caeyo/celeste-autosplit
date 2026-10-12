@@ -4,7 +4,8 @@ Measures the memory layout the auto splitter reads, inside the game's own
 runtime, and writes it as `<flavour>.json`. What it measures is listed in
 [`Manifest.cs`](Manifest.cs). The
 [`layouts.yml`](../../.github/workflows/layouts.yml) workflow runs it against
-every vanilla flavour and opens a pull request with the results. The
+every vanilla flavour, runs the [live check](../../harness/) against the game it
+holds, and opens a pull request with the results. The
 [layouts README](../../layouts/README.md) describes the output.
 
 In order, it:
@@ -23,7 +24,8 @@ In order, it:
    number and flag, and into strings that are still null, then reads every path
    back raw from the slot whose address the store holds. It does this twice,
    with different values;
-5. prints the layout, and writes it if `--out` is given.
+5. prints the layout, and writes it if `--out` is given. With `--values`, it
+   then writes the values the paths hold.
 
 It prints what it finds along the way, including every field of each type along
 the paths, and the anchor's machine code. It stops at the first failure, and
@@ -101,6 +103,9 @@ Options:
   `Celeste.exe` next to it).
 - `--hold SECONDS`: once every check has passed, stays alive, so the process can
   be read from outside. It prints `holding for N s` when it starts.
+- `--values FILE`: once every check has passed, writes the values the paths
+  hold, as reflection reads them: the second pass's, which `--hold` keeps. The
+  [live check](../../harness/) compares the auto splitter with them.
 
 The Linux script changes to the game's folder first, and passes its arguments on
-unquoted, so give `--out` an absolute path without spaces.
+unquoted, so give `--out` and `--values` absolute paths without spaces.
