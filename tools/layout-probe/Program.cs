@@ -5,338 +5,319 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
+using System.Text;
 using System.Threading;
 
 namespace LayoutProbe
 {
     /// <summary>
-    /// Spike of the layout probe. Prints the memory layout the auto splitter reads, for the
-    /// flavour of the game it runs with. It has to run inside that flavour's own runtime, from
-    /// the game's directory: 32-bit .NET Framework on Windows, and the Mono bundled with the
-    /// game on Linux and macOS, through the game's MonoKickstart launcher (which runs the .exe
-    /// named after itself).
+    /// Measures the memory layout the auto splitter reads, inside the runtime of the game flavour
+    /// it runs with, and writes it as &lt;flavour&gt;.json. Manifest.cs says what to measure. It
+    /// has to run in the game's own runtime, from the game's folder: 32-bit .NET Framework on
+    /// Windows, and the Mono bundled with the game on Linux and macOS, through the game's
+    /// MonoKickstart launcher (which runs the .exe named after itself).
     ///
     /// Options:
-    ///   --game PATH   the game's Celeste.exe, relative to the probe's directory (default:
-    ///                 Celeste.exe next to the probe). Lets the probe itself be Celeste.exe,
-    ///                 so its process has the game's name.
-    ///   --construct   then try `new Celeste()`, and read the result back the way the auto
-    ///                 splitter would.
-    ///   --hold SECS   then stay alive, so the process can be looked at from outside.
+    ///   --out DIR         writes DIR/&lt;flavour&gt;.json once every check has passed.
+    ///   --game PATH       the game's Celeste.exe, relative to the probe's directory (default:
+    ///                     Celeste.exe next to the probe). Lets the probe itself be Celeste.exe,
+    ///                     so its process has the game's name.
+    ///   --hold SECONDS    once every check has passed, stays alive, so the process can be read
+    ///                     from outside.
+    ///
+    /// The game's Linux launcher script changes directory first, so pass an absolute --out.
     /// </summary>
     internal static class Program
     {
-        private const BindingFlags AnyInstance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-        private const BindingFlags AnyStatic = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
-        private const BindingFlags DeclaredInstance = AnyInstance | BindingFlags.DeclaredOnly;
+        // The anchor's length isn't available, so a fixed amount is read, stopping early at an
+        // unmapped page. This covers Celeste's constructor on every flavour: it's 0xb6 bytes on
+        // Windows, 0x15a on Linux and 0x1e9 on macOS.
+        private const int AnchorCodeLength = 768;
 
-        // The hand-written signatures in autosplitter/src/memory.rs. Each is followed, at the
-        // given displacement from the start of the match, by the Celeste.Instance slot's
-        // address, of the given width.
-        private static readonly Signature[] Signatures =
-        {
-            new Signature("windows", "68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35", 99, 4),
-            new Signature("linux", "be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00", 132, 4),
-            new Signature("macos", "be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00", 167, 8),
-        };
-
-        // Enough to cover the constructor up to its Instance store on every flavour.
-        private const int CodeDumpLength = 768;
-
-        private static int failures;
-
+        private static string outDirectory;
         private static string gamePath;
+        private static int holdSeconds;
+
+        private static string os;
+        private static string flavour;
         private static Assembly game;
-        private static Type celesteType;
-        private static FieldInfo instanceField;
-        private static FieldInfo titleField;
-        private static FieldInfo infoField;
-        private static long titleOffset;
-        private static long infoOffset;
-        private static long stringLengthOffset;
-        private static long stringCharsOffset;
-        private static ulong slot;
+        private static string gameVersion;
+        private static Root[] roots;
+        private static long stringLength;
+        private static long stringChars;
 
         private static int Main(string[] args)
         {
+            try
+            {
+                ParseArguments(args);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e.Message);
+                Console.Error.WriteLine("usage: LayoutProbe.exe [--out DIR] [--game PATH] [--hold SECONDS]");
+                return 2;
+            }
+
+            // Each step needs the ones before it.
+            bool ok = Step("runtime", DescribeRuntime)
+                && Step("game", LoadGame)
+                && Step("manifest", ResolveManifest)
+                && Step("layout", MeasureLayout)
+                && roots.All(root => Step("root " + root.Name, () => FindSlot(root)))
+                && Step("live validation", ValidateLive)
+                && Step("output", WriteLayout);
+
+            Console.WriteLine();
+            Console.WriteLine(ok ? "probe: ok" : "probe: failed");
+            // Only a probe that passed holds, so that holding means its values can be read.
+            if (ok && holdSeconds > 0)
+            {
+                Console.WriteLine("holding for {0} s", holdSeconds);
+                Console.Out.Flush();
+                Thread.Sleep(holdSeconds * 1000);
+            }
+            return ok ? 0 : 1;
+        }
+
+        private static void ParseArguments(string[] args)
+        {
             string gameFile = "Celeste.exe";
-            bool construct = false;
-            int hold = 0;
             for (int i = 0; i < args.Length; i++)
             {
                 switch (args[i])
                 {
+                    case "--out": outDirectory = Path.GetFullPath(args[++i]); break;
                     case "--game": gameFile = args[++i]; break;
-                    case "--construct": construct = true; break;
-                    case "--hold": hold = int.Parse(args[++i]); break;
+                    case "--hold": holdSeconds = int.Parse(args[++i]); break;
                     default: throw new ArgumentException("unknown option " + args[i]);
                 }
             }
+            if (holdSeconds < 0 || holdSeconds > int.MaxValue / 1000)
+            {
+                throw new ArgumentException("--hold takes 0 to " + int.MaxValue / 1000 + " seconds");
+            }
             gamePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, gameFile));
-
-            Section("runtime", PrintRuntime);
-            if (!Section("game", LoadGame))
-            {
-                return 1;
-            }
-            Section("layout", PrintLayout);
-            Section("static root Celeste.Instance", PrintRoot);
-            if (construct)
-            {
-                Section("construction", Construct);
-            }
-
-            Console.WriteLine();
-            Console.WriteLine(failures == 0 ? "probe: ok" : "probe: " + failures + " section(s) failed");
-            if (hold > 0)
-            {
-                Console.WriteLine("holding for {0} s", hold);
-                Console.Out.Flush();
-                Thread.Sleep(hold * 1000);
-            }
-            return failures == 0 ? 0 : 1;
         }
 
-        private static bool Section(string name, Action body)
+        private static bool Step(string name, Action body)
         {
             Console.WriteLine();
             Console.WriteLine("== " + name);
-            bool ok = true;
             try
             {
                 body();
+                return true;
             }
             catch (Exception e)
             {
-                failures++;
-                ok = false;
-                Console.WriteLine("FAILED: " + e);
+                // The probe's own failures explain themselves. Anything else gets its stack trace.
+                Console.WriteLine("FAILED: " + (e is ProbeException ? e.Message : e.ToString()));
+                return false;
             }
-            Console.Out.Flush();
-            return ok;
+            finally
+            {
+                Console.Out.Flush();
+            }
         }
 
-        private static void PrintRuntime()
+        private static void DescribeRuntime()
         {
-            Console.WriteLine("os: " + Environment.OSVersion);
+            os = DetectOs();
+            Console.WriteLine("os: {0} ({1})", os, Environment.OSVersion);
             Console.WriteLine("pointer size: " + IntPtr.Size);
             Type mono = Type.GetType("Mono.Runtime");
             if (mono != null)
             {
-                MethodInfo displayName = mono.GetMethod("GetDisplayName", AnyStatic);
+                MethodInfo displayName = mono.GetMethod("GetDisplayName", Names.AnyStatic);
                 Console.WriteLine("runtime: Mono " + (displayName == null ? "(unknown version)" : displayName.Invoke(null, null)));
             }
             else
             {
                 Console.WriteLine("runtime: .NET Framework " + FileVersionInfo.GetVersionInfo(typeof(object).Assembly.Location).FileVersion);
             }
-            Console.WriteLine("probe: " + Assembly.GetEntryAssembly().Location);
+            Console.WriteLine("probe executable: " + Assembly.GetEntryAssembly().Location);
+        }
+
+        private static string DetectOs()
+        {
+            if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+            {
+                return "windows";
+            }
+            // Mono reports Unix on both Linux and macOS, so ask the kernel. The struct uname
+            // fills starts with the kernel's name on both.
+            IntPtr buffer = Marshal.AllocHGlobal(4096);
+            try
+            {
+                if (uname(buffer) != 0)
+                {
+                    throw new ProbeException("uname failed");
+                }
+                string kernel = Marshal.PtrToStringAnsi(buffer);
+                switch (kernel)
+                {
+                    case "Linux": return "linux";
+                    case "Darwin": return "macos";
+                    default: throw new ProbeException("unsupported kernel " + kernel);
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
         }
 
         private static void LoadGame()
         {
             game = Assembly.LoadFrom(gamePath);
+            AssemblyName[] references = game.GetReferencedAssemblies();
             Console.WriteLine("game: " + gamePath);
             Console.WriteLine("assembly: " + game.FullName);
             Console.WriteLine("mvid: " + game.ManifestModule.ModuleVersionId);
-            Console.WriteLine("references: " + string.Join(", ", game.GetReferencedAssemblies().Select(a => a.Name + " " + a.Version).OrderBy(n => n).ToArray()));
+            Console.WriteLine("references: " + string.Join(", ", references.Select(a => a.Name + " " + a.Version).OrderBy(n => n).ToArray()));
 
-            celesteType = NeedType("Celeste.Celeste");
-            instanceField = NeedField(celesteType, "Instance", AnyStatic);
-            titleField = NeedField(NeedType("Monocle.Engine"), "Title", AnyInstance);
-            infoField = NeedField(celesteType, "AutoSplitterInfo", AnyInstance);
-            Console.WriteLine("hierarchy: " + string.Join(" : ", Hierarchy(celesteType).Select(t => t.FullName + " [" + t.Assembly.GetName().Name + "]").ToArray()));
+            // Linux and macOS have one flavour each. On Windows, the game is built on XNA or FNA.
+            flavour = os != "windows" ? os
+                : references.Any(a => a.Name == "FNA") ? "windows-fna"
+                : references.Any(a => a.Name == "Microsoft.Xna.Framework.Game") ? "windows-xna"
+                : throw new ProbeException("the game references neither FNA nor XNA");
+            Console.WriteLine("flavour: " + flavour);
         }
 
-        private static void PrintLayout()
+        private static void ResolveManifest()
         {
-            // Offsets need an instance, but not a constructed one.
-            object celeste = FormatterServices.GetUninitializedObject(celesteType);
-            // Game's finalizer would dispose this half-made object.
-            GC.SuppressFinalize(celeste);
+            roots = Manifest.Roots.Select(ResolveRoot).ToArray();
+            CheckUnique(roots.Select(r => r.Name), "");
+        }
 
-            Console.WriteLine("Celeste instance fields:");
-            PrintFields(celeste, Hierarchy(celesteType).SelectMany(t => t.GetFields(DeclaredInstance)));
-            titleOffset = Memory.FieldOffset(titleField, celeste);
-            infoOffset = Memory.FieldOffset(infoField, celeste);
-            Console.WriteLine("title field (Monocle.Engine.Title): 0x{0:x}", titleOffset);
-            Console.WriteLine("AutoSplitterInfo field: 0x{0:x} (0x{1:x} after the title)", infoOffset, infoOffset - titleOffset);
+        private static Root ResolveRoot(ManifestRoot entry)
+        {
+            var root = new Root
+            {
+                Name = entry.Field,
+                Field = Names.StaticField(game, entry.Field),
+                Anchor = Names.Method(game, entry.Anchor),
+                Signatures = entry.Signatures,
+            };
+            CheckObjectType(root.Field.FieldType, root.Name);
+            Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), entry.Anchor);
+            root.Paths = entry.Paths.Select(p => ResolvePath(root, p)).ToArray();
+            CheckUnique(root.Paths.Select(p => p.Name), " in the paths of " + root.Name);
+            return root;
+        }
 
-            object info = FormatterServices.GetUninitializedObject(infoField.FieldType);
-            FieldInfo[] infoFields = infoField.FieldType.GetFields(DeclaredInstance);
-            Console.WriteLine("AutoSplitterInfo fields:");
-            PrintFields(info, infoFields);
-            CheckRawReads(info, infoFields);
+        private static FieldPath ResolvePath(Root root, string name)
+        {
+            var fields = new List<FieldInfo>();
+            Type type = root.Field.FieldType;
+            foreach (string hop in name.Split('.'))
+            {
+                if (fields.Count > 0)
+                {
+                    CheckObjectType(type, name + " at " + fields.Last().Name);
+                }
+                FieldInfo field = Names.InstanceField(type, hop);
+                fields.Add(field);
+                type = field.FieldType;
+            }
+            if (type.IsValueType && type != typeof(bool) && type != typeof(int) && type != typeof(long))
+            {
+                throw new ProbeException(name + " ends in a " + type + ", which the probe can't check yet: add a raw read and sample values for it");
+            }
+            Console.WriteLine("  {0} : {1}", name, Names.TypeName(type));
+            return new FieldPath { Name = name, Fields = fields.ToArray() };
+        }
 
+        /// <summary>Paths go through objects, whose fields the probe measures on an instance.</summary>
+        private static void CheckObjectType(Type type, string where)
+        {
+            if (type.IsValueType || type.IsAbstract || type.IsArray)
+            {
+                throw new ProbeException(where + " is a " + type + ", and paths only go through objects of concrete classes");
+            }
+        }
+
+        private static void CheckUnique(IEnumerable<string> names, string where)
+        {
+            string duplicate = names.GroupBy(n => n).Where(g => g.Count() > 1).Select(g => g.Key).FirstOrDefault();
+            if (duplicate != null)
+            {
+                throw new ProbeException("the manifest lists " + duplicate + " twice" + where);
+            }
+        }
+
+        private static void MeasureLayout()
+        {
+            // A string's length and first character are fields, so they're measured like any
+            // other. The characters must start where the runtime says string data does.
             const string sample = "Celeste";
-            FieldInfo[] stringFields = typeof(string).GetFields(DeclaredInstance);
-            Console.WriteLine("String fields:");
-            PrintFields(sample, stringFields);
-            stringLengthOffset = Memory.FieldOffset(stringFields.Single(f => f.FieldType == typeof(int)), sample);
-            stringCharsOffset = Memory.FieldOffset(stringFields.Single(f => f.FieldType == typeof(char)), sample);
-            Console.WriteLine("string length: 0x{0:x}, chars: 0x{1:x} (OffsetToStringData: 0x{2:x})", stringLengthOffset, stringCharsOffset, RuntimeHelpers.OffsetToStringData);
-        }
-
-        private static void PrintFields(object instance, IEnumerable<FieldInfo> fields)
-        {
-            foreach (var entry in fields.Select(f => new { Field = f, Offset = Memory.FieldOffset(f, instance) }).OrderBy(e => e.Offset))
+            FieldInfo[] stringFields = typeof(string).GetFields(Names.DeclaredInstance);
+            stringLength = Memory.FieldOffset(stringFields.Single(f => f.FieldType == typeof(int)), sample);
+            stringChars = Memory.FieldOffset(stringFields.Single(f => f.FieldType == typeof(char)), sample);
+            if (stringChars != RuntimeHelpers.OffsetToStringData)
             {
-                Console.WriteLine("  0x{0:x3}  {1}.{2} : {3}", entry.Offset, entry.Field.DeclaringType.Name, entry.Field.Name, TypeName(entry.Field.FieldType));
+                throw new ProbeException("string characters measured at 0x" + stringChars.ToString("x") + ", but OffsetToStringData is 0x" + RuntimeHelpers.OffsetToStringData.ToString("x"));
             }
-        }
+            Console.WriteLine("string: length at 0x{0:x}, chars at 0x{1:x}", stringLength, stringChars);
 
-        /// <summary>
-        /// Checks the measured offsets independently of how they were measured: values written
-        /// through reflection must read back raw at them.
-        /// </summary>
-        private static void CheckRawReads(object instance, FieldInfo[] fields)
-        {
-            for (int i = 0; i < fields.Length; i++)
+            // Offsets need an instance of each type along the paths, but not a constructed one.
+            var instances = new Dictionary<Type, object>();
+            foreach (Root root in roots)
             {
-                fields[i].SetValue(instance, SampleValue(fields[i].FieldType, i + 1));
-            }
-            // Right after a collection the few small allocations below can't start another,
-            // so nothing moves while raw addresses are compared.
-            GC.Collect();
-            ulong address = Memory.AddressOf(instance);
-            var mismatches = new List<string>();
-            foreach (FieldInfo field in fields)
-            {
-                ulong at = address + (ulong)Memory.FieldOffset(field, instance);
-                bool same;
-                switch (field.GetValue(instance))
+                foreach (FieldPath path in root.Paths)
                 {
-                    case string s: same = Memory.ReadPointer(at) == Memory.AddressOf(s); break;
-                    case long l: same = Memory.ReadInt64(at) == l; break;
-                    case int n: same = Memory.ReadInt32(at) == n; break;
-                    case bool b: same = Memory.ReadByte(at) == (b ? 1 : 0); break;
-                    default: throw new NotSupportedException(field.FieldType.FullName);
-                }
-                if (!same)
-                {
-                    mismatches.Add(field.Name);
+                    path.Offsets = new long[path.Fields.Length];
+                    Type owner = root.Field.FieldType;
+                    for (int i = 0; i < path.Fields.Length; i++)
+                    {
+                        path.Offsets[i] = Memory.FieldOffset(path.Fields[i], Instance(owner, instances));
+                        owner = path.Fields[i].FieldType;
+                    }
                 }
             }
-            if (mismatches.Count > 0)
+
+            foreach (KeyValuePair<Type, object> entry in instances)
             {
-                throw new Exception("raw reads disagree with reflection for " + string.Join(", ", mismatches.ToArray()));
+                PrintFields(entry.Key, entry.Value);
             }
-            Console.WriteLine("raw reads at these offsets agree with reflection");
-        }
-
-        private static object SampleValue(Type type, int n)
-        {
-            if (type == typeof(string)) return "sample " + n;
-            if (type == typeof(long)) return 0x0102030405060708L * n;
-            if (type == typeof(int)) return 0x01020304 * n;
-            // Alternating, so that two neighbouring flags swapped would show.
-            if (type == typeof(bool)) return n % 2 == 1;
-            throw new NotSupportedException(type.FullName);
-        }
-
-        private static void PrintRoot()
-        {
-            // Run the class constructor first, as Main has by the time it constructs the game
-            // (it sets a static of Celeste's first). The JIT may compile static accesses
-            // differently before a class is initialized.
-            RuntimeHelpers.RunClassConstructor(celesteType.TypeHandle);
-            slot = Memory.StaticFieldAddress(instanceField);
-            Console.WriteLine("slot: 0x{0:x}", slot);
-
-            ConstructorInfo constructor = Constructor();
-            RuntimeHelpers.PrepareMethod(constructor.MethodHandle);
-            ulong entry = Memory.ToAddress(constructor.MethodHandle.GetFunctionPointer());
-            Console.WriteLine("constructor entry: 0x{0:x}", entry);
-            ulong code = MachineCode.FollowJumps(entry, Console.WriteLine);
-            byte[] bytes = Memory.ReadMapped(code, CodeDumpLength);
-            Console.WriteLine("constructor code at 0x{0:x} ({1} bytes read):", code, bytes.Length);
-            MachineCode.HexDump(bytes, Console.WriteLine);
-
-            List<SlotReference> references = MachineCode.FindSlotReferences(bytes, code, slot);
-            Console.WriteLine("slot references: " + (references.Count == 0 ? "none" : string.Join(", ", references.Select(r => "+0x" + r.Offset.ToString("x") + " " + r).ToArray())));
-            foreach (Signature signature in Signatures)
+            foreach (Root root in roots)
             {
-                List<int> matches = signature.Matches(bytes).ToList();
-                if (matches.Count == 0)
+                Console.WriteLine("paths from {0}:", root.Name);
+                foreach (FieldPath path in root.Paths)
                 {
-                    Console.WriteLine("signature {0}: no match", signature.Name);
-                }
-                foreach (int match in matches)
-                {
-                    bool agrees = references.Any(r => r.Offset - match == signature.SlotDisplacement && r.Width == signature.SlotWidth && !r.RipRelative);
-                    Console.WriteLine(
-                        "signature {0}: match at +0x{1:x}, slot at match {2}; hand-written: +{3} absolute u{4} ({5})",
-                        signature.Name,
-                        match,
-                        string.Join(", ", references.Select(r => (r.Offset - match).ToString("+0;-0") + " " + r).ToArray()),
-                        signature.SlotDisplacement,
-                        signature.SlotWidth * 8,
-                        agrees ? "agrees" : "DISAGREES");
+                    Console.WriteLine("  {0}: {1}", path.Name, string.Join(", ", path.Offsets.Select(o => "0x" + o.ToString("x")).ToArray()));
                 }
             }
         }
 
-        private static void Construct()
+        private static object Instance(Type type, Dictionary<Type, object> instances)
         {
-            // Main loads the settings before constructing the game, and the constructor reads
-            // Settings.Instance.Fullscreen and VSync.
-            FieldInfo settings = NeedField(NeedType("Celeste.Settings"), "Instance", AnyStatic);
-            if (settings.GetValue(null) == null)
+            if (!instances.TryGetValue(type, out object instance))
             {
-                settings.SetValue(null, Activator.CreateInstance(settings.FieldType, true));
+                instance = FormatterServices.GetUninitializedObject(type);
+                // The game's finalizers would clean up after these half-made objects.
+                GC.SuppressFinalize(instance);
+                instances.Add(type, instance);
             }
-
-            var timer = Stopwatch.StartNew();
-            object celeste;
-            try
-            {
-                celeste = Constructor().Invoke(new object[0]);
-            }
-            catch (TargetInvocationException e)
-            {
-                throw new Exception("new Celeste() threw", e.InnerException);
-            }
-            // Nothing disposes it before the process exits.
-            GC.SuppressFinalize(celeste);
-            Console.WriteLine("constructed in {0} ms", timer.ElapsedMilliseconds);
-            Console.WriteLine("Celeste.Instance is the new object: " + ReferenceEquals(instanceField.GetValue(null), celeste));
-            Console.WriteLine("title: \"{0}\"", titleField.GetValue(celeste));
-
-            // Read it back with raw memory reads only, as the auto splitter does.
-            ulong instance = Memory.ReadPointer(slot);
-            ulong address = Memory.AddressOf(celeste);
-            Console.WriteLine("slot holds 0x{0:x}, the object is at 0x{1:x}: {2}", instance, address, instance == address ? "same" : "DIFFERENT");
-            ulong title = Memory.ReadPointer(instance + (ulong)titleOffset);
-            Console.WriteLine("title read raw: \"{0}\"", ReadString(title));
-            ulong info = Memory.ReadPointer(instance + (ulong)infoOffset);
-            ulong infoAddress = Memory.AddressOf(infoField.GetValue(celeste));
-            Console.WriteLine("AutoSplitterInfo read raw: 0x{0:x}, the object is at 0x{1:x}: {2}", info, infoAddress, info == infoAddress ? "same" : "DIFFERENT");
+            return instance;
         }
 
-        private static string ReadString(ulong address)
+        /// <summary>Every instance field of the type, for reference when adding paths.</summary>
+        private static void PrintFields(Type type, object instance)
         {
-            if (address == 0)
+            Console.WriteLine(string.Join(" : ", Hierarchy(type).Select(t => t.FullName + " [" + t.Assembly.GetName().Name + "]").ToArray()));
+            var fields = Hierarchy(type)
+                .SelectMany(t => t.GetFields(Names.DeclaredInstance))
+                .Select(f => new { Field = f, Offset = Memory.FieldOffset(f, instance) })
+                .OrderBy(e => e.Offset);
+            foreach (var entry in fields)
             {
-                return null;
+                Console.WriteLine("  0x{0:x3}  {1}.{2} : {3}", entry.Offset, entry.Field.DeclaringType.Name, entry.Field.Name, Names.TypeName(entry.Field.FieldType));
             }
-            int length = Memory.ReadInt32(address + (ulong)stringLengthOffset);
-            var chars = new char[Math.Max(0, Math.Min(length, 256))];
-            for (int i = 0; i < chars.Length; i++)
-            {
-                chars[i] = Memory.ReadChar(address + (ulong)stringCharsOffset + (ulong)(2 * i));
-            }
-            return new string(chars);
         }
-
-        private static ConstructorInfo Constructor() =>
-            celesteType.GetConstructor(AnyInstance, null, Type.EmptyTypes, null) ?? throw new MissingMethodException("Celeste.Celeste", ".ctor");
-
-        private static Type NeedType(string name) =>
-            game.GetType(name) ?? throw new TypeLoadException("no type " + name);
-
-        private static FieldInfo NeedField(Type type, string name, BindingFlags flags) =>
-            type.GetField(name, flags) ?? throw new MissingFieldException(type.FullName, name);
 
         /// <summary>The type and its base classes, most derived first, without Object.</summary>
         private static IEnumerable<Type> Hierarchy(Type type)
@@ -347,14 +328,309 @@ namespace LayoutProbe
             }
         }
 
-        private static string TypeName(Type type)
+        private static void FindSlot(Root root)
         {
-            if (!type.IsGenericType)
+            // Run the class constructors first, as the game has by the time it runs the anchor:
+            // the JIT may compile static accesses differently before a class is initialized.
+            RuntimeHelpers.RunClassConstructor(root.Field.DeclaringType.TypeHandle);
+            RuntimeHelpers.RunClassConstructor(root.Anchor.DeclaringType.TypeHandle);
+            root.Slot = Memory.StaticFieldAddress(root.Field);
+            Console.WriteLine("slot: 0x{0:x}", root.Slot);
+
+            // Once the method is compiled, both runtimes return its code here rather than a stub
+            // that jumps to it. A stub would show in the dump, and the signature wouldn't match.
+            RuntimeHelpers.PrepareMethod(root.Anchor.MethodHandle);
+            root.Code = Memory.ToAddress(root.Anchor.MethodHandle.GetFunctionPointer());
+            // Printed for debugging only: it holds addresses that change from run to run.
+            byte[] code = Memory.ReadMapped(root.Code, AnchorCodeLength);
+            Console.WriteLine("anchor code at 0x{0:x} ({1} bytes read):", root.Code, code.Length);
+            MachineCode.HexDump(code, Console.WriteLine);
+
+            List<SlotReference> references = MachineCode.FindSlotReferences(code, root.Slot);
+            Console.WriteLine("slot's address in the code: " + (references.Count == 0 ? "nowhere" : string.Join(", ", references.Select(r => r.ToString()).ToArray())));
+            // Only now, so that a new root's first run prints the code to write its signature from.
+            if (!root.Signatures.TryGetValue(flavour, out root.Signature))
             {
-                return type.FullName ?? type.Name;
+                throw new ProbeException(root.Name + " has no signature for " + flavour + " yet: write one from the code above, in Manifest.cs and in memory.rs");
             }
-            string name = type.GetGenericTypeDefinition().FullName;
-            return name.Substring(0, name.IndexOf('`')) + "<" + string.Join(", ", type.GetGenericArguments().Select(TypeName).ToArray()) + ">";
+            int[] matches = root.Signature.Code.Matches(code).ToArray();
+            Console.WriteLine("signature {0}: {1}", root.Signature.Code, matches.Length == 0 ? "no match" : "matches at " + string.Join(", ", matches.Select(m => "+0x" + m.ToString("x")).ToArray()));
+            if (matches.Length != 1)
+            {
+                throw new ProbeException(matches.Length == 0 ? "the signature doesn't match the anchor's code" : "the signature matches the anchor's code more than once");
+            }
+            root.Match = matches[0];
+
+            // The store is the earliest match of any store pattern after the signature, and must
+            // hold the slot's address.
+            int after = root.Match + root.Signature.Code.Length;
+            var store = root.Signature.Store
+                .Select(p => new { Pattern = p, Match = p.Matches(code, after).DefaultIfEmpty(-1).First() })
+                .Where(s => s.Match >= 0)
+                .OrderBy(s => s.Match)
+                .FirstOrDefault()
+                ?? throw new ProbeException("no store pattern matches after the signature");
+            root.Store = store.Pattern;
+            root.StoreMatch = store.Match;
+            Console.WriteLine("store {0}: the earliest match, at +0x{1:x}, {2} bytes after the signature", root.Store, root.StoreMatch, root.StoreMatch - after);
+            ulong slot = root.Store.Slot(code, root.StoreMatch);
+            if (slot != root.Slot)
+            {
+                throw new ProbeException("the store's address is 0x" + slot.ToString("x") + ", but the slot is at 0x" + root.Slot.ToString("x"));
+            }
+            Console.WriteLine("the store's address is the slot's");
         }
+
+        private sealed class PathCheck
+        {
+            public Root Root;
+            public FieldPath Path;
+            /// <summary>The object holding the path's last field.</summary>
+            public object Owner;
+            public bool Writable;
+            public int Number;
+        }
+
+        /// <summary>
+        /// Constructs the game for real, then reads every path back raw, the way the auto splitter
+        /// does: from the slot whose address the store after the signature holds.
+        /// </summary>
+        private static void ValidateLive()
+        {
+            // Main loads the settings before constructing the game, and the constructor reads
+            // Settings.Instance.Fullscreen and VSync.
+            FieldInfo settings = Names.StaticField(game, "Celeste.Settings::Instance");
+            if (settings.GetValue(null) == null)
+            {
+                settings.SetValue(null, Activator.CreateInstance(settings.FieldType, true));
+            }
+
+            var timer = Stopwatch.StartNew();
+            object celeste;
+            try
+            {
+                celeste = Activator.CreateInstance(Names.Type(game, "Celeste.Celeste"), true);
+            }
+            catch (TargetInvocationException e)
+            {
+                throw new Exception("new Celeste() threw", e.InnerException);
+            }
+            // Nothing disposes it before the process exits.
+            GC.SuppressFinalize(celeste);
+            Console.WriteLine("constructed in {0} ms", timer.ElapsedMilliseconds);
+            gameVersion = Names.InstanceField(celeste.GetType(), "Version").GetValue(celeste).ToString();
+            Console.WriteLine("game version: " + gameVersion);
+
+            // Every number and flag gets distinctive values, so that a wrong offset can't read back
+            // one that happens to match. Strings get one only while null: the title keeps
+            // "Celeste", which the auto splitter checks for. Other objects keep theirs.
+            var checks = new List<PathCheck>();
+            foreach (Root root in roots)
+            {
+                object value = root.Field.GetValue(null) ?? throw new ProbeException(root.Name + " is still null after new Celeste(), so it can't be read back");
+                foreach (FieldPath path in root.Paths)
+                {
+                    object owner = value;
+                    foreach (FieldInfo field in path.Fields.Take(path.Fields.Length - 1))
+                    {
+                        owner = field.GetValue(owner) ?? throw new ProbeException(path.Name + ": " + field.Name + " is null after new Celeste()");
+                    }
+                    Type type = path.Last.FieldType;
+                    object current = path.Last.GetValue(owner);
+                    bool writable = type.IsValueType || current == null;
+                    if (writable && !type.IsValueType && type != typeof(string))
+                    {
+                        throw new ProbeException(path.Name + " is null after new Celeste(), and the probe can't make a " + type + " to read back");
+                    }
+                    checks.Add(new PathCheck { Root = root, Path = path, Owner = owner, Writable = writable, Number = checks.Count + 1 });
+                }
+            }
+
+            var mismatches = new List<string>();
+            for (int pass = 1; pass <= 2; pass++)
+            {
+                Console.WriteLine("pass {0}:", pass);
+                foreach (PathCheck check in checks.Where(c => c.Writable))
+                {
+                    check.Path.Last.SetValue(check.Owner, SampleValue(check.Path.Last.FieldType, check.Number, pass));
+                }
+                // Right after a collection, the few small allocations below won't start another.
+                // Another thread's could, but a moved object only makes a comparison fail, never
+                // pass wrongly.
+                GC.Collect();
+                foreach (Root root in roots)
+                {
+                    // The slot and the object in it are checked before anything is read through
+                    // them, so a wrong address fails here instead of crashing the process.
+                    ulong slot = SlotFromCode(root);
+                    if (slot != root.Slot)
+                    {
+                        Console.WriteLine("  {0}: the store's address is 0x{1:x}, but the slot is at 0x{2:x}", root.Name, slot, root.Slot);
+                        mismatches.Add(root.Name);
+                        continue;
+                    }
+                    ulong instance = Memory.ReadPointer(slot);
+                    ulong expected = Memory.AddressOf(root.Field.GetValue(null));
+                    if (instance != expected)
+                    {
+                        Console.WriteLine("  {0}: the slot holds 0x{1:x}, but the object is at 0x{2:x}", root.Name, instance, expected);
+                        mismatches.Add(root.Name);
+                        continue;
+                    }
+                    Console.WriteLine("  {0}: the store's address is the slot, which holds the object at 0x{1:x}", root.Name, instance);
+                    foreach (PathCheck check in checks.Where(c => c.Root == root))
+                    {
+                        object value = Expected(check);
+                        object raw = ReadPath(instance, check.Path);
+                        bool same = Equals(value, raw);
+                        Console.WriteLine("  {0} = {1}{2}", check.Path.Name, Describe(value), same ? "" : ", but reads " + Describe(raw) + " raw");
+                        if (!same)
+                        {
+                            mismatches.Add(check.Path.Name);
+                        }
+                    }
+                }
+            }
+            if (mismatches.Count > 0)
+            {
+                throw new ProbeException("raw reads disagree with reflection for " + string.Join(", ", mismatches.Distinct().ToArray()));
+            }
+            Console.WriteLine("every path reads back raw");
+        }
+
+        /// <summary>
+        /// A distinctive value for the n-th path. The second pass negates numbers and flips flags,
+        /// so each flag is seen both set and clear. Neighbouring flags differ, so two swapped
+        /// ones would show.
+        /// </summary>
+        private static object SampleValue(Type type, int n, int pass)
+        {
+            int sign = pass == 1 ? 1 : -1;
+            if (type == typeof(string)) return "path " + n + " pass " + pass;
+            if (type == typeof(bool)) return (n + pass) % 2 == 0;
+            if (type == typeof(int)) return sign * n * 0x01010101;
+            if (type == typeof(long)) return sign * n * 0x0101010101010101L;
+            throw new ProbeException("no sample value for " + type);
+        }
+
+        /// <summary>The path's value as reflection sees it. Objects other than strings are compared by address.</summary>
+        private static object Expected(PathCheck check)
+        {
+            Type type = check.Path.Last.FieldType;
+            object value = check.Path.Last.GetValue(check.Owner);
+            return type.IsValueType || type == typeof(string) ? value : (object)Memory.AddressOf(value);
+        }
+
+        /// <summary>The slot's address, read raw from the store in the anchor's code.</summary>
+        private static ulong SlotFromCode(Root root) =>
+            root.Store.Slot(Memory.ReadMapped(root.Code + (ulong)root.StoreMatch, root.Store.Length), 0);
+
+        /// <summary>Reads a path raw from its root's object, through the measured offsets.</summary>
+        private static object ReadPath(ulong instance, FieldPath path)
+        {
+            ulong address = instance;
+            for (int i = 0; i < path.Fields.Length - 1; i++)
+            {
+                address = Memory.ReadPointer(address + (ulong)path.Offsets[i]);
+                if (address == 0)
+                {
+                    return null;
+                }
+            }
+            address += (ulong)path.Offsets.Last();
+            Type type = path.Last.FieldType;
+            if (type == typeof(string)) return ReadString(Memory.ReadPointer(address));
+            if (type == typeof(bool)) return Memory.ReadByte(address) != 0;
+            if (type == typeof(int)) return Memory.ReadInt32(address);
+            if (type == typeof(long)) return Memory.ReadInt64(address);
+            return Memory.ReadPointer(address);
+        }
+
+        /// <summary>Reads a string raw, through the measured offsets of its length and characters.</summary>
+        private static string ReadString(ulong address)
+        {
+            if (address == 0)
+            {
+                return null;
+            }
+            int length = Memory.ReadInt32(address + (ulong)stringLength);
+            if (length < 0 || length > 1024)
+            {
+                return "(a string of length " + length + ")";
+            }
+            var chars = new char[length];
+            for (int i = 0; i < length; i++)
+            {
+                chars[i] = Memory.ReadChar(address + (ulong)stringChars + (ulong)(2 * i));
+            }
+            return new string(chars);
+        }
+
+        private static string Describe(object value)
+        {
+            switch (value)
+            {
+                case null: return "null";
+                case string s: return "\"" + s + "\"";
+                case bool b: return b ? "true" : "false";
+                case ulong address: return "the object at 0x" + address.ToString("x");
+                default: return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        private static void WriteLayout()
+        {
+            string text = LayoutJson();
+            Console.Write(text);
+            if (outDirectory != null)
+            {
+                Directory.CreateDirectory(outDirectory);
+                string file = Path.Combine(outDirectory, flavour + ".json");
+                File.WriteAllText(file, text, new UTF8Encoding(false));
+                Console.WriteLine("written to " + file);
+            }
+        }
+
+        /// <summary>
+        /// The layout as JSON, always in this format, so that regenerated layouts only differ
+        /// where values do. Every path goes on one line.
+        /// </summary>
+        private static string LayoutJson()
+        {
+            IEnumerable<string> rootsJson = roots.Select(root =>
+                "    " + Quote(root.Name) + ": {\n" +
+                "      \"signature\": " + Quote(root.Signature.Code.ToString()) + ",\n" +
+                "      \"store\": [" + string.Join(", ", root.Signature.Store.Select(p => Quote(p.ToString())).ToArray()) + "],\n" +
+                "      \"paths\": {\n" +
+                string.Join(",\n", root.Paths.Select(path =>
+                    "        " + Quote(path.Name) + ": { " +
+                    "\"offsets\": [" + string.Join(", ", path.Offsets.Select(o => o.ToString()).ToArray()) + "], " +
+                    "\"types\": [" + string.Join(", ", path.Fields.Select(f => Quote(Names.TypeName(f.FieldType))).ToArray()) + "] }").ToArray()) + "\n" +
+                "      }\n" +
+                "    }");
+            return "{\n" +
+                "  \"flavour\": " + Quote(flavour) + ",\n" +
+                "  \"os\": " + Quote(os) + ",\n" +
+                "  \"game\": { \"version\": " + Quote(gameVersion) + ", \"mvid\": " + Quote(game.ManifestModule.ModuleVersionId.ToString()) + " },\n" +
+                "  \"pointer_size\": " + IntPtr.Size + ",\n" +
+                "  \"string\": { \"length\": " + stringLength + ", \"chars\": " + stringChars + " },\n" +
+                "  \"roots\": {\n" +
+                string.Join(",\n", rootsJson.ToArray()) + "\n" +
+                "  }\n" +
+                "}\n";
+        }
+
+        /// <summary>A JSON string. The layout's strings are .NET names, which have nothing to escape.</summary>
+        private static string Quote(string s)
+        {
+            if (s.Any(c => c == '"' || c == '\\' || c < ' '))
+            {
+                throw new ProbeException("can't write " + s + " as JSON without escaping it");
+            }
+            return "\"" + s + "\"";
+        }
+
+        [DllImport("libc")]
+        private static extern int uname(IntPtr buffer);
     }
 }

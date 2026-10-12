@@ -1,15 +1,12 @@
 name: Layouts
 
-# Probes each vanilla flavour of the game for the memory layout the auto splitter
-# reads. The probe runs inside the flavour's own runtime, next to the real game files.
+# Measures each vanilla flavour's memory layout with the layout probe, inside the
+# flavour's own runtime next to the real game files, then opens a pull request into the
+# dispatched branch with the regenerated layouts/<flavour>.json files.
 #
 # The game files are release assets of a private repository, fetched with the
-# GAME_FILES_TOKEN secret. They never go into caches or artifacts, and this never runs
-# for pull requests from forks.
-#
-# For now this is the spike: it prints what the probe finds, and whether a real
-# `new Celeste()` can be made without booting the game, in a process with the game's
-# name so the auto splitter could attach to it.
+# GAME_FILES_TOKEN secret. They never go into caches or artifacts (only the measured
+# layouts do), and this only runs on dispatch, so never for pull requests from forks.
 
 on:
   workflow_dispatch:
@@ -31,16 +28,28 @@ defaults:
     shell: bash
 
 jobs:
-  windows:
+  probe:
     name: ${{ matrix.flavour }}
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        flavour: [windows-xna, windows-fna]
+        include:
+          - flavour: windows-xna
+            runner: windows-latest
+          - flavour: windows-fna
+            runner: windows-latest
+          - flavour: linux
+            runner: ubuntu-latest
+          # The game is x86_64 only: on arm64 it runs under Rosetta.
+          - flavour: macos
+            runner: macos-latest
     steps:
+      # The game's code runs in this job, so it doesn't keep the checkout's token.
       - name: Checkout Commit
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Install .NET
         uses: actions/setup-dotnet@v6
@@ -53,10 +62,11 @@ jobs:
       - name: Fetch game files
         env:
           GH_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
+          ZIP: celeste-${{ matrix.flavour }}.zip
         run: |
-          gh release download "$GAME_FILES_TAG" --repo "$GAME_FILES_REPO" --pattern "celeste-${{ matrix.flavour }}.zip" --dir "$RUNNER_TEMP"
-          unzip -q "$RUNNER_TEMP/celeste-${{ matrix.flavour }}.zip" -d "$RUNNER_TEMP/game"
-          rm "$RUNNER_TEMP/celeste-${{ matrix.flavour }}.zip"
+          gh release download "$GAME_FILES_TAG" --repo "$GAME_FILES_REPO" --pattern "$ZIP" --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP/$ZIP" -d "$RUNNER_TEMP/game"
+          rm "$RUNNER_TEMP/$ZIP"
 
       # XNA's assemblies load from the GAC, so XNA builds need the redistributable. It
       # also installs the VC++ 2010 runtime and DirectX pieces its assemblies import.
@@ -72,123 +82,8 @@ jobs:
           "XNA installer exit code: $($xna.ExitCode)"
           if ($xna.ExitCode -notin 0, 3010) { exit 1 }
 
-      - name: Probe
-        working-directory: ${{ runner.temp }}/game
-        run: |
-          cp "$GITHUB_WORKSPACE/$PROBE_BUILD"/LayoutProbe.* .
-          ./LayoutProbe.exe
-
-      - name: Construct
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/game
-        run: ./LayoutProbe.exe --construct
-
-      # The auto splitter finds the game by process name, so to be read, the probe has to
-      # be Celeste.exe. The game's assembly moves to a subdirectory instead.
-      - name: Construct as Celeste.exe
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/game
-        run: |
-          mkdir real
-          mv Celeste.exe real/
-          [ ! -f Celeste.exe.config ] || mv Celeste.exe.config real/
-          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
-          ./Celeste.exe --game real/Celeste.exe --construct --hold 10 > named.out 2>&1 &
-          probe=$!
-          for i in $(seq 120); do grep -q '^holding' named.out && break; kill -0 $probe 2>/dev/null || break; sleep 1; done
-          powershell -NoProfile -Command 'Get-Process -Name Celeste | Format-Table Id, ProcessName, Path -AutoSize | Out-String -Width 200' || echo "no process named Celeste"
-          status=0; wait $probe || status=$?
-          cat named.out
-          exit $status
-
-  linux:
-    name: linux
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Commit
-        uses: actions/checkout@v7
-
-      - name: Install .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '9.0.x'
-
-      - name: Build probe
-        run: dotnet build tools/layout-probe -c Release
-
-      - name: Fetch game files
-        env:
-          GH_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
-        run: |
-          gh release download "$GAME_FILES_TAG" --repo "$GAME_FILES_REPO" --pattern celeste-linux.zip --dir "$RUNNER_TEMP"
-          unzip -q "$RUNNER_TEMP/celeste-linux.zip" -d "$RUNNER_TEMP/game"
-          rm "$RUNNER_TEMP/celeste-linux.zip"
-
-      # MonoKickstart runs the .exe named after itself, with the game's own Mono.
-      - name: Probe
-        working-directory: ${{ runner.temp }}/game
-        run: |
-          cp "$GITHUB_WORKSPACE/$PROBE_BUILD"/LayoutProbe.* .
-          cp Celeste.bin.x86_64 LayoutProbe.bin.x86_64
-          chmod +x LayoutProbe.bin.x86_64
-          ./LayoutProbe.bin.x86_64
-
-      # FNA needs a display to create its window. The runner image already has Xvfb and
-      # Mesa, and the window never gets a GL context, so software rendering is enough.
-      - name: Construct (Xvfb)
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/game
-        run: xvfb-run -a -s '-screen 0 1280x720x24' ./LayoutProbe.bin.x86_64 --construct
-
-      # The auto splitter finds the game by process name, so to be read, the probe has to
-      # be Celeste.exe. The game's assembly moves to a subdirectory instead.
-      - name: Construct as Celeste.exe (Xvfb)
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/game
-        run: |
-          mkdir real
-          mv Celeste.exe Celeste.exe.config real/
-          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
-          chmod +x Celeste Celeste.bin.x86_64
-          # Through the game's own launcher script, as players start it.
-          xvfb-run -a -s '-screen 0 1280x720x24' ./Celeste --game real/Celeste.exe --construct --hold 10 > named.out 2>&1 &
-          probe=$!
-          for i in $(seq 120); do grep -q '^holding' named.out && break; kill -0 $probe 2>/dev/null || break; sleep 1; done
-          for pid in $(pgrep -x Celeste.bin.x86); do echo "pid $pid: comm $(cat /proc/$pid/comm), exe $(readlink /proc/$pid/exe)"; done
-          pgrep -x Celeste.bin.x86 > /dev/null || echo "no process named Celeste.bin.x86"
-          status=0; wait $probe || status=$?
-          cat named.out
-          exit $status
-
-  macos:
-    name: macos (${{ matrix.runner }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # The game is x86_64 only: on arm64 it runs under Rosetta.
-        runner: [macos-latest, macos-15-intel]
-    steps:
-      - name: Checkout Commit
-        uses: actions/checkout@v7
-
-      - name: Install .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '9.0.x'
-
-      - name: Build probe
-        run: dotnet build tools/layout-probe -c Release
-
-      - name: Fetch game files
-        env:
-          GH_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
-        run: |
-          gh release download "$GAME_FILES_TAG" --repo "$GAME_FILES_REPO" --pattern celeste-macos.zip --dir "$RUNNER_TEMP"
-          unzip -q "$RUNNER_TEMP/celeste-macos.zip" -d "$RUNNER_TEMP/game"
-          rm "$RUNNER_TEMP/celeste-macos.zip"
-
       - name: Check x86_64 support
+        if: runner.os == 'macOS'
         run: |
           sw_vers
           uname -m
@@ -198,23 +93,41 @@ jobs:
           fi
           arch -x86_64 /usr/bin/true && echo "x86_64 binaries run"
 
-      # MonoKickstart runs the .exe named after itself from Resources, with the game's own Mono.
-      - name: Probe
-        working-directory: ${{ runner.temp }}/game/Celeste.app/Contents
-        run: |
-          cp "$GITHUB_WORKSPACE/$PROBE_BUILD"/LayoutProbe.* Resources/
-          cp MacOS/Celeste MacOS/LayoutProbe
-          chmod +x MacOS/LayoutProbe
-          MacOS/LayoutProbe
+      # The probe's live validation runs as the game, the way the auto splitter will see
+      # it: the probe becomes Celeste.exe, the game's own Celeste.exe moves to real/, and
+      # it starts the way players start the game. The game's Linux script changes
+      # directory first, so the output path given to the probe is absolute.
 
-      - name: Construct
+      - name: Probe (Windows)
+        if: runner.os == 'Windows'
         timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/game/Celeste.app/Contents
-        run: MacOS/LayoutProbe --construct
+        working-directory: ${{ runner.temp }}/game
+        run: |
+          mkdir real
+          mv Celeste.exe real/
+          [ ! -f Celeste.exe.config ] || mv Celeste.exe.config real/
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
+          ./Celeste.exe --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
-      # The auto splitter finds the game by process name, so to be read, the probe has to
-      # be Celeste.exe. The game's assembly moves to a subdirectory instead.
-      - name: Construct as Celeste.exe
+      # The script runs Celeste.bin.x86_64, a MonoKickstart that runs Celeste.exe with the
+      # game's own Mono. FNA needs a display to create its window. The runner image already
+      # has Xvfb and Mesa, and the window never gets a GL context, so software rendering is
+      # enough.
+      - name: Probe (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/game
+        run: |
+          mkdir real
+          mv Celeste.exe Celeste.exe.config real/
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
+          chmod +x Celeste Celeste.bin.x86_64
+          xvfb-run -a -s '-screen 0 1280x720x24' ./Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
+
+      # MacOS/Celeste is a MonoKickstart that runs Resources/Celeste.exe with the game's own
+      # Mono.
+      - name: Probe (macOS)
+        if: runner.os == 'macOS'
         timeout-minutes: 5
         working-directory: ${{ runner.temp }}/game/Celeste.app/Contents
         run: |
@@ -222,10 +135,67 @@ jobs:
           mv Resources/Celeste.exe Resources/real/
           cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Resources/Celeste.exe
           chmod +x MacOS/Celeste
-          MacOS/Celeste --game real/Celeste.exe --construct --hold 10 > named.out 2>&1 &
-          probe=$!
-          for i in $(seq 120); do grep -q '^holding' named.out && break; kill -0 $probe 2>/dev/null || break; sleep 1; done
-          pgrep -lx Celeste || echo "no process named Celeste"
-          status=0; wait $probe || status=$?
-          cat named.out
-          exit $status
+          MacOS/Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
+
+      # The probe names the file after the flavour it detected, so a mislabelled matrix
+      # entry fails here.
+      - name: Upload layout
+        uses: actions/upload-artifact@v7
+        with:
+          name: layout-${{ matrix.flavour }}
+          path: ${{ runner.temp }}/layouts/${{ matrix.flavour }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # A pull request needs a branch to go into, so a run dispatched on a tag only probes.
+  pull-request:
+    name: Open pull request
+    needs: probe
+    if: github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v7
+
+      - name: Download layouts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: layout-*
+          merge-multiple: true
+          path: layouts
+
+      # Needs "Allow GitHub Actions to create and approve pull requests" in the
+      # repository's Actions settings. Each base branch gets one layouts/<base> branch,
+      # force-pushed on every run, so an open pull request is updated, not duplicated.
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.ref_name }}
+          BRANCH: layouts/${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          open=$(gh pr list --head "$BRANCH" --base "$BASE" --state open --json number --jq '.[].number')
+          git add layouts
+          if git diff --cached --quiet; then
+            echo "The layouts haven't changed."
+            # A pull request from an earlier run no longer matches what the probe measures.
+            if [ -n "$open" ]; then
+              gh pr close "$open" --delete-branch --comment "Out of date: [a later run]($RUN_URL) found the layouts unchanged."
+            fi
+            exit 0
+          fi
+          git diff --cached
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$BRANCH"
+          git commit -q -m "Regenerate layouts" -m "Measured by $RUN_URL"
+          git push --force origin "$BRANCH"
+          if [ -n "$open" ]; then
+            echo "Updated the open pull request from $BRANCH."
+          else
+            gh pr create --base "$BASE" --head "$BRANCH" --title "Regenerate layouts" \
+              --body "Measured by the layout probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code, and live validation read every path back raw through the slot."
+          fi
