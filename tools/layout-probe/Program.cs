@@ -386,7 +386,7 @@ namespace LayoutProbe
 
         /// <summary>
         /// Constructs the game for real, then reads every path back raw, the way the auto splitter
-        /// does: from the slot whose address the anchor's code holds at the measured displacement.
+        /// does: from the slot whose address the store after the signature holds.
         /// </summary>
         private static void ValidateLive()
         {
