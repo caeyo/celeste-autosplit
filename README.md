@@ -10,7 +10,7 @@ An auto splitter for Celeste that runs on every LiveSplit host.
 | [`component/`](component/) | `celeste-autosplit.dll`, the LiveSplit (Windows) component that wraps the wasm module and provides the settings editor and legacy migration. | .NET SDK (`dotnet`) |
 | [`schema/`](schema/) | `settings-schema.json`, the shared settings schema consumed by the component and the website. | — |
 | [`site/`](site/) | The GitHub Pages settings editor for `.lss` files, for livesplit-core hosts. | Static HTML/CSS/JS |
-| [`layouts/`](layouts/) | The memory layouts the auto splitter reads, per game flavour, as the layout probe measured them. | — |
+| [`layouts/`](layouts/) | The memory layouts the auto splitter reads: each vanilla flavour's, measured by the layout probe, and Everest's, transcribed from its source. | — |
 | [`tools/layout-probe/`](tools/layout-probe/) | Measures the game's memory layout inside each flavour's own runtime. | .NET SDK (`dotnet`) |
 | [`update.xml`](update.xml) | LiveSplit's update manifest for the component. | — |
 

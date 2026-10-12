@@ -18,7 +18,8 @@ namespace LayoutProbe
         //   heap is, so both forms are listed. Where the heap is also changes the length of other
         //   instructions between the signature and the store, so the store is searched for
         //   rather than expected at a fixed distance.
-        // memory.rs has the same signatures and store patterns.
+        // memory.rs has the same signatures, but still reads the slot at a fixed distance after
+        // them: 99, 132 and 167 bytes.
         // These come before Roots, which uses them: static fields are set in order.
         private static readonly Signature CelesteClr32 = new Signature(
             "68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35",
@@ -74,7 +75,7 @@ namespace LayoutProbe
         /// </summary>
         public string Anchor;
 
-        /// <summary>Per flavour, how the auto splitter finds the field's address in the anchor's code.</summary>
+        /// <summary>Per flavour, how to find the field's address in the anchor's code.</summary>
         public readonly Dictionary<string, Signature> Signatures = new Dictionary<string, Signature>();
 
         /// <summary>

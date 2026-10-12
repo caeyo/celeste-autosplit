@@ -61,10 +61,12 @@ namespace LayoutProbe
     }
 
     /// <summary>
-    /// How the auto splitter finds a static slot in compiled code. The signature matches the
-    /// anchor's code once. The store into the slot follows it, at a distance that can depend on
-    /// the length of the instructions in between: it's the first of the store patterns to match
-    /// after the signature, and its SS bytes are the slot's address.
+    /// How to find a static slot in compiled code. The signature matches the anchor's code once.
+    /// The store into the slot follows it, at a distance that can depend on the length of the
+    /// instructions in between: it's the earliest match of any store pattern after the
+    /// signature, and its SS bytes are the slot's address. Earliest, not the first pattern
+    /// listed, because patterns can overlap: a 4-byte store pattern can also match inside an
+    /// 8-byte store, when the address's fourth byte happens to be the 4-byte form's opcode.
     /// </summary>
     internal sealed class Signature
     {

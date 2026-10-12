@@ -24,7 +24,8 @@ namespace LayoutProbe
     ///   --game PATH       the game's Celeste.exe, relative to the probe's directory (default:
     ///                     Celeste.exe next to the probe). Lets the probe itself be Celeste.exe,
     ///                     so its process has the game's name.
-    ///   --hold SECONDS    then stays alive, so the process can be read from outside.
+    ///   --hold SECONDS    once every check has passed, stays alive, so the process can be read
+    ///                     from outside.
     ///
     /// The game's Linux launcher script changes directory first, so pass an absolute --out.
     /// </summary>
@@ -53,7 +54,7 @@ namespace LayoutProbe
             {
                 ParseArguments(args);
             }
-            catch (Exception e) when (e is ArgumentException || e is FormatException || e is IndexOutOfRangeException)
+            catch (Exception e)
             {
                 Console.Error.WriteLine(e.Message);
                 Console.Error.WriteLine("usage: LayoutProbe.exe [--out DIR] [--game PATH] [--hold SECONDS]");
@@ -71,7 +72,8 @@ namespace LayoutProbe
 
             Console.WriteLine();
             Console.WriteLine(ok ? "probe: ok" : "probe: failed");
-            if (holdSeconds > 0)
+            // Only a probe that passed holds, so that holding means its values can be read.
+            if (ok && holdSeconds > 0)
             {
                 Console.WriteLine("holding for {0} s", holdSeconds);
                 Console.Out.Flush();
@@ -92,6 +94,10 @@ namespace LayoutProbe
                     case "--hold": holdSeconds = int.Parse(args[++i]); break;
                     default: throw new ArgumentException("unknown option " + args[i]);
                 }
+            }
+            if (holdSeconds < 0 || holdSeconds > int.MaxValue / 1000)
+            {
+                throw new ArgumentException("--hold takes 0 to " + int.MaxValue / 1000 + " seconds");
             }
             gamePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, gameFile));
         }
@@ -189,16 +195,12 @@ namespace LayoutProbe
 
         private static Root ResolveRoot(ManifestRoot entry)
         {
-            if (!entry.Signatures.TryGetValue(flavour, out Signature signature))
-            {
-                throw new ProbeException(entry.Field + " has no signature for " + flavour + ": add one to Manifest.cs and to memory.rs");
-            }
             var root = new Root
             {
                 Name = entry.Field,
                 Field = Names.StaticField(game, entry.Field),
                 Anchor = Names.Method(game, entry.Anchor),
-                Signature = signature,
+                Signatures = entry.Signatures,
             };
             CheckObjectType(root.Field.FieldType, root.Name);
             Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), entry.Anchor);
@@ -346,6 +348,11 @@ namespace LayoutProbe
 
             List<SlotReference> references = MachineCode.FindSlotReferences(code, root.Slot);
             Console.WriteLine("slot's address in the code: " + (references.Count == 0 ? "nowhere" : string.Join(", ", references.Select(r => r.ToString()).ToArray())));
+            // Only now, so that a new root's first run prints the code to write its signature from.
+            if (!root.Signatures.TryGetValue(flavour, out root.Signature))
+            {
+                throw new ProbeException(root.Name + " has no signature for " + flavour + " yet: write one from the code above, in Manifest.cs and in memory.rs");
+            }
             int[] matches = root.Signature.Code.Matches(code).ToArray();
             Console.WriteLine("signature {0}: {1}", root.Signature.Code, matches.Length == 0 ? "no match" : "matches at " + string.Join(", ", matches.Select(m => "+0x" + m.ToString("x")).ToArray()));
             if (matches.Length != 1)
@@ -354,8 +361,8 @@ namespace LayoutProbe
             }
             root.Match = matches[0];
 
-            // As the auto splitter does: the store is the first store pattern to match after the
-            // signature, and must hold the slot's address.
+            // The store is the earliest match of any store pattern after the signature, and must
+            // hold the slot's address.
             int after = root.Match + root.Signature.Code.Length;
             var store = root.Signature.Store
                 .Select(p => new { Pattern = p, Match = p.Matches(code, after).DefaultIfEmpty(-1).First() })
@@ -365,7 +372,7 @@ namespace LayoutProbe
                 ?? throw new ProbeException("no store pattern matches after the signature");
             root.Store = store.Pattern;
             root.StoreMatch = store.Match;
-            Console.WriteLine("store {0}: matches first, at +0x{1:x}, {2} bytes after the signature", root.Store, root.StoreMatch, root.StoreMatch - after);
+            Console.WriteLine("store {0}: the earliest match, at +0x{1:x}, {2} bytes after the signature", root.Store, root.StoreMatch, root.StoreMatch - after);
             ulong slot = root.Store.Slot(code, root.StoreMatch);
             if (slot != root.Slot)
             {
@@ -414,8 +421,9 @@ namespace LayoutProbe
             gameVersion = Names.InstanceField(celeste.GetType(), "Version").GetValue(celeste).ToString();
             Console.WriteLine("game version: " + gameVersion);
 
-            // Fields still holding their default value get distinctive values, so that a wrong
-            // offset can't read back the same zero. The rest, like the title, keep theirs.
+            // Every number and flag gets distinctive values, so that a wrong offset can't read back
+            // one that happens to match. Strings get one only while null: the title keeps
+            // "Celeste", which the auto splitter checks for. Other objects keep theirs.
             var checks = new List<PathCheck>();
             foreach (Root root in roots)
             {
@@ -429,7 +437,7 @@ namespace LayoutProbe
                     }
                     Type type = path.Last.FieldType;
                     object current = path.Last.GetValue(owner);
-                    bool writable = current == null || (type.IsValueType && current.Equals(Activator.CreateInstance(type)));
+                    bool writable = type.IsValueType || current == null;
                     if (writable && !type.IsValueType && type != typeof(string))
                     {
                         throw new ProbeException(path.Name + " is null after new Celeste(), and the probe can't make a " + type + " to read back");
@@ -446,8 +454,9 @@ namespace LayoutProbe
                 {
                     check.Path.Last.SetValue(check.Owner, SampleValue(check.Path.Last.FieldType, check.Number, pass));
                 }
-                // Right after a collection the few small allocations below can't start another,
-                // so nothing moves while raw addresses are compared.
+                // Right after a collection, the few small allocations below won't start another.
+                // Another thread's could, but a moved object only makes a comparison fail, never
+                // pass wrongly.
                 GC.Collect();
                 foreach (Root root in roots)
                 {
