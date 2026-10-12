@@ -7,7 +7,7 @@
   "roots": {
     "Celeste.Celeste::Instance": {
       "signature": "68 38 04 00 00 68 c0 03 00 00 68 1c 02 00 00 ff 35",
-      "slot": { "displacement": 99, "encoding": "absolute_u32" },
+      "store": ["8d 15 SS SS SS SS e8"],
       "paths": {
         "Title": { "offsets": [144], "types": ["System.String"] },
         "AutoSplitterInfo.Chapter": { "offsets": [172, 24], "types": ["Celeste.AutoSplitterInfo", "System.Int32"] },
