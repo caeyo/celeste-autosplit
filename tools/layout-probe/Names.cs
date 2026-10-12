@@ -64,8 +64,9 @@ namespace LayoutProbe
             {
                 return type.FullName ?? type.Name;
             }
-            string name = type.GetGenericTypeDefinition().FullName;
-            return name.Substring(0, name.IndexOf('`')) + "<" + string.Join(", ", type.GetGenericArguments().Select(TypeName).ToArray()) + ">";
+            // Each generic level of the name ends in its arity, as in List`1+Enumerator.
+            string name = string.Join("+", type.GetGenericTypeDefinition().FullName.Split('+').Select(part => part.Split('`')[0]).ToArray());
+            return name + "<" + string.Join(", ", type.GetGenericArguments().Select(TypeName).ToArray()) + ">";
         }
 
         private static void Split(string reference, out string type, out string member)

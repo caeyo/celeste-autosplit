@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
@@ -10,16 +11,19 @@ namespace LayoutProbe
         public string Name;
         public FieldInfo Field;
         public MethodBase Anchor;
-        public Signature Signature;
+        /// <summary>Per flavour, as the manifest has them.</summary>
+        public Dictionary<string, Signature> Signatures;
         public FieldPath[] Paths;
 
         /// <summary>The static field's address.</summary>
         public ulong Slot;
         /// <summary>The anchor's compiled code.</summary>
         public ulong Code;
+        /// <summary>The flavour's signature.</summary>
+        public Signature Signature;
         /// <summary>Where the signature matches in the code.</summary>
         public int Match;
-        /// <summary>The store pattern that matches first after the signature.</summary>
+        /// <summary>The earliest store pattern match after the signature.</summary>
         public Pattern Store;
         /// <summary>Where it matches in the code.</summary>
         public int StoreMatch;

@@ -29,8 +29,8 @@ game files. It:
 
 1. resolves every name in the manifest, and measures each path's offsets;
 2. checks that the flavour's hand-written signature matches the root's anchor
-   method once, in its compiled code, and that the first of its store patterns
-   after the match holds the slot's address;
+   method once, in its compiled code, and that the earliest store pattern match
+   after it holds the slot's address;
 3. constructs the game for real (`new Celeste()`), in a process named like the
    game. Then it writes distinctive values into every field that still holds its
    default, and reads every path back raw from the slot, as the auto splitter does.
@@ -66,12 +66,12 @@ Abbreviated from `windows-fna.json`:
 |---|---|
 | `flavour` | `windows-xna`, `windows-fna`, `linux` or `macos`. |
 | `os` | `windows`, `linux` or `macos`, as `asr::get_os()` names them. |
-| `game` | The probed `Celeste.exe`: its version, and its module version ID. The three FNA flavours share one `Celeste.exe`. |
+| `game` | The probed `Celeste.exe`: the game's version, as the game sets it (the assembly's own version is 1.0.0.0), and its module version ID. The three FNA flavours share one `Celeste.exe`. |
 | `pointer_size` | 4 or 8 bytes. |
 | `string` | Where a string object holds its length (an `i32`) and its UTF-16 characters. |
 | `roots` | Per manifest root, by its `field`: |
 | &emsp;`signature` | The probe's copy of the hand-written signature, which matches the anchor's code once: hex bytes, `??` for any byte. |
-| &emsp;`store` | The probe's copy of the hand-written store patterns: the code that stores into the slot, after the signature. The first one to match after the signature holds the slot's address, in its 4 or 8 `SS` bytes. |
+| &emsp;`store` | The probe's copy of the hand-written store patterns: the code that stores into the slot, after the signature. The earliest match of any of them after the signature holds the slot's address, in its 4 or 8 `SS` bytes. Earliest, because a 4-byte pattern can also match inside an 8-byte store. |
 | &emsp;`paths` | Per manifest path: each field's offset and .NET type, one per hop. |
 
 All offsets are in bytes, from the address a reference to the object holds. To read

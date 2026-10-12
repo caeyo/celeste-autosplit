@@ -45,8 +45,11 @@ jobs:
           - flavour: macos
             runner: macos-latest
     steps:
+      # The game's code runs in this job, so it doesn't keep the checkout's token.
       - name: Checkout Commit
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Install .NET
         uses: actions/setup-dotnet@v6
@@ -144,9 +147,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # A pull request needs a branch to go into, so a run dispatched on a tag only probes.
   pull-request:
     name: Open pull request
     needs: probe
+    if: github.ref_type == 'branch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -172,9 +177,14 @@ jobs:
           BRANCH: layouts/${{ github.ref_name }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          open=$(gh pr list --head "$BRANCH" --base "$BASE" --state open --json number --jq '.[].number')
           git add layouts
           if git diff --cached --quiet; then
             echo "The layouts haven't changed."
+            # A pull request from an earlier run no longer matches what the probe measures.
+            if [ -n "$open" ]; then
+              gh pr close "$open" --delete-branch --comment "Out of date: [a later run]($RUN_URL) found the layouts unchanged."
+            fi
             exit 0
           fi
           git diff --cached
@@ -183,9 +193,9 @@ jobs:
           git switch -c "$BRANCH"
           git commit -q -m "Regenerate layouts" -m "Measured by $RUN_URL"
           git push --force origin "$BRANCH"
-          if [ -n "$(gh pr list --head "$BRANCH" --base "$BASE" --state open --json number --jq '.[]')" ]; then
+          if [ -n "$open" ]; then
             echo "Updated the open pull request from $BRANCH."
           else
             gh pr create --base "$BASE" --head "$BRANCH" --title "Regenerate layouts" \
-              --body "Measured by the layout probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature matched its anchor's compiled code, and live validation read every path back raw through the slot."
+              --body "Measured by the layout probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code, and live validation read every path back raw through the slot."
           fi
