@@ -325,26 +325,26 @@ const CLR32: Layout = Layout {
     chapter_heart: 0x34,
 };
 
-/// 16-byte MonoObject header, then the same fields as Windows
-/// in declaration order. Ints are 8-aligned rather than packed.
+/// 64-bit Mono, on Linux and macOS: a 16-byte object header, then the fields that hold
+/// references, then the others in declaration order, each aligned to its size.
 const MONO64: Layout = Layout {
     ptr_size: PointerSize::Bit64,
     string_len: 0x10,
     string_chars: 0x14,
-    chapter_time: 0x10,
-    file_time: 0x18,
-    level: 0x20,
-    chapter: 0x28,
-    mode: 0x30,
-    chapter_strawberries: 0x38,
+    chapter_time: 0x28,
+    file_time: 0x38,
+    level: 0x10,
+    chapter: 0x18,
+    mode: 0x1c,
+    chapter_strawberries: 0x30,
     file_strawberries: 0x40,
-    file_cassettes: 0x48,
-    file_hearts: 0x50,
-    timer_active: 0x54,
-    chapter_started: 0x55,
-    chapter_complete: 0x56,
-    chapter_cassette: 0x57,
-    chapter_heart: 0x58,
+    file_cassettes: 0x44,
+    file_hearts: 0x48,
+    timer_active: 0x20,
+    chapter_started: 0x21,
+    chapter_complete: 0x22,
+    chapter_cassette: 0x34,
+    chapter_heart: 0x35,
 };
 
 fn read_dotnet_string(
