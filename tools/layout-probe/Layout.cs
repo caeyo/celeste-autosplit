@@ -19,10 +19,10 @@ namespace LayoutProbe
         public ulong Code;
         /// <summary>Where the signature matches in the code.</summary>
         public int Match;
-        /// <summary>The slot's reference in the code that the auto splitter reads.</summary>
-        public SlotReference Reference;
-
-        public int Displacement => Reference.Offset - Match;
+        /// <summary>The store pattern that matches first after the signature.</summary>
+        public Pattern Store;
+        /// <summary>Where it matches in the code.</summary>
+        public int StoreMatch;
     }
 
     /// <summary>A manifest path from a root's object: an instance field per hop, and its measured offset.</summary>

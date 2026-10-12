@@ -29,7 +29,8 @@ game files. It:
 
 1. resolves every name in the manifest, and measures each path's offsets;
 2. checks that the flavour's hand-written signature matches the root's anchor
-   method once, in its compiled code, and finds the slot's address after the match;
+   method once, in its compiled code, and that the first of its store patterns
+   after the match holds the slot's address;
 3. constructs the game for real (`new Celeste()`), in a process named like the
    game. Then it writes distinctive values into every field that still holds its
    default, and reads every path back raw from the slot, as the auto splitter does.
@@ -51,7 +52,7 @@ Abbreviated from `windows-fna.json`:
   "roots": {
     "Celeste.Celeste::Instance": {
       "signature": "68 38 04 00 00 68 c0 03 00 00 68 1c 02 00 00 ff 35",
-      "slot": { "displacement": 99, "encoding": "absolute_u32" },
+      "store": ["8d 15 SS SS SS SS e8"],
       "paths": {
         "Title": { "offsets": [132], "types": ["System.String"] },
         "AutoSplitterInfo.Chapter": { "offsets": [160, 24], "types": ["Celeste.AutoSplitterInfo", "System.Int32"] }
@@ -69,9 +70,8 @@ Abbreviated from `windows-fna.json`:
 | `pointer_size` | 4 or 8 bytes. |
 | `string` | Where a string object holds its length (an `i32`) and its UTF-16 characters. |
 | `roots` | Per manifest root, by its `field`: |
-| &emsp;`signature` | The probe's copy of the hand-written signature: hex bytes, `??` for any byte. |
-| &emsp;`slot.displacement` | From the start of the signature's match to the slot's address in the code. |
-| &emsp;`slot.encoding` | `absolute_u32` or `absolute_u64`: the address itself, in 4 or 8 bytes. |
+| &emsp;`signature` | The probe's copy of the hand-written signature, which matches the anchor's code once: hex bytes, `??` for any byte. |
+| &emsp;`store` | The probe's copy of the hand-written store patterns: the code that stores into the slot, after the signature. The first one to match after the signature holds the slot's address, in its 4 or 8 `SS` bytes. |
 | &emsp;`paths` | Per manifest path: each field's offset and .NET type, one per hop. |
 
 All offsets are in bytes, from the address a reference to the object holds. To read
