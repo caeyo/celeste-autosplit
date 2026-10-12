@@ -48,7 +48,6 @@ Abbreviated from `windows-fna.json`:
   "game": { "version": "1.4.0.0", "mvid": "d7b2abb4-05ec-4c97-9545-49f0a02e4a41" },
   "pointer_size": 4,
   "string": { "length": 4, "chars": 8 },
-  "array": { "length": 4, "data": 8 },
   "roots": {
     "Celeste.Celeste::Instance": {
       "signature": "68 38 04 00 00 68 c0 03 00 00 68 1c 02 00 00 ff 35",
@@ -69,11 +68,10 @@ Abbreviated from `windows-fna.json`:
 | `game` | The probed `Celeste.exe`: its version, and its module version ID. The three FNA flavours share one `Celeste.exe`. |
 | `pointer_size` | 4 or 8 bytes. |
 | `string` | Where a string object holds its length (an `i32`) and its UTF-16 characters. |
-| `array` | Where an array object holds its length (an `i32`) and its first element. |
 | `roots` | Per manifest root, by its `field`: |
 | &emsp;`signature` | The probe's copy of the hand-written signature: hex bytes, `??` for any byte. |
 | &emsp;`slot.displacement` | From the start of the signature's match to the slot's address in the code. |
-| &emsp;`slot.encoding` | `absolute_u32` or `absolute_u64`: the address itself. `rip_relative`: a signed 32-bit displacement from the end of those 4 bytes. |
+| &emsp;`slot.encoding` | `absolute_u32` or `absolute_u64`: the address itself, in 4 or 8 bytes. |
 | &emsp;`paths` | Per manifest path: each field's offset and .NET type, one per hop. |
 
 All offsets are in bytes, from the address a reference to the object holds. To read
