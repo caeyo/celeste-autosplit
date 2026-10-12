@@ -1,0 +1,25 @@
+{
+  "roots": [
+    {
+      "field": "Celeste.Celeste::Instance",
+      "anchor": "Celeste.Celeste::.ctor()",
+      "paths": [
+        "Title",
+        "AutoSplitterInfo.Chapter",
+        "AutoSplitterInfo.Mode",
+        "AutoSplitterInfo.Level",
+        "AutoSplitterInfo.TimerActive",
+        "AutoSplitterInfo.ChapterStarted",
+        "AutoSplitterInfo.ChapterComplete",
+        "AutoSplitterInfo.ChapterTime",
+        "AutoSplitterInfo.ChapterStrawberries",
+        "AutoSplitterInfo.ChapterCassette",
+        "AutoSplitterInfo.ChapterHeart",
+        "AutoSplitterInfo.FileTime",
+        "AutoSplitterInfo.FileStrawberries",
+        "AutoSplitterInfo.FileCassettes",
+        "AutoSplitterInfo.FileHearts"
+      ]
+    }
+  ]
+}
