@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Runs inside the game's own runtime, so it targets what Celeste.exe targets
+    (.NET Framework 4.5). On Linux and macOS that is the Mono bundled with the
+    game, which only has the 4.5 profile's assemblies.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net45</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+
+    <!--
+      Celeste.exe is marked x86-only, so on Windows only a 32-bit process can
+      load it. Mono ignores the flag and runs 64-bit.
+    -->
+    <PlatformTarget>x86</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Targeting pack, so building doesn't need the .NET Framework developer pack installed. -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>
