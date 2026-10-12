@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
+using System.Threading;
 
 namespace LayoutProbe
 {
@@ -13,11 +14,16 @@ namespace LayoutProbe
     /// Spike of the layout probe. Prints the memory layout the auto splitter reads, for the
     /// flavour of the game it runs with. It has to run inside that flavour's own runtime, from
     /// the game's directory: 32-bit .NET Framework on Windows, and the Mono bundled with the
-    /// game on Linux and macOS, through a copy of the game's MonoKickstart launcher (which
-    /// runs the .exe named after itself).
+    /// game on Linux and macOS, through the game's MonoKickstart launcher (which runs the .exe
+    /// named after itself).
     ///
-    /// With --construct, it then tries `new Celeste()` and reads the result back the way the
-    /// auto splitter would.
+    /// Options:
+    ///   --game PATH   the game's Celeste.exe, relative to the probe's directory (default:
+    ///                 Celeste.exe next to the probe). Lets the probe itself be Celeste.exe,
+    ///                 so its process has the game's name.
+    ///   --construct   then try `new Celeste()`, and read the result back the way the auto
+    ///                 splitter would.
+    ///   --hold SECS   then stay alive, so the process can be looked at from outside.
     /// </summary>
     internal static class Program
     {
@@ -40,6 +46,7 @@ namespace LayoutProbe
 
         private static int failures;
 
+        private static string gamePath;
         private static Assembly game;
         private static Type celesteType;
         private static FieldInfo instanceField;
@@ -53,6 +60,21 @@ namespace LayoutProbe
 
         private static int Main(string[] args)
         {
+            string gameFile = "Celeste.exe";
+            bool construct = false;
+            int hold = 0;
+            for (int i = 0; i < args.Length; i++)
+            {
+                switch (args[i])
+                {
+                    case "--game": gameFile = args[++i]; break;
+                    case "--construct": construct = true; break;
+                    case "--hold": hold = int.Parse(args[++i]); break;
+                    default: throw new ArgumentException("unknown option " + args[i]);
+                }
+            }
+            gamePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, gameFile));
+
             Section("runtime", PrintRuntime);
             if (!Section("game", LoadGame))
             {
@@ -60,13 +82,19 @@ namespace LayoutProbe
             }
             Section("layout", PrintLayout);
             Section("static root Celeste.Instance", PrintRoot);
-            if (args.Contains("--construct"))
+            if (construct)
             {
                 Section("construction", Construct);
             }
 
             Console.WriteLine();
             Console.WriteLine(failures == 0 ? "probe: ok" : "probe: " + failures + " section(s) failed");
+            if (hold > 0)
+            {
+                Console.WriteLine("holding for {0} s", hold);
+                Console.Out.Flush();
+                Thread.Sleep(hold * 1000);
+            }
             return failures == 0 ? 0 : 1;
         }
 
@@ -103,12 +131,18 @@ namespace LayoutProbe
             {
                 Console.WriteLine("runtime: .NET Framework " + FileVersionInfo.GetVersionInfo(typeof(object).Assembly.Location).FileVersion);
             }
-            Console.WriteLine("directory: " + AppDomain.CurrentDomain.BaseDirectory);
+            Console.WriteLine("probe: " + Assembly.GetEntryAssembly().Location);
         }
 
         private static void LoadGame()
         {
-            game = Assembly.LoadFrom(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Celeste.exe"));
+            // When the probe is Celeste.exe, that's what the game's assembly name finds next
+            // to it, so loads by that name get the game's assembly instead.
+            AppDomain.CurrentDomain.AssemblyResolve += (sender, e) =>
+                game != null && new AssemblyName(e.Name).Name == game.GetName().Name ? game : null;
+
+            game = Assembly.LoadFrom(gamePath);
+            Console.WriteLine("game: " + gamePath);
             Console.WriteLine("assembly: " + game.FullName);
             Console.WriteLine("mvid: " + game.ManifestModule.ModuleVersionId);
             Console.WriteLine("references: " + string.Join(", ", game.GetReferencedAssemblies().Select(a => a.Name + " " + a.Version).OrderBy(n => n).ToArray()));
@@ -135,8 +169,10 @@ namespace LayoutProbe
             Console.WriteLine("AutoSplitterInfo field: 0x{0:x} (0x{1:x} after the title)", infoOffset, infoOffset - titleOffset);
 
             object info = FormatterServices.GetUninitializedObject(infoField.FieldType);
+            FieldInfo[] infoFields = infoField.FieldType.GetFields(DeclaredInstance);
             Console.WriteLine("AutoSplitterInfo fields:");
-            PrintFields(info, infoField.FieldType.GetFields(DeclaredInstance));
+            PrintFields(info, infoFields);
+            CheckRawReads(info, infoFields);
 
             const string sample = "Celeste";
             FieldInfo[] stringFields = typeof(string).GetFields(DeclaredInstance);
@@ -153,6 +189,55 @@ namespace LayoutProbe
             {
                 Console.WriteLine("  0x{0:x3}  {1}.{2} : {3}", entry.Offset, entry.Field.DeclaringType.Name, entry.Field.Name, TypeName(entry.Field.FieldType));
             }
+        }
+
+        /// <summary>
+        /// Checks the measured offsets independently of how they were measured: values written
+        /// through reflection must read back raw at them.
+        /// </summary>
+        private static void CheckRawReads(object instance, FieldInfo[] fields)
+        {
+            for (int i = 0; i < fields.Length; i++)
+            {
+                fields[i].SetValue(instance, SampleValue(fields[i].FieldType, i + 1));
+            }
+            // Right after a collection the few small allocations below can't start another,
+            // so nothing moves while raw addresses are compared.
+            GC.Collect();
+            ulong address = Memory.AddressOf(instance);
+            var mismatches = new List<string>();
+            foreach (FieldInfo field in fields)
+            {
+                ulong at = address + (ulong)Memory.FieldOffset(field, instance);
+                bool same;
+                switch (field.GetValue(instance))
+                {
+                    case string s: same = Memory.ReadPointer(at) == Memory.AddressOf(s); break;
+                    case long l: same = Memory.ReadInt64(at) == l; break;
+                    case int n: same = Memory.ReadInt32(at) == n; break;
+                    case bool b: same = Memory.ReadByte(at) == (b ? 1 : 0); break;
+                    default: throw new NotSupportedException(field.FieldType.FullName);
+                }
+                if (!same)
+                {
+                    mismatches.Add(field.Name);
+                }
+            }
+            if (mismatches.Count > 0)
+            {
+                throw new Exception("raw reads disagree with reflection for " + string.Join(", ", mismatches.ToArray()));
+            }
+            Console.WriteLine("raw reads at these offsets agree with reflection");
+        }
+
+        private static object SampleValue(Type type, int n)
+        {
+            if (type == typeof(string)) return "sample " + n;
+            if (type == typeof(long)) return 0x0102030405060708L * n;
+            if (type == typeof(int)) return 0x01020304 * n;
+            // Alternating, so that two neighbouring flags swapped would show.
+            if (type == typeof(bool)) return n % 2 == 1;
+            throw new NotSupportedException(type.FullName);
         }
 
         private static void PrintRoot()
