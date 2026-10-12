@@ -8,7 +8,8 @@ name: Layouts
 # for pull requests from forks.
 #
 # For now this is the spike: it prints what the probe finds, and whether a real
-# `new Celeste()` can be made without booting the game.
+# `new Celeste()` can be made without booting the game, in a process with the game's
+# name so the auto splitter could attach to it.
 
 on:
   workflow_dispatch:
@@ -61,8 +62,8 @@ jobs:
           unzip -q "$RUNNER_TEMP/celeste-${{ matrix.flavour }}.zip" -d "$RUNNER_TEMP/game"
           rm "$RUNNER_TEMP/celeste-${{ matrix.flavour }}.zip"
 
-      # XNA's assemblies load from the GAC, so XNA builds need the redistributable,
-      # which needs the VC++ 2010 runtime.
+      # XNA's assemblies load from the GAC, so XNA builds need the redistributable. Its
+      # mixed-mode assemblies import the VC++ 2010 runtime, which the runner image lacks.
       - name: Install XNA 4.0
         if: matrix.flavour == 'windows-xna'
         shell: pwsh
@@ -88,10 +89,27 @@ jobs:
           ./LayoutProbe.exe
 
       - name: Construct
-        continue-on-error: true
         timeout-minutes: 5
         working-directory: ${{ runner.temp }}/game
         run: ./LayoutProbe.exe --construct
+
+      # The auto splitter finds the game by process name, so to be read, the probe has to
+      # be Celeste.exe. The game's assembly moves to a subdirectory instead.
+      - name: Construct as Celeste.exe
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/game
+        run: |
+          mkdir real
+          mv Celeste.exe real/
+          [ ! -f Celeste.exe.config ] || mv Celeste.exe.config real/
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
+          ./Celeste.exe --game real/Celeste.exe --construct --hold 10 > named.out 2>&1 &
+          probe=$!
+          for i in $(seq 120); do grep -q '^holding' named.out && break; kill -0 $probe 2>/dev/null || break; sleep 1; done
+          powershell -NoProfile -Command 'Get-Process -Name Celeste | Format-Table Id, ProcessName, Path -AutoSize | Out-String -Width 200' || echo "no process named Celeste"
+          status=0; wait $probe || status=$?
+          cat named.out
+          exit $status
 
   linux:
     name: linux
@@ -116,11 +134,6 @@ jobs:
           unzip -q "$RUNNER_TEMP/celeste-linux.zip" -d "$RUNNER_TEMP/game"
           rm "$RUNNER_TEMP/celeste-linux.zip"
 
-      - name: Install Xvfb and Mesa
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends xvfb xauth libgl1 libgl1-mesa-dri libegl1 libegl-mesa0
-
       # MonoKickstart runs the .exe named after itself, with the game's own Mono.
       - name: Probe
         working-directory: ${{ runner.temp }}/game
@@ -130,33 +143,32 @@ jobs:
           chmod +x LayoutProbe.bin.x86_64
           ./LayoutProbe.bin.x86_64
 
-      - name: Construct (no display)
-        continue-on-error: true
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/game
-        run: ./LayoutProbe.bin.x86_64 --construct
-
-      - name: Construct (SDL dummy video driver)
-        continue-on-error: true
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/game
-        env:
-          SDL_VIDEODRIVER: dummy
-        run: ./LayoutProbe.bin.x86_64 --construct
-
-      - name: Construct (SDL offscreen video driver)
-        continue-on-error: true
-        timeout-minutes: 5
-        working-directory: ${{ runner.temp }}/game
-        env:
-          SDL_VIDEODRIVER: offscreen
-        run: ./LayoutProbe.bin.x86_64 --construct
-
+      # FNA needs a display to create its window. The runner image already has Xvfb and
+      # Mesa, and the window never gets a GL context, so software rendering is enough.
       - name: Construct (Xvfb)
-        continue-on-error: true
         timeout-minutes: 5
         working-directory: ${{ runner.temp }}/game
         run: xvfb-run -a -s '-screen 0 1280x720x24' ./LayoutProbe.bin.x86_64 --construct
+
+      # The auto splitter finds the game by process name, so to be read, the probe has to
+      # be Celeste.exe. The game's assembly moves to a subdirectory instead.
+      - name: Construct as Celeste.exe (Xvfb)
+        timeout-minutes: 5
+        working-directory: ${{ runner.temp }}/game
+        run: |
+          mkdir real
+          mv Celeste.exe Celeste.exe.config real/
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
+          chmod +x Celeste Celeste.bin.x86_64
+          # Through the game's own launcher script, as players start it.
+          xvfb-run -a -s '-screen 0 1280x720x24' ./Celeste --game real/Celeste.exe --construct --hold 10 > named.out 2>&1 &
+          probe=$!
+          for i in $(seq 120); do grep -q '^holding' named.out && break; kill -0 $probe 2>/dev/null || break; sleep 1; done
+          for pid in $(pgrep -x Celeste.bin.x86); do echo "pid $pid: comm $(cat /proc/$pid/comm), exe $(readlink /proc/$pid/exe)"; done
+          pgrep -x Celeste.bin.x86 > /dev/null || echo "no process named Celeste.bin.x86"
+          status=0; wait $probe || status=$?
+          cat named.out
+          exit $status
 
   macos:
     name: macos (${{ matrix.runner }})
@@ -206,15 +218,24 @@ jobs:
           MacOS/LayoutProbe
 
       - name: Construct
-        continue-on-error: true
         timeout-minutes: 5
         working-directory: ${{ runner.temp }}/game/Celeste.app/Contents
         run: MacOS/LayoutProbe --construct
 
-      - name: Construct (SDL dummy video driver)
-        continue-on-error: true
+      # The auto splitter finds the game by process name, so to be read, the probe has to
+      # be Celeste.exe. The game's assembly moves to a subdirectory instead.
+      - name: Construct as Celeste.exe
         timeout-minutes: 5
         working-directory: ${{ runner.temp }}/game/Celeste.app/Contents
-        env:
-          SDL_VIDEODRIVER: dummy
-        run: MacOS/LayoutProbe --construct
+        run: |
+          mkdir Resources/real
+          mv Resources/Celeste.exe Resources/real/
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Resources/Celeste.exe
+          chmod +x MacOS/Celeste
+          MacOS/Celeste --game real/Celeste.exe --construct --hold 10 > named.out 2>&1 &
+          probe=$!
+          for i in $(seq 120); do grep -q '^holding' named.out && break; kill -0 $probe 2>/dev/null || break; sleep 1; done
+          pgrep -lx Celeste || echo "no process named Celeste"
+          status=0; wait $probe || status=$?
+          cat named.out
+          exit $status
