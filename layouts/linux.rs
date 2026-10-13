@@ -58,5 +58,5 @@ pub mod celeste_instance {
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, FileCassettes: System.Int32
     pub const AUTO_SPLITTER_INFO_FILE_CASSETTES: &[u64] = &[0x118, 0x44];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, FileHearts: System.Int32
-    pub const AUTO_SPLITTER_INFO_FILE_HEARTS: &[u64] = &[0x118, 0x4c];
+    pub const AUTO_SPLITTER_INFO_FILE_HEARTS: &[u64] = &[0x118, 0x48];
 }
