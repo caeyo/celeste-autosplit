@@ -11,7 +11,7 @@ namespace LayoutProbe
     {
         /// <summary>
         /// How many bytes after each signature match memory.rs searches for the store, which has
-        /// to end within them. Its STORE_WINDOW is the same.
+        /// to end within them. The probe writes it into the layouts, for memory.rs.
         /// </summary>
         public const int StoreWindow = 256;
 
@@ -24,8 +24,9 @@ namespace LayoutProbe
         //   heap is, so both forms are listed. Where the heap is also changes the length of other
         //   instructions between the signature and the store, so the store is searched for
         //   rather than expected at a fixed distance.
-        // memory.rs has the same signatures and store patterns, and finds the slot from them the
-        // same way, within StoreWindow bytes of the signature.
+        // Once it has checked them, the probe writes them into each flavour's layout, and
+        // memory.rs finds the slot from them the same way, within StoreWindow bytes of the
+        // signature.
         // These come before Roots, which uses them: static fields are set in order.
         private static readonly Signature CelesteClr32 = new Signature(
             "68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35",

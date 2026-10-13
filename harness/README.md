@@ -31,7 +31,8 @@ hand has no watchdog of its own.
 ## In CI
 
 The [Layouts workflow](../.github/workflows/layouts.yml) runs the live check
-on every vanilla flavour, right after the probe.
+on every vanilla flavour, right after the probe, with the auto splitter rebuilt
+from the layout the probe has just written.
 
 ## Running it
 
@@ -62,7 +63,7 @@ exits with 1 if they differ. Options:
 ## What it doesn't check
 
 - Everest, since no probe constructs it. Its offsets rest on the transcription
-  in [`layouts/everest.json`](../layouts/everest.json).
+  in [`layouts/everest.rs`](../layouts/everest.rs).
 - Values the probe doesn't hold: it holds one set, the same on every run. So
   empty strings, and the smallest and largest numbers, are never read.
 - The rules for code the game doesn't have: a second match of the signature,

@@ -7,6 +7,7 @@ on:
   pull_request:
     paths:
       - 'autosplitter/**'
+      - 'layouts/**'
       - 'harness/**'
       - '.github/workflows/autosplitter.yml'
   push:
@@ -14,6 +15,7 @@ on:
       - 'master'
     paths:
       - 'autosplitter/**'
+      - 'layouts/**'
       - 'harness/**'
       - '.github/workflows/autosplitter.yml'
   workflow_call:
