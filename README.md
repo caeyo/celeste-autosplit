@@ -30,7 +30,7 @@ See each folder's README for details.
 
 | Workflow | Runs |
 |---|---|
-| `autosplitter.yml` | Build, clippy and fmt on changes to `autosplitter/`. |
+| `autosplitter.yml` | Builds the wasm module, and runs clippy and fmt on both Rust crates (the auto splitter and the harness), failing on any warning. On changes to `autosplitter/` or `harness/`. |
 | `component.yml` | Build and test on Windows on changes to `component/`, `schema/` or `autosplitter/` (the tests run the wasm module). |
 | `site.yml` | Deploys `site/` (plus the schema) to GitHub Pages on pushes to `master`. |
 | `layouts.yml` | Runs the layout probe against each vanilla flavour's real game files, which come from a private repository, then the live check of the wasm module against the game the probe holds. On dispatch, it then opens a pull request with the regenerated layouts. It also runs for pull requests from this repository that change `autosplitter/`, `harness/` or the probe. |

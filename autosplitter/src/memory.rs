@@ -1,10 +1,12 @@
 use asr::{
-    deep_pointer::DeepPointer,
-    future::retry,
-    signature::Signature,
-    Address, MemoryRangeFlags, PointerSize, Process,
+    deep_pointer::DeepPointer, future::retry, signature::Signature, Address, MemoryRangeFlags,
+    PointerSize, Process,
 };
 
+#[expect(
+    clippy::large_enum_variant,
+    reason = "only one exists per attach, so its size doesn't matter"
+)]
 pub enum GameState {
     Vanilla {
         ptr_size: PointerSize,
@@ -110,14 +112,19 @@ impl GameState {
 
     pub fn chapter_strawberries(&self, process: &Process) -> Option<i32> {
         match self {
-            Self::Vanilla { chapter_strawberries, .. } => chapter_strawberries.deref(process).ok(),
+            Self::Vanilla {
+                chapter_strawberries,
+                ..
+            } => chapter_strawberries.deref(process).ok(),
             Self::Everest { info } => process.read(*info + EVEREST_CHAPTER_STRAWBERRIES_OFF).ok(),
         }
     }
 
     pub fn file_strawberries(&self, process: &Process) -> Option<i32> {
         match self {
-            Self::Vanilla { file_strawberries, .. } => file_strawberries.deref(process).ok(),
+            Self::Vanilla {
+                file_strawberries, ..
+            } => file_strawberries.deref(process).ok(),
             Self::Everest { info } => process.read(*info + EVEREST_FILE_STRAWBERRIES_OFF).ok(),
         }
     }
@@ -138,7 +145,9 @@ impl GameState {
 
     pub fn timer_active(&self, process: &Process) -> Option<bool> {
         match self {
-            Self::Vanilla { timer_active, .. } => Some(timer_active.deref::<u8>(process).ok()? != 0),
+            Self::Vanilla { timer_active, .. } => {
+                Some(timer_active.deref::<u8>(process).ok()? != 0)
+            }
             Self::Everest { info } => {
                 let flags: u32 = process.read(*info + EVEREST_CHAPTER_FLAGS_OFF).ok()?;
                 Some(flags & EVEREST_TIMER_ACTIVE != 0)
@@ -148,9 +157,9 @@ impl GameState {
 
     pub fn chapter_started(&self, process: &Process) -> Option<bool> {
         match self {
-            Self::Vanilla { chapter_started, .. } => {
-                Some(chapter_started.deref::<u8>(process).ok()? != 0)
-            }
+            Self::Vanilla {
+                chapter_started, ..
+            } => Some(chapter_started.deref::<u8>(process).ok()? != 0),
             Self::Everest { info } => {
                 let flags: u32 = process.read(*info + EVEREST_CHAPTER_FLAGS_OFF).ok()?;
                 Some(flags & EVEREST_CHAPTER_STARTED != 0)
@@ -160,9 +169,9 @@ impl GameState {
 
     pub fn chapter_complete(&self, process: &Process) -> Option<bool> {
         match self {
-            Self::Vanilla { chapter_complete, .. } => {
-                Some(chapter_complete.deref::<u8>(process).ok()? != 0)
-            }
+            Self::Vanilla {
+                chapter_complete, ..
+            } => Some(chapter_complete.deref::<u8>(process).ok()? != 0),
             Self::Everest { info } => {
                 let flags: u32 = process.read(*info + EVEREST_CHAPTER_FLAGS_OFF).ok()?;
                 Some(flags & EVEREST_CHAPTER_COMPLETE != 0)
@@ -172,9 +181,9 @@ impl GameState {
 
     pub fn chapter_cassette(&self, process: &Process) -> Option<bool> {
         match self {
-            Self::Vanilla { chapter_cassette, .. } => {
-                Some(chapter_cassette.deref::<u8>(process).ok()? != 0)
-            }
+            Self::Vanilla {
+                chapter_cassette, ..
+            } => Some(chapter_cassette.deref::<u8>(process).ok()? != 0),
             Self::Everest { info } => {
                 let flags: u32 = process.read(*info + EVEREST_CHAPTER_FLAGS_OFF).ok()?;
                 Some(flags & EVEREST_CHAPTER_CASSETTE != 0)
@@ -534,8 +543,13 @@ impl Flavour {
         let Ok(title) = process.read_pointer(instance + self.title, layout.ptr_size) else {
             return false;
         };
-        read_dotnet_string(process, title.value(), layout.string_len, layout.string_chars)
-            .is_some_and(|title| title == "Celeste")
+        read_dotnet_string(
+            process,
+            title.value(),
+            layout.string_len,
+            layout.string_chars,
+        )
+        .is_some_and(|title| title == "Celeste")
     }
 }
 
