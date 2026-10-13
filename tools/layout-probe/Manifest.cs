@@ -9,6 +9,12 @@ namespace LayoutProbe
     /// </summary>
     internal static class Manifest
     {
+        /// <summary>
+        /// How many bytes after each signature match memory.rs searches for the store, which has
+        /// to end within them. Its STORE_WINDOW is the same.
+        /// </summary>
+        public const int StoreWindow = 256;
+
         // Celeste's constructor passes the game and window sizes (1920x1080, 960x540) to
         // Engine's, then stores itself in Celeste.Instance. The signatures match the size
         // arguments: pushed on Windows, in registers on Mono. Then the store:
@@ -18,8 +24,8 @@ namespace LayoutProbe
         //   heap is, so both forms are listed. Where the heap is also changes the length of other
         //   instructions between the signature and the store, so the store is searched for
         //   rather than expected at a fixed distance.
-        // memory.rs has the same signatures, but still reads the slot at a fixed distance after
-        // them: 99, 132 and 167 bytes.
+        // memory.rs has the same signatures and store patterns, and finds the slot from them the
+        // same way, within StoreWindow bytes of the signature.
         // These come before Roots, which uses them: static fields are set in order.
         private static readonly Signature CelesteClr32 = new Signature(
             "68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35",
