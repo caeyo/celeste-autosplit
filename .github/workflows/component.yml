@@ -1,13 +1,14 @@
 name: Component
 
 # The tests run the wasm module inside LiveSplit's ASR component, so changes to the
-# auto splitter run them too.
+# auto splitter, or to the layouts it's built with, run them too.
 on:
   pull_request:
     paths:
       - 'component/**'
       - 'schema/**'
       - 'autosplitter/**'
+      - 'layouts/**'
       - '.github/workflows/component.yml'
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - 'component/**'
       - 'schema/**'
       - 'autosplitter/**'
+      - 'layouts/**'
       - '.github/workflows/component.yml'
   workflow_call:
 

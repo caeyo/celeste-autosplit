@@ -10,6 +10,8 @@ namespace LayoutProbe
         /// <summary>The static field, as the manifest names it.</summary>
         public string Name;
         public FieldInfo Field;
+        /// <summary>The anchor, as the manifest names it.</summary>
+        public string AnchorName;
         public MethodBase Anchor;
         /// <summary>Per flavour, as the manifest has them.</summary>
         public Dictionary<string, Signature> Signatures;

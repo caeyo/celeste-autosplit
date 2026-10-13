@@ -1,11 +1,12 @@
 # layout-probe
 
 Measures the memory layout the auto splitter reads, inside the game's own
-runtime, and writes it as `<flavour>.json`. What it measures is listed in
-[`Manifest.cs`](Manifest.cs). The
+runtime, and writes it as Rust, `<flavour>.rs`, which the auto splitter uses.
+What it measures is listed in [`Manifest.cs`](Manifest.cs). The
 [`layouts.yml`](../../.github/workflows/layouts.yml) workflow runs it against
-every vanilla flavour, runs the [live check](../../harness/) against the game it
-holds, and when dispatched, opens a pull request with the results. The
+every vanilla flavour, builds the auto splitter with its layout, and runs the
+[live check](../../harness/) against the game it holds. When dispatched, it then
+opens a pull request with the results. The
 [layouts README](../../layouts/README.md) describes the output.
 
 In order, it:
@@ -51,10 +52,10 @@ static field that the auto splitter finds through machine code:
     change length. On Linux, an address takes 4 or 8 bytes depending on where
     the heap is.
 
-  [`memory.rs`](../../autosplitter/src/memory.rs) has the same signatures and
-  store patterns, and finds the address from them the same way, but only
-  searches the 256 bytes after each signature match: `StoreWindow` in
-  `Manifest.cs`.
+  Once it has checked them, the probe writes them into each flavour's layout,
+  and [`memory.rs`](../../autosplitter/src/memory.rs) finds the address from
+  them the same way. It only searches the 256 bytes after each signature match:
+  `StoreWindow` in `Manifest.cs`, which the probe writes into the layouts too.
 - **`Paths`**: instance fields to read from the root's object, joined with dots.
   Each name is looked up in the previous field's type, or its nearest base
   class with that field. A path only goes through objects of concrete classes,
@@ -62,7 +63,7 @@ static field that the auto splitter finds through machine code:
 
 To add a root, add it without signatures first. The probe then prints the
 anchor's code and where the field's address appears in it, and stops. Write
-each flavour's signature and store patterns from that, here and in `memory.rs`.
+each flavour's signature and store patterns from that, here.
 
 ## Building
 
@@ -98,7 +99,7 @@ else.
 
 Options:
 
-- `--out DIR`: writes `DIR/<flavour>.json`, once every check has passed.
+- `--out DIR`: writes `DIR/<flavour>.rs`, once every check has passed.
 - `--game PATH`: the game's `Celeste.exe`, relative to the probe (default:
   `Celeste.exe` next to it).
 - `--hold SECONDS`: once every check has passed, stays alive, so the process can
