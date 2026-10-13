@@ -1,15 +1,25 @@
 name: Layouts
 
 # Measures each vanilla flavour's memory layout with the layout probe, inside the
-# flavour's own runtime next to the real game files, then opens a pull request into the
-# dispatched branch with the regenerated layouts/<flavour>.json files.
+# flavour's own runtime next to the real game files. Then the live check runs the auto
+# splitter against the game the probe constructed and holds. On dispatch, a last job
+# opens a pull request into the dispatched branch with the regenerated
+# layouts/<flavour>.json files.
 #
 # The game files are release assets of a private repository, fetched with the
 # GAME_FILES_TOKEN secret. They never go into caches or artifacts (only the measured
-# layouts do), and this only runs on dispatch, so never for pull requests from forks.
+# layouts do). Besides dispatch, this runs for pull requests that change the auto
+# splitter, the harness or the probe, but only from this repository: secrets never
+# reach pull requests from forks.
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'autosplitter/**'
+      - 'harness/**'
+      - 'tools/layout-probe/**'
+      - '.github/workflows/layouts.yml'
 
 permissions:
   contents: read
@@ -30,6 +40,7 @@ defaults:
 jobs:
   probe:
     name: ${{ matrix.flavour }}
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -58,6 +69,17 @@ jobs:
 
       - name: Build probe
         run: dotnet build tools/layout-probe -c Release
+
+      - name: Install Rust
+        uses: hecrj/setup-rust-action@v2
+        with:
+          rust-version: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Build auto splitter and harness
+        run: |
+          (cd autosplitter && cargo b --release --locked)
+          (cd harness && cargo build --release --locked)
 
       - name: Fetch game files
         env:
@@ -93,12 +115,17 @@ jobs:
           fi
           arch -x86_64 /usr/bin/true && echo "x86_64 binaries run"
 
-      # The probe's live validation runs as the game, the way the auto splitter will see
-      # it: the probe becomes Celeste.exe, the game's own Celeste.exe moves to real/, and
-      # it starts the way players start the game. The game's Linux script changes
-      # directory first, so the output path given to the probe is absolute.
+      # The probe runs as the game, the way the auto splitter will see it: the probe
+      # becomes Celeste.exe, the game's own Celeste.exe moves to real/, and it starts the
+      # way players start the game. The game's Linux script changes directory first, so
+      # the paths given to the probe are absolute.
+      #
+      # Once every check has passed, the probe writes the values it holds to values.json,
+      # and holds them. The live check then attaches the auto splitter to the probe's
+      # process, and compares. The probe's output goes to a file, so that the step can end
+      # while it holds, and is printed afterwards.
 
-      - name: Probe (Windows)
+      - name: Probe and live check (Windows)
         if: runner.os == 'Windows'
         timeout-minutes: 5
         working-directory: ${{ runner.temp }}/game
@@ -107,13 +134,17 @@ jobs:
           mv Celeste.exe real/
           [ ! -f Celeste.exe.config ] || mv Celeste.exe.config real/
           cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
-          ./Celeste.exe --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
+          ./Celeste.exe --game real/Celeste.exe --out "$RUNNER_TEMP/layouts" --values "$RUNNER_TEMP/values.json" --hold 120 > "$RUNNER_TEMP/probe.log" 2>&1 &
+          "$GITHUB_WORKSPACE/harness/target/release/harness" live --values "$RUNNER_TEMP/values.json" || failed=1
+          cat "$RUNNER_TEMP/probe.log"
+          exit ${failed:-0}
 
       # The script runs Celeste.bin.x86_64, a MonoKickstart that runs Celeste.exe with the
       # game's own Mono. FNA needs a display to create its window. The runner image already
       # has Xvfb and Mesa, and the window never gets a GL context, so software rendering is
-      # enough.
-      - name: Probe (Linux)
+      # enough. The live check runs as root, since Yama only lets a process read the memory
+      # of its own descendants.
+      - name: Probe and live check (Linux)
         if: runner.os == 'Linux'
         timeout-minutes: 5
         working-directory: ${{ runner.temp }}/game
@@ -122,11 +153,15 @@ jobs:
           mv Celeste.exe Celeste.exe.config real/
           cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
           chmod +x Celeste Celeste.bin.x86_64
-          xvfb-run -a -s '-screen 0 1280x720x24' ./Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
+          xvfb-run -a -s '-screen 0 1280x720x24' ./Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts" --values "$RUNNER_TEMP/values.json" --hold 120 > "$RUNNER_TEMP/probe.log" 2>&1 &
+          sudo "$GITHUB_WORKSPACE/harness/target/release/harness" live --values "$RUNNER_TEMP/values.json" || failed=1
+          cat "$RUNNER_TEMP/probe.log"
+          exit ${failed:-0}
 
       # MacOS/Celeste is a MonoKickstart that runs Resources/Celeste.exe with the game's own
-      # Mono.
-      - name: Probe (macOS)
+      # Mono. The live check runs as root, which reading another process's memory needs on
+      # macOS.
+      - name: Probe and live check (macOS)
         if: runner.os == 'macOS'
         timeout-minutes: 5
         working-directory: ${{ runner.temp }}/game/Celeste.app/Contents
@@ -135,7 +170,10 @@ jobs:
           mv Resources/Celeste.exe Resources/real/
           cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Resources/Celeste.exe
           chmod +x MacOS/Celeste
-          MacOS/Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
+          MacOS/Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts" --values "$RUNNER_TEMP/values.json" --hold 120 > "$RUNNER_TEMP/probe.log" 2>&1 &
+          sudo "$GITHUB_WORKSPACE/harness/target/release/harness" live --values "$RUNNER_TEMP/values.json" || failed=1
+          cat "$RUNNER_TEMP/probe.log"
+          exit ${failed:-0}
 
       # The probe names the file after the flavour it detected, so a mislabelled matrix
       # entry fails here.
@@ -147,11 +185,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # A pull request needs a branch to go into, so a run dispatched on a tag only probes.
+  # Only on dispatch. A pull request needs a branch to go into, so a run dispatched on a
+  # tag only probes.
   pull-request:
     name: Open pull request
     needs: probe
-    if: github.ref_type == 'branch'
+    if: github.event_name == 'workflow_dispatch' && github.ref_type == 'branch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -197,5 +236,5 @@ jobs:
             echo "Updated the open pull request from $BRANCH."
           else
             gh pr create --base "$BASE" --head "$BRANCH" --title "Regenerate layouts" \
-              --body "Measured by the layout probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code, and live validation read every path back raw through the slot."
+              --body "Measured by the layout probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code, the probe read every path back raw through the slot, and the live check found the auto splitter reporting the values the probe held."
           fi

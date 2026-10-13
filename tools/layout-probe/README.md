@@ -4,7 +4,8 @@ Measures the memory layout the auto splitter reads, inside the game's own
 runtime, and writes it as `<flavour>.json`. What it measures is listed in
 [`Manifest.cs`](Manifest.cs). The
 [`layouts.yml`](../../.github/workflows/layouts.yml) workflow runs it against
-every vanilla flavour and opens a pull request with the results. The
+every vanilla flavour, runs the [live check](../../harness/) against the game it
+holds, and when dispatched, opens a pull request with the results. The
 [layouts README](../../layouts/README.md) describes the output.
 
 In order, it:
@@ -18,12 +19,13 @@ In order, it:
 3. for each root, compiles the anchor method and checks the flavour's
    hand-written signature against its code: the signature must match once, and
    the earliest store pattern match after it must hold the static slot's
-   address;
+   address, and end within the window that `memory.rs` searches;
 4. constructs the game (`new Celeste()`), writes distinctive values into every
    number and flag, and into strings that are still null, then reads every path
    back raw from the slot whose address the store holds. It does this twice,
    with different values;
-5. prints the layout, and writes it if `--out` is given.
+5. prints the layout, and writes it if `--out` is given. With `--values`, it
+   then writes the values the paths hold.
 
 It prints what it finds along the way, including every field of each type along
 the paths, and the anchor's machine code. It stops at the first failure, and
@@ -40,16 +42,19 @@ static field that the auto splitter finds through machine code:
 - **`Signatures`**: per flavour, how to find the field's address in the
   anchor's code. Each has:
   - a signature that matches the anchor's code once: hex bytes, with `??` for
-    any byte. [`memory.rs`](../../autosplitter/src/memory.rs) has the same
-    ones;
+    any byte;
   - store patterns for the code that stores into the field after it, with `SS`
     for the field's address: 4 or 8 bytes in a row. The earliest match of any
     of them after the signature holds the address: earliest, because a 4-byte
     pattern can also match inside an 8-byte store. They're searched for rather
     than expected at a fixed distance, because the instructions in between can
     change length. On Linux, an address takes 4 or 8 bytes depending on where
-    the heap is. `memory.rs` still reads at a fixed distance after the
-    signature.
+    the heap is.
+
+  [`memory.rs`](../../autosplitter/src/memory.rs) has the same signatures and
+  store patterns, and finds the address from them the same way, but only
+  searches the 256 bytes after each signature match: `StoreWindow` in
+  `Manifest.cs`.
 - **`Paths`**: instance fields to read from the root's object, joined with dots.
   Each name is looked up in the previous field's type, or its nearest base
   class with that field. A path only goes through objects of concrete classes,
@@ -98,6 +103,9 @@ Options:
   `Celeste.exe` next to it).
 - `--hold SECONDS`: once every check has passed, stays alive, so the process can
   be read from outside. It prints `holding for N s` when it starts.
+- `--values FILE`: once every check has passed, writes the values the paths
+  hold, as reflection reads them: the second pass's, which `--hold` keeps. The
+  [live check](../../harness/) compares the auto splitter with them.
 
 The Linux script changes to the game's folder first, and passes its arguments on
-unquoted, so give `--out` an absolute path without spaces.
+unquoted, so give `--out` and `--values` absolute paths without spaces.

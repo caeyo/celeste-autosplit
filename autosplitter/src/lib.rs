@@ -1,4 +1,7 @@
-use asr::{future::{next_tick, retry}, Process};
+use asr::{
+    future::{next_tick, retry},
+    Process,
+};
 
 mod memory;
 

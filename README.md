@@ -12,6 +12,7 @@ An auto splitter for Celeste that runs on every LiveSplit host.
 | [`site/`](site/) | The GitHub Pages settings editor for `.lss` files, for livesplit-core hosts. | Static HTML/CSS/JS |
 | [`layouts/`](layouts/) | The memory layouts the auto splitter reads: each vanilla flavour's, measured by the layout probe, and Everest's, transcribed from its source. | — |
 | [`tools/layout-probe/`](tools/layout-probe/) | Measures the game's memory layout inside each flavour's own runtime. | .NET SDK (`dotnet`) |
+| [`harness/`](harness/) | The live check: runs the wasm module on livesplit-core's timer, against the real game that the layout probe holds. | Rust (`cargo`) |
 | [`update.xml`](update.xml) | LiveSplit's update manifest for the component. | — |
 
 ## Building
@@ -19,6 +20,7 @@ An auto splitter for Celeste that runs on every LiveSplit host.
 ```sh
 cd autosplitter && cargo b --release    # wasm module
 cd component && dotnet build            # LiveSplit component (+ dotnet test, after the wasm)
+cd harness && cargo build --release     # live check, against the layout probe (see its README)
 node site/serve.mjs                     # website at http://localhost:8000
 ```
 
@@ -28,10 +30,10 @@ See each folder's README for details.
 
 | Workflow | Runs |
 |---|---|
-| `autosplitter.yml` | Build, clippy and fmt on changes to `autosplitter/`. |
+| `autosplitter.yml` | Builds the wasm module, and runs clippy and fmt on both Rust crates (the auto splitter and the harness), failing on any warning. On changes to `autosplitter/` or `harness/`. |
 | `component.yml` | Build and test on Windows on changes to `component/`, `schema/` or `autosplitter/` (the tests run the wasm module). |
 | `site.yml` | Deploys `site/` (plus the schema) to GitHub Pages on pushes to `master`. |
-| `layouts.yml` | Dispatch only. Runs the layout probe against each vanilla flavour's real game files, which come from a private repository, and opens a pull request with the regenerated layouts. |
+| `layouts.yml` | Runs the layout probe against each vanilla flavour's real game files, which come from a private repository, then the live check of the wasm module against the game the probe holds. On dispatch, it then opens a pull request with the regenerated layouts. It also runs for pull requests from this repository that change `autosplitter/`, `harness/` or the probe. |
 | `release.yml` | On a `v*` tag: builds both, then publishes `celeste-autosplit.dll` and `celeste_autosplit.wasm` together. |
 
 Releasing:

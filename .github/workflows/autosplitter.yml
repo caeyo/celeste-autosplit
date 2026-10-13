@@ -1,15 +1,20 @@
 name: Autosplitter
 
+# Builds the wasm module, and lints and checks the formatting of both Rust crates, the auto
+# splitter and the harness. Warnings fail the checks. Releases call this workflow too, and skip
+# the harness's checks, since they don't ship it.
 on:
   pull_request:
     paths:
       - 'autosplitter/**'
+      - 'harness/**'
       - '.github/workflows/autosplitter.yml'
   push:
     branches:
       - 'master'
     paths:
       - 'autosplitter/**'
+      - 'harness/**'
       - '.github/workflows/autosplitter.yml'
   workflow_call:
 
@@ -55,7 +60,26 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Run Clippy
-        run: cargo clippy --all-features
+        run: cargo clippy --all-features -- -D warnings
+
+  harness-clippy:
+    name: Check the harness's clippy lints
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: harness
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: hecrj/setup-rust-action@v2
+        with:
+          components: clippy
+
+      - name: Run Clippy
+        run: cargo clippy --locked -- -D warnings
 
   format:
     name: Check formatting
@@ -70,4 +94,8 @@ jobs:
           components: rustfmt
 
       - name: Run cargo fmt
-        run: cargo fmt -- --check || true
+        run: cargo fmt -- --check
+
+      - name: Run cargo fmt on the harness
+        if: github.ref_type != 'tag'
+        run: cargo fmt --manifest-path ../harness/Cargo.toml -- --check

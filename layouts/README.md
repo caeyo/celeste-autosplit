@@ -30,10 +30,15 @@ game files. It:
 1. resolves every name in the manifest, and measures each path's offsets;
 2. checks that the flavour's hand-written signature matches the root's anchor
    method once, in its compiled code, and that the earliest store pattern match
-   after it holds the slot's address;
+   after it holds the slot's address, within the window the auto splitter
+   searches;
 3. constructs the game for real (`new Celeste()`), in a process named like the
-   game. Then it writes distinctive values into every field that still holds its
-   default, and reads every path back raw from the slot, as the auto splitter does.
+   game. Then it writes distinctive values into every number and flag, and into
+   strings that are still null, and reads every path back raw from the slot, as
+   the auto splitter does.
+
+Then the probe holds the game, and the [live check](../harness/) attaches the
+auto splitter to the probe's process: it must report the values the probe holds.
 
 Any failure fails the run, and no pull request is opened. To run the probe
 yourself, see its [README](../tools/layout-probe/README.md).

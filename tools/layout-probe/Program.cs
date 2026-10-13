@@ -26,8 +26,11 @@ namespace LayoutProbe
     ///                     so its process has the game's name.
     ///   --hold SECONDS    once every check has passed, stays alive, so the process can be read
     ///                     from outside.
+    ///   --values FILE     once every check has passed, writes the values the paths hold, as
+    ///                     reflection reads them: the second pass's, which --hold keeps.
     ///
-    /// The game's Linux launcher script changes directory first, so pass an absolute --out.
+    /// The game's Linux launcher script changes directory first, so pass absolute --out and
+    /// --values paths.
     /// </summary>
     internal static class Program
     {
@@ -39,6 +42,7 @@ namespace LayoutProbe
         private static string outDirectory;
         private static string gamePath;
         private static int holdSeconds;
+        private static string valuesFile;
 
         private static string os;
         private static string flavour;
@@ -47,6 +51,8 @@ namespace LayoutProbe
         private static Root[] roots;
         private static long stringLength;
         private static long stringChars;
+        /// <summary>Every path's check, once live validation has passed.</summary>
+        private static List<PathCheck> held;
 
         private static int Main(string[] args)
         {
@@ -57,7 +63,7 @@ namespace LayoutProbe
             catch (Exception e)
             {
                 Console.Error.WriteLine(e.Message);
-                Console.Error.WriteLine("usage: LayoutProbe.exe [--out DIR] [--game PATH] [--hold SECONDS]");
+                Console.Error.WriteLine("usage: LayoutProbe.exe [--out DIR] [--game PATH] [--hold SECONDS] [--values FILE]");
                 return 2;
             }
 
@@ -68,7 +74,8 @@ namespace LayoutProbe
                 && Step("layout", MeasureLayout)
                 && roots.All(root => Step("root " + root.Name, () => FindSlot(root)))
                 && Step("live validation", ValidateLive)
-                && Step("output", WriteLayout);
+                && Step("output", WriteLayout)
+                && (valuesFile == null || Step("values", WriteValues));
 
             Console.WriteLine();
             Console.WriteLine(ok ? "probe: ok" : "probe: failed");
@@ -92,6 +99,7 @@ namespace LayoutProbe
                     case "--out": outDirectory = Path.GetFullPath(args[++i]); break;
                     case "--game": gameFile = args[++i]; break;
                     case "--hold": holdSeconds = int.Parse(args[++i]); break;
+                    case "--values": valuesFile = Path.GetFullPath(args[++i]); break;
                     default: throw new ArgumentException("unknown option " + args[i]);
                 }
             }
@@ -379,6 +387,11 @@ namespace LayoutProbe
                 throw new ProbeException("the store's address is 0x" + slot.ToString("x") + ", but the slot is at 0x" + root.Slot.ToString("x"));
             }
             Console.WriteLine("the store's address is the slot's");
+            int end = root.StoreMatch + root.Store.Length - after;
+            if (end > Manifest.StoreWindow)
+            {
+                throw new ProbeException("the store ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.StoreWindow + ": widen its STORE_WINDOW, and StoreWindow in Manifest.cs");
+            }
         }
 
         private sealed class PathCheck
@@ -496,6 +509,7 @@ namespace LayoutProbe
                 throw new ProbeException("raw reads disagree with reflection for " + string.Join(", ", mismatches.Distinct().ToArray()));
             }
             Console.WriteLine("every path reads back raw");
+            held = checks;
         }
 
         /// <summary>
@@ -592,6 +606,46 @@ namespace LayoutProbe
         }
 
         /// <summary>
+        /// The values the paths hold now, as reflection reads them, for the live check to compare
+        /// the auto splitter with. Paths that end in an object other than a string are left out:
+        /// the auto splitter doesn't report those.
+        /// </summary>
+        private static void WriteValues()
+        {
+            IEnumerable<string> rootsJson = roots.Select(root =>
+                "    " + Quote(root.Name) + ": {\n" +
+                string.Join(",\n", held
+                    .Where(c => c.Root == root && IsValue(c.Path.Last.FieldType))
+                    .Select(c => "      " + Quote(c.Path.Name) + ": " + ValueJson(c.Path.Last.GetValue(c.Owner)))
+                    .ToArray()) + "\n" +
+                "    }");
+            string text = "{\n" +
+                "  \"flavour\": " + Quote(flavour) + ",\n" +
+                "  \"roots\": {\n" +
+                string.Join(",\n", rootsJson.ToArray()) + "\n" +
+                "  }\n" +
+                "}\n";
+            Console.Write(text);
+            Directory.CreateDirectory(Path.GetDirectoryName(valuesFile));
+            File.WriteAllText(valuesFile, text, new UTF8Encoding(false));
+            Console.WriteLine("written to " + valuesFile);
+        }
+
+        private static bool IsValue(Type type) =>
+            type == typeof(string) || type == typeof(bool) || type == typeof(int) || type == typeof(long);
+
+        private static string ValueJson(object value)
+        {
+            switch (value)
+            {
+                case null: return "null";
+                case string s: return Quote(s);
+                case bool b: return b ? "true" : "false";
+                default: return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        /// <summary>
         /// The layout as JSON, always in this format, so that regenerated layouts only differ
         /// where values do. Every path goes on one line.
         /// </summary>
@@ -620,7 +674,10 @@ namespace LayoutProbe
                 "}\n";
         }
 
-        /// <summary>A JSON string. The layout's strings are .NET names, which have nothing to escape.</summary>
+        /// <summary>
+        /// A JSON string. The probe's strings are .NET names and short game values, which shouldn't
+        /// need escaping, so it refuses one that would rather than escape it.
+        /// </summary>
         private static string Quote(string s)
         {
             if (s.Any(c => c == '"' || c == '\\' || c < ' '))
