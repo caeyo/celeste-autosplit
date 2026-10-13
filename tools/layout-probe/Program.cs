@@ -14,13 +14,13 @@ namespace LayoutProbe
 {
     /// <summary>
     /// Measures the memory layout the auto splitter reads, inside the runtime of the game flavour
-    /// it runs with, and writes it as &lt;flavour&gt;.json. Manifest.cs says what to measure. It
-    /// has to run in the game's own runtime, from the game's folder: 32-bit .NET Framework on
-    /// Windows, and the Mono bundled with the game on Linux and macOS, through the game's
-    /// MonoKickstart launcher (which runs the .exe named after itself).
+    /// it runs with, and writes it as Rust, &lt;flavour&gt;.rs, for the auto splitter's memory.rs.
+    /// Manifest.cs says what to measure. It has to run in the game's own runtime, from the game's
+    /// folder: 32-bit .NET Framework on Windows, and the Mono bundled with the game on Linux and
+    /// macOS, through the game's MonoKickstart launcher (which runs the .exe named after itself).
     ///
     /// Options:
-    ///   --out DIR         writes DIR/&lt;flavour&gt;.json once every check has passed.
+    ///   --out DIR         writes DIR/&lt;flavour&gt;.rs once every check has passed.
     ///   --game PATH       the game's Celeste.exe, relative to the probe's directory (default:
     ///                     Celeste.exe next to the probe). Lets the probe itself be Celeste.exe,
     ///                     so its process has the game's name.
@@ -207,11 +207,12 @@ namespace LayoutProbe
             {
                 Name = entry.Field,
                 Field = Names.StaticField(game, entry.Field),
+                AnchorName = entry.Anchor,
                 Anchor = Names.Method(game, entry.Anchor),
                 Signatures = entry.Signatures,
             };
             CheckObjectType(root.Field.FieldType, root.Name);
-            Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), entry.Anchor);
+            Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), root.AnchorName);
             root.Paths = entry.Paths.Select(p => ResolvePath(root, p)).ToArray();
             CheckUnique(root.Paths.Select(p => p.Name), " in the paths of " + root.Name);
             return root;
@@ -359,7 +360,7 @@ namespace LayoutProbe
             // Only now, so that a new root's first run prints the code to write its signature from.
             if (!root.Signatures.TryGetValue(flavour, out root.Signature))
             {
-                throw new ProbeException(root.Name + " has no signature for " + flavour + " yet: write one from the code above, in Manifest.cs and in memory.rs");
+                throw new ProbeException(root.Name + " has no signature for " + flavour + " yet: write one from the code above, in Manifest.cs");
             }
             int[] matches = root.Signature.Code.Matches(code).ToArray();
             Console.WriteLine("signature {0}: {1}", root.Signature.Code, matches.Length == 0 ? "no match" : "matches at " + string.Join(", ", matches.Select(m => "+0x" + m.ToString("x")).ToArray()));
@@ -390,7 +391,7 @@ namespace LayoutProbe
             int end = root.StoreMatch + root.Store.Length - after;
             if (end > Manifest.StoreWindow)
             {
-                throw new ProbeException("the store ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.StoreWindow + ": widen its STORE_WINDOW, and StoreWindow in Manifest.cs");
+                throw new ProbeException("the store ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.StoreWindow + ": widen StoreWindow, in Manifest.cs");
             }
         }
 
@@ -594,12 +595,12 @@ namespace LayoutProbe
 
         private static void WriteLayout()
         {
-            string text = LayoutJson();
+            string text = LayoutRust();
             Console.Write(text);
             if (outDirectory != null)
             {
                 Directory.CreateDirectory(outDirectory);
-                string file = Path.Combine(outDirectory, flavour + ".json");
+                string file = Path.Combine(outDirectory, flavour + ".rs");
                 File.WriteAllText(file, text, new UTF8Encoding(false));
                 Console.WriteLine("written to " + file);
             }
@@ -646,33 +647,88 @@ namespace LayoutProbe
         }
 
         /// <summary>
-        /// The layout as JSON, always in this format, so that regenerated layouts only differ
-        /// where values do. Every path goes on one line.
+        /// The layout as Rust, which memory.rs uses, always in this format, so that regenerated
+        /// layouts only differ where values do. Lines end in \n on every OS.
         /// </summary>
-        private static string LayoutJson()
+        private static string LayoutRust()
         {
-            IEnumerable<string> rootsJson = roots.Select(root =>
-                "    " + Quote(root.Name) + ": {\n" +
-                "      \"signature\": " + Quote(root.Signature.Code.ToString()) + ",\n" +
-                "      \"store\": [" + string.Join(", ", root.Signature.Store.Select(p => Quote(p.ToString())).ToArray()) + "],\n" +
-                "      \"paths\": {\n" +
-                string.Join(",\n", root.Paths.Select(path =>
-                    "        " + Quote(path.Name) + ": { " +
-                    "\"offsets\": [" + string.Join(", ", path.Offsets.Select(o => o.ToString()).ToArray()) + "], " +
-                    "\"types\": [" + string.Join(", ", path.Fields.Select(f => Quote(Names.TypeName(f.FieldType))).ToArray()) + "] }").ToArray()) + "\n" +
-                "      }\n" +
-                "    }");
-            return "{\n" +
-                "  \"flavour\": " + Quote(flavour) + ",\n" +
-                "  \"os\": " + Quote(os) + ",\n" +
-                "  \"game\": { \"version\": " + Quote(gameVersion) + ", \"mvid\": " + Quote(game.ManifestModule.ModuleVersionId.ToString()) + " },\n" +
-                "  \"pointer_size\": " + IntPtr.Size + ",\n" +
-                "  \"string\": { \"length\": " + stringLength + ", \"chars\": " + stringChars + " },\n" +
-                "  \"roots\": {\n" +
-                string.Join(",\n", rootsJson.ToArray()) + "\n" +
-                "  }\n" +
-                "}\n";
+            var text = new StringBuilder();
+            void Line(string line) => text.Append(line).Append('\n');
+
+            Line("// Generated by the layout probe, through the Layouts workflow: don't edit it by hand. See");
+            Line("// layouts/README.md.");
+            Line("//");
+            Line("// Flavour: " + flavour);
+            Line("// Celeste.exe: version " + gameVersion + ", module version ID " + game.ManifestModule.ModuleVersionId);
+            Line("");
+            Line("/// As `asr::get_os` names it.");
+            Line("pub const OS: &str = \"" + os + "\";");
+            Line("pub const POINTER_SIZE: u64 = " + IntPtr.Size + ";");
+            Line("/// Where a string holds its length, an `i32`.");
+            Line("pub const STRING_LENGTH: u64 = " + Hex(stringLength) + ";");
+            Line("/// Where a string's UTF-16 characters start.");
+            Line("pub const STRING_CHARS: u64 = " + Hex(stringChars) + ";");
+            foreach (Root root in roots)
+            {
+                Line("");
+                Line("/// `" + root.Name + "`: its slot is found from the compiled code of its anchor,");
+                Line("/// `" + root.AnchorName + "`.");
+                Line("pub mod " + ConstantName(root.Field.DeclaringType.Name + "." + root.Field.Name).ToLowerInvariant() + " {");
+                Line("    /// Matches the code once: hex bytes, with `??` for any byte.");
+                Line("    pub const SIGNATURE: &str = \"" + root.Signature.Code + "\";");
+                Line("    /// The store into the slot: the earliest match of any of these after the signature, with `SS`");
+                Line("    /// for the slot's address.");
+                Line("    pub const STORES: &[&str] = &[");
+                foreach (Pattern store in root.Signature.Store)
+                {
+                    Line("        \"" + store + "\",");
+                }
+                Line("    ];");
+                Line("    /// How many bytes after the signature are searched for the store, which ends within them.");
+                Line("    pub const STORE_WINDOW: u64 = " + Manifest.StoreWindow + ";");
+                Line("");
+                Line("    // Each path's offsets from the object in the slot, and the name and type of each field");
+                Line("    // along it.");
+                Line("");
+                foreach (FieldPath path in root.Paths)
+                {
+                    Line("    /// " + string.Join(", ", path.Fields.Select(f => f.Name + ": " + Names.TypeName(f.FieldType)).ToArray()));
+                    Line("    pub const " + ConstantName(path.Name) + ": &[u64] = &[" + string.Join(", ", path.Offsets.Select(Hex).ToArray()) + "];");
+                }
+                Line("}");
+            }
+            return text.ToString();
         }
+
+        /// <summary>
+        /// The Rust constant named after dotted .NET names: AutoSplitterInfo.ChapterSIDStrPtr is
+        /// AUTO_SPLITTER_INFO_CHAPTER_SID_STR_PTR.
+        /// </summary>
+        private static string ConstantName(string name)
+        {
+            var text = new StringBuilder();
+            for (int i = 0; i < name.Length; i++)
+            {
+                char c = name[i];
+                if (c == '.')
+                {
+                    text.Append('_');
+                    continue;
+                }
+                // A word starts at a capital after a lower-case letter or a digit, or at a
+                // capital before a lower-case letter, after another capital.
+                if (i > 0 && char.IsUpper(c)
+                    && (char.IsLower(name[i - 1]) || char.IsDigit(name[i - 1])
+                        || char.IsUpper(name[i - 1]) && i + 1 < name.Length && char.IsLower(name[i + 1])))
+                {
+                    text.Append('_');
+                }
+                text.Append(char.ToUpperInvariant(c));
+            }
+            return text.ToString();
+        }
+
+        private static string Hex(long value) => "0x" + value.ToString("x");
 
         /// <summary>
         /// A JSON string. The probe's strings are .NET names and short game values, which shouldn't
