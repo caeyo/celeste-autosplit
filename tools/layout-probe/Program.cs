@@ -663,6 +663,7 @@ namespace LayoutProbe
             Line("");
             Line("/// As `asr::get_os` names it.");
             Line("pub const OS: &str = \"" + os + "\";");
+            Line("/// In bytes.");
             Line("pub const POINTER_SIZE: u64 = " + IntPtr.Size + ";");
             Line("/// Where a string holds its length, an `i32`.");
             Line("pub const STRING_LENGTH: u64 = " + Hex(stringLength) + ";");
@@ -701,8 +702,9 @@ namespace LayoutProbe
         }
 
         /// <summary>
-        /// The Rust constant named after dotted .NET names: AutoSplitterInfo.ChapterSIDStrPtr is
-        /// AUTO_SPLITTER_INFO_CHAPTER_SID_STR_PTR.
+        /// The Rust constant named after dotted .NET names: AutoSplitterInfo.ChapterTime is
+        /// AUTO_SPLITTER_INFO_CHAPTER_TIME. An acronym stays one word: a field named SIDStrPtr
+        /// would be SID_STR_PTR.
         /// </summary>
         private static string ConstantName(string name)
         {

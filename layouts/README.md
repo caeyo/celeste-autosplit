@@ -29,6 +29,12 @@ probe, so changes can be tried before they're merged. The pull request's own
 workflow runs wait until someone approves them, since the workflow opens it
 with `GITHUB_TOKEN`.
 
+Each probe job only regenerates its own flavour's file, but `memory.rs` builds
+with all four. So `memory.rs` can only use what every committed layout already
+holds: add a new path to the manifest and regenerate, and only then write its
+reader. A change to what the probe writes that `memory.rs` depends on, such as
+the files' format, has to convert the committed files in the same change.
+
 For each flavour, the probe runs inside the game's own runtime, next to the real
 game files. It:
 
@@ -50,9 +56,9 @@ must report the values the probe holds.
 Any failure fails the run, and no pull request is opened. The workflow also runs
 on pull requests from this repository that change the auto splitter, the
 layouts, the harness or the probe. There, each committed layout must be the one
-the probe writes: a difference is a hand edit, or a change to the manifest
-without regenerating. To run the probe yourself, see its
-[README](../tools/layout-probe/README.md).
+the probe writes: a difference is a hand edit, or a change to the probe (its
+manifest or its output) without regenerating. To run the probe yourself, see
+its [README](../tools/layout-probe/README.md).
 
 ## `<flavour>.rs`
 
@@ -67,6 +73,7 @@ Abbreviated from `windows-fna.rs`:
 
 /// As `asr::get_os` names it.
 pub const OS: &str = "windows";
+/// In bytes.
 pub const POINTER_SIZE: u64 = 4;
 /// Where a string holds its length, an `i32`.
 pub const STRING_LENGTH: u64 = 0x4;
@@ -96,17 +103,22 @@ pub mod celeste_instance {
 }
 ```
 
-| Part | Meaning |
-|---|---|
-| The header | The flavour, and the probed `Celeste.exe`: the game's version, as the game sets it (the assembly's own version is 1.0.0.0), and its module version ID. The three FNA flavours share one `Celeste.exe`. |
-| `OS` | `windows`, `linux` or `macos`, as `asr::get_os()` names them. |
-| `POINTER_SIZE` | 4 or 8 bytes. |
-| `STRING_LENGTH`, `STRING_CHARS` | Where a string object holds its length (an `i32`) and its UTF-16 characters. |
-| A module per root | Named after the root's type and field: `Celeste.Celeste::Instance` is `celeste_instance`. |
-| &emsp;`SIGNATURE` | The manifest's hand-written signature, which matches the anchor's code once: hex bytes, `??` for any byte. |
-| &emsp;`STORES` | The manifest's hand-written store patterns: the code that stores into the slot, after the signature. The earliest match of any of them after the signature holds the slot's address, in its 4 or 8 `SS` bytes. Earliest, because a 4-byte pattern can also match inside an 8-byte store. |
-| &emsp;`STORE_WINDOW` | How many bytes after each signature match the auto splitter searches for the store: `StoreWindow` in the manifest. |
-| &emsp;An array per path | Each field's offset, one per hop, named after the manifest's path: `AutoSplitterInfo.Chapter` is `AUTO_SPLITTER_INFO_CHAPTER`. Its comment gives each field's name and .NET type. The path's length is part of its type, so `memory.rs` checks that each field's pointer path has room for it when it compiles. |
+The comments say what each constant is. Beyond them:
+
+- The header's version is the game's, as the game sets it: the assembly's own
+  version is 1.0.0.0. The three FNA flavours share one `Celeste.exe`, so they
+  have the same module version ID.
+- Each root gets a module named after its type and field
+  (`Celeste.Celeste::Instance` is `celeste_instance`), and each path an array
+  named after the path (`AutoSplitterInfo.Chapter` is
+  `AUTO_SPLITTER_INFO_CHAPTER`), with one offset per field.
+- `SIGNATURE` and `STORES` are the manifest's hand-written patterns, and
+  `STORE_WINDOW` is its `StoreWindow`. The store is the earliest match of any
+  store pattern, because a 4-byte pattern can also match inside an 8-byte
+  store.
+- A path's length is part of its type, and `memory.rs`'s build fails if a
+  field's pointer path has no room for it. `cargo check` and clippy don't catch
+  that.
 
 All offsets are in bytes, from the address a reference to the object holds. To read
 a path, read the root's object from the slot. Then each offset but the last leads to
@@ -117,9 +129,7 @@ run. The probe prints it in the run's log.
 
 ## `everest.rs`
 
-Everest publishes its own struct, `CoreAutoSplitterInfo`, at the start of a memory
-mapping of its own. The auto splitter finds it by checking the start of each memory
-region for the struct's magic bytes. The file is transcribed by hand from the
-source linked at its top: each field's offset, as a constant named after the
-field, with its type in a comment, then each flag's bit. To update it,
-transcribe the struct again at a newer commit, and update the link.
+Everest's own struct, `CoreAutoSplitterInfo`, transcribed by hand: the file's
+header says where it comes from, what it holds, and how to update it. The auto
+splitter finds the struct by checking the start of each memory region for its
+magic bytes.

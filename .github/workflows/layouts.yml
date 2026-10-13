@@ -78,8 +78,8 @@ jobs:
           rust-version: stable
           targets: wasm32-unknown-unknown
 
-      # The live check rebuilds the auto splitter with the layout the probe writes. Building
-      # it here builds its dependencies, so that the rebuild only takes seconds.
+      # The auto splitter is rebuilt with the layout the probe writes, before the live check.
+      # Building it here builds its dependencies, so that the rebuild only takes seconds.
       - name: Build auto splitter and harness
         run: |
           (cd autosplitter && cargo b --release --locked)
@@ -162,32 +162,41 @@ jobs:
           MacOS/Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts" --values "$RUNNER_TEMP/values.json" --hold 120 > "$RUNNER_TEMP/probe.log" 2>&1 &
 
       # Once every check has passed, the probe writes its layout and the values it holds,
-      # prints "probe: ok", and holds the game. Otherwise it prints "probe: failed". Its
-      # layout replaces the committed one, and the auto splitter is rebuilt with it, so that
-      # the live check always tests the offsets just measured. The probe names the file after
-      # the flavour it detected, so a mislabelled matrix entry fails here.
-      #
-      # The live check then attaches the auto splitter to the probe's process, and compares.
-      # It runs as root on Linux, where Yama only lets a process read the memory of its own
-      # descendants, and on macOS, where reading another process's memory needs root.
-      - name: Live check
-        timeout-minutes: 5
-        env:
-          FLAVOUR: ${{ matrix.flavour }}
+      # prints "probe: ok", and holds the game. Otherwise it prints "probe: failed".
+      - name: Wait for probe
+        timeout-minutes: 4
         run: |
           for _ in $(seq 180); do
             grep -q '^probe: ' "$RUNNER_TEMP/probe.log" && break
             sleep 1
           done
           cat "$RUNNER_TEMP/probe.log"
-          grep -q '^probe: ok' "$RUNNER_TEMP/probe.log"
+          grep -q '^probe: ok' "$RUNNER_TEMP/probe.log" || {
+            echo "::error::The probe failed, or didn't finish within 180 s: see its log above."
+            exit 1
+          }
+
+      # The probe's layout replaces the committed one, so that the live check always tests
+      # the offsets just measured. The probe names the file after the flavour it detected, so
+      # a mislabelled matrix entry fails here.
+      - name: Build auto splitter with the probe's layout
+        env:
+          FLAVOUR: ${{ matrix.flavour }}
+        run: |
           cp "$RUNNER_TEMP/layouts/$FLAVOUR.rs" layouts/
           (cd autosplitter && cargo b --release --locked)
+
+      # The live check attaches the auto splitter to the probe's process, and compares. It
+      # runs as root on Linux, where Yama only lets a process read the memory of its own
+      # descendants, and on macOS, where reading another process's memory needs root.
+      - name: Live check
+        timeout-minutes: 3
+        run: |
           [ "$RUNNER_OS" = Windows ] || sudo=sudo
           $sudo harness/target/release/harness live --values "$RUNNER_TEMP/values.json"
 
-      # A difference is a hand edit, or a change to the probe's manifest without regenerating
-      # the layouts.
+      # A difference is a hand edit, or a change to the probe (its manifest or its output)
+      # without regenerating the layouts.
       - name: Check committed layout
         if: github.event_name == 'pull_request'
         env:

@@ -433,8 +433,9 @@ struct Slot {
 }
 
 impl Slot {
-    /// A field's pointer path, from the slot through the field's offsets. It doesn't compile
-    /// unless the `DeepPointer` has room for them all, since it would silently drop the rest.
+    /// A field's pointer path, from the slot through the field's offsets. The build fails unless
+    /// the `DeepPointer` has room for them all, since it would silently drop the rest.
+    /// `cargo check` and clippy don't evaluate this.
     fn field<const N: usize, const CAP: usize>(self, offsets: [u64; N]) -> DeepPointer<CAP> {
         const { assert!(N < CAP, "a path is too long for its DeepPointer") };
         // The first offset, 0, reads the object's address from the slot.
@@ -444,10 +445,10 @@ impl Slot {
     }
 }
 
-/// Finds the static slot of `Celeste.Instance`, among flavours with the same signature, and which
-/// of them the game is. Each match of the signature is tried in turn, with each flavour's store
-/// patterns, and a flavour's slot is only accepted if the object in it has the title "Celeste" at
-/// the flavour's offsets.
+/// Finds the static slot of `Celeste.Instance`, and which of the flavours the game is. They must
+/// all have the same signature, and there must be at least one. Each match of the signature is
+/// tried in turn, with each flavour's store patterns, and a flavour's slot is only accepted if the
+/// object in it has the title "Celeste" at the flavour's offsets.
 fn find_slot(process: &Process, flavours: &[&'static Flavour]) -> Option<(&'static Flavour, Slot)> {
     scan_executable(process, |(start, size)| {
         let end = start.value() + size;
@@ -575,25 +576,17 @@ pub fn init(process: &Process) -> Option<GameState> {
         return Some(state);
     }
     let os = asr::get_os().ok()?;
-    let flavours: Vec<_> = FLAVOURS
-        .iter()
-        .filter(|flavour| flavour.os == os.as_str())
-        .collect();
     // Flavours with the same signature, like XNA and FNA, share a scan.
-    let mut scanned = Vec::new();
-    for flavour in &flavours {
-        if scanned.contains(&flavour.signature) {
-            continue;
-        }
-        scanned.push(flavour.signature);
-        let sharing: Vec<_> = flavours
-            .iter()
-            .copied()
-            .filter(|other| other.signature == flavour.signature)
-            .collect();
-        if let Some((flavour, slot)) = find_slot(process, &sharing) {
-            return Some((flavour.state)(slot));
+    let mut groups: Vec<Vec<&'static Flavour>> = Vec::new();
+    for flavour in FLAVOURS.iter().filter(|flavour| flavour.os == os.as_str()) {
+        match groups
+            .iter_mut()
+            .find(|group| group[0].signature == flavour.signature)
+        {
+            Some(group) => group.push(flavour),
+            None => groups.push(vec![flavour]),
         }
     }
-    None
+    let (flavour, slot) = groups.iter().find_map(|group| find_slot(process, group))?;
+    Some((flavour.state)(slot))
 }

@@ -6,6 +6,7 @@
 
 /// As `asr::get_os` names it.
 pub const OS: &str = "windows";
+/// In bytes.
 pub const POINTER_SIZE: u64 = 4;
 /// Where a string holds its length, an `i32`.
 pub const STRING_LENGTH: u64 = 0x4;
