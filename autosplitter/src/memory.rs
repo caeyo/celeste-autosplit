@@ -333,8 +333,10 @@ struct Flavour {
     ptr_size: PointerSize,
     string_len: u64,
     string_chars: u64,
-    /// Where each match of the flavour's signature, in `Celeste`'s constructor, ends, in an
-    /// executable range.
+    /// The signature in `Celeste`'s constructor: hex bytes, with `??` for any byte. Flavours can
+    /// share one.
+    signature: &'static str,
+    /// Where each match of the signature ends, in an executable range.
     scan: fn(&Process, (Address, u64)) -> Vec<Address>,
     /// Patterns for the store into `Celeste.Instance` after the signature: hex bytes, with `??`
     /// for any byte, and `SS` for the static slot's address, 4 or 8 of them in a row.
@@ -356,6 +358,7 @@ macro_rules! flavour {
             ptr_size: pointer_size($layout::POINTER_SIZE),
             string_len: $layout::STRING_LENGTH,
             string_chars: $layout::STRING_CHARS,
+            signature: instance::SIGNATURE,
             scan: |process, range| {
                 static SIGNATURE: Signature<{ pattern_len(instance::SIGNATURE) }> =
                     Signature::new(instance::SIGNATURE);
@@ -431,23 +434,30 @@ fn field_pointer(slot: Address, ptr_size: PointerSize, offsets: &[u64]) -> DeepP
     DeepPointer::new(slot, ptr_size, &[&[0], offsets].concat())
 }
 
-impl Flavour {
-    /// Finds the static slot of `Celeste.Instance`. Each match of the signature is tried in
-    /// turn, and its slot is only accepted if the object in it has the title "Celeste".
-    fn find_slot(&self, process: &Process) -> Option<Address> {
-        scan_executable(process, |(start, size)| {
-            let end = start.value() + size;
-            (self.scan)(process, (start, size))
-                .into_iter()
-                .find_map(|code| {
+/// Finds the static slot of `Celeste.Instance`, among flavours with the same signature, and which
+/// of them the game is. Each match of the signature is tried in turn, with each flavour's store
+/// patterns, and a flavour's slot is only accepted if the object in it has the title "Celeste" at
+/// the flavour's offsets.
+fn find_slot(
+    process: &Process,
+    flavours: &[&'static Flavour],
+) -> Option<(&'static Flavour, Address)> {
+    scan_executable(process, |(start, size)| {
+        let end = start.value() + size;
+        (flavours[0].scan)(process, (start, size))
+            .into_iter()
+            .find_map(|code| {
+                flavours.iter().find_map(|&flavour| {
                     // Only within the range, which is all mapped.
-                    let len = self.store_window.min(end - code.value());
-                    let slot = self.read_store(process, code, len)?;
-                    self.has_title(process, slot).then_some(slot)
+                    let len = flavour.store_window.min(end - code.value());
+                    let slot = flavour.read_store(process, code, len)?;
+                    flavour.has_title(process, slot).then_some((flavour, slot))
                 })
-        })
-    }
+            })
+    })
+}
 
+impl Flavour {
     /// The slot's address, from the earliest match of any store pattern in the code. Earliest,
     /// not the first pattern listed, because a 4-byte pattern can also match inside an 8-byte
     /// store, when the address's fourth byte happens to be the 4-byte form's opcode.
@@ -495,10 +505,10 @@ fn match_store(store: &str, code: &[u8]) -> Option<Address> {
     Some(Address::new(slot))
 }
 
-fn scan_executable(
+fn scan_executable<T>(
     process: &Process,
-    mut scan: impl FnMut((Address, u64)) -> Option<Address>,
-) -> Option<Address> {
+    mut scan: impl FnMut((Address, u64)) -> Option<T>,
+) -> Option<T> {
     for region in process.memory_ranges() {
         let Ok(flags) = region.flags() else {
             continue;
@@ -555,8 +565,25 @@ pub fn init(process: &Process) -> Option<GameState> {
         return Some(state);
     }
     let os = asr::get_os().ok()?;
-    FLAVOURS
+    let flavours: Vec<_> = FLAVOURS
         .iter()
         .filter(|flavour| flavour.os == os.as_str())
-        .find_map(|flavour| Some((flavour.state)(flavour.find_slot(process)?)))
+        .collect();
+    // Flavours with the same signature, like XNA and FNA, share a scan.
+    let mut scanned = Vec::new();
+    for flavour in &flavours {
+        if scanned.contains(&flavour.signature) {
+            continue;
+        }
+        scanned.push(flavour.signature);
+        let sharing: Vec<_> = flavours
+            .iter()
+            .copied()
+            .filter(|other| other.signature == flavour.signature)
+            .collect();
+        if let Some((flavour, slot)) = find_slot(process, &sharing) {
+            return Some((flavour.state)(slot));
+        }
+    }
+    None
 }
