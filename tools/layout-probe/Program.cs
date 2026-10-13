@@ -693,7 +693,7 @@ namespace LayoutProbe
                 foreach (FieldPath path in root.Paths)
                 {
                     Line("    /// " + string.Join(", ", path.Fields.Select(f => f.Name + ": " + Names.TypeName(f.FieldType)).ToArray()));
-                    Line("    pub const " + ConstantName(path.Name) + ": &[u64] = &[" + string.Join(", ", path.Offsets.Select(Hex).ToArray()) + "];");
+                    Line("    pub const " + ConstantName(path.Name) + ": [u64; " + path.Offsets.Length + "] = [" + string.Join(", ", path.Offsets.Select(Hex).ToArray()) + "];");
                 }
                 Line("}");
             }

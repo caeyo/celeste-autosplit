@@ -90,9 +90,9 @@ pub mod celeste_instance {
     // along it.
 
     /// Title: System.String
-    pub const TITLE: &[u64] = &[0x84];
+    pub const TITLE: [u64; 1] = [0x84];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, Chapter: System.Int32
-    pub const AUTO_SPLITTER_INFO_CHAPTER: &[u64] = &[0xa0, 0x18];
+    pub const AUTO_SPLITTER_INFO_CHAPTER: [u64; 2] = [0xa0, 0x18];
 }
 ```
 
@@ -106,7 +106,7 @@ pub mod celeste_instance {
 | &emsp;`SIGNATURE` | The manifest's hand-written signature, which matches the anchor's code once: hex bytes, `??` for any byte. |
 | &emsp;`STORES` | The manifest's hand-written store patterns: the code that stores into the slot, after the signature. The earliest match of any of them after the signature holds the slot's address, in its 4 or 8 `SS` bytes. Earliest, because a 4-byte pattern can also match inside an 8-byte store. |
 | &emsp;`STORE_WINDOW` | How many bytes after each signature match the auto splitter searches for the store: `StoreWindow` in the manifest. |
-| &emsp;A constant per path | Each field's offset, one per hop, named after the manifest's path: `AutoSplitterInfo.Chapter` is `AUTO_SPLITTER_INFO_CHAPTER`. Its comment gives each field's name and .NET type. |
+| &emsp;An array per path | Each field's offset, one per hop, named after the manifest's path: `AutoSplitterInfo.Chapter` is `AUTO_SPLITTER_INFO_CHAPTER`. Its comment gives each field's name and .NET type. The path's length is part of its type, so `memory.rs` checks that each field's pointer path has room for it when it compiles. |
 
 All offsets are in bytes, from the address a reference to the object holds. To read
 a path, read the root's object from the slot. Then each offset but the last leads to

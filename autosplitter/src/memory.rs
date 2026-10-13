@@ -344,9 +344,9 @@ struct Flavour {
     /// How many bytes after the signature are searched for the store.
     store_window: u64,
     /// The offsets of `Engine.Title`, which holds "Celeste", from the object in the slot.
-    title: &'static [u64],
+    title: [u64; 1],
     /// The game's state, read through the static slot.
-    state: fn(Address) -> GameState,
+    state: fn(Slot) -> GameState,
 }
 
 /// A vanilla flavour, from its layout's module.
@@ -367,28 +367,24 @@ macro_rules! flavour {
             stores: instance::STORES,
             store_window: instance::STORE_WINDOW,
             title: instance::TITLE,
-            state: |slot| {
-                let ptr_size = pointer_size($layout::POINTER_SIZE);
-                let field = |path| field_pointer(slot, ptr_size, path);
-                GameState::Vanilla {
-                    ptr_size,
-                    string_len: $layout::STRING_LENGTH,
-                    string_chars: $layout::STRING_CHARS,
-                    chapter_time: field(instance::AUTO_SPLITTER_INFO_CHAPTER_TIME),
-                    file_time: field(instance::AUTO_SPLITTER_INFO_FILE_TIME),
-                    level: field(instance::AUTO_SPLITTER_INFO_LEVEL),
-                    chapter: field(instance::AUTO_SPLITTER_INFO_CHAPTER),
-                    mode: field(instance::AUTO_SPLITTER_INFO_MODE),
-                    chapter_strawberries: field(instance::AUTO_SPLITTER_INFO_CHAPTER_STRAWBERRIES),
-                    file_strawberries: field(instance::AUTO_SPLITTER_INFO_FILE_STRAWBERRIES),
-                    file_cassettes: field(instance::AUTO_SPLITTER_INFO_FILE_CASSETTES),
-                    file_hearts: field(instance::AUTO_SPLITTER_INFO_FILE_HEARTS),
-                    timer_active: field(instance::AUTO_SPLITTER_INFO_TIMER_ACTIVE),
-                    chapter_started: field(instance::AUTO_SPLITTER_INFO_CHAPTER_STARTED),
-                    chapter_complete: field(instance::AUTO_SPLITTER_INFO_CHAPTER_COMPLETE),
-                    chapter_cassette: field(instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE),
-                    chapter_heart: field(instance::AUTO_SPLITTER_INFO_CHAPTER_HEART),
-                }
+            state: |slot| GameState::Vanilla {
+                ptr_size: slot.ptr_size,
+                string_len: $layout::STRING_LENGTH,
+                string_chars: $layout::STRING_CHARS,
+                chapter_time: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_TIME),
+                file_time: slot.field(instance::AUTO_SPLITTER_INFO_FILE_TIME),
+                level: slot.field(instance::AUTO_SPLITTER_INFO_LEVEL),
+                chapter: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER),
+                mode: slot.field(instance::AUTO_SPLITTER_INFO_MODE),
+                chapter_strawberries: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_STRAWBERRIES),
+                file_strawberries: slot.field(instance::AUTO_SPLITTER_INFO_FILE_STRAWBERRIES),
+                file_cassettes: slot.field(instance::AUTO_SPLITTER_INFO_FILE_CASSETTES),
+                file_hearts: slot.field(instance::AUTO_SPLITTER_INFO_FILE_HEARTS),
+                timer_active: slot.field(instance::AUTO_SPLITTER_INFO_TIMER_ACTIVE),
+                chapter_started: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_STARTED),
+                chapter_complete: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_COMPLETE),
+                chapter_cassette: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE),
+                chapter_heart: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_HEART),
             },
         }
     }};
@@ -428,20 +424,31 @@ fn signature_ends<const N: usize>(
         .collect()
 }
 
-/// A field's pointer path, from the static slot through the field's offsets: the slot holds a
-/// reference to the object they start from.
-fn field_pointer(slot: Address, ptr_size: PointerSize, offsets: &[u64]) -> DeepPointer<3> {
-    DeepPointer::new(slot, ptr_size, &[&[0], offsets].concat())
+/// The static slot of `Celeste.Instance`, which holds a reference to the object that each field's
+/// path starts from.
+#[derive(Clone, Copy)]
+struct Slot {
+    address: Address,
+    ptr_size: PointerSize,
+}
+
+impl Slot {
+    /// A field's pointer path, from the slot through the field's offsets. It doesn't compile
+    /// unless the `DeepPointer` has room for them all, since it would silently drop the rest.
+    fn field<const N: usize, const CAP: usize>(self, offsets: [u64; N]) -> DeepPointer<CAP> {
+        const { assert!(N < CAP, "a path is too long for its DeepPointer") };
+        // The first offset, 0, reads the object's address from the slot.
+        let mut path = [0; CAP];
+        path[1..=N].copy_from_slice(&offsets);
+        DeepPointer::new(self.address, self.ptr_size, &path[..=N])
+    }
 }
 
 /// Finds the static slot of `Celeste.Instance`, among flavours with the same signature, and which
 /// of them the game is. Each match of the signature is tried in turn, with each flavour's store
 /// patterns, and a flavour's slot is only accepted if the object in it has the title "Celeste" at
 /// the flavour's offsets.
-fn find_slot(
-    process: &Process,
-    flavours: &[&'static Flavour],
-) -> Option<(&'static Flavour, Address)> {
+fn find_slot(process: &Process, flavours: &[&'static Flavour]) -> Option<(&'static Flavour, Slot)> {
     scan_executable(process, |(start, size)| {
         let end = start.value() + size;
         (flavours[0].scan)(process, (start, size))
@@ -450,7 +457,10 @@ fn find_slot(
                 flavours.iter().find_map(|&flavour| {
                     // Only within the range, which is all mapped.
                     let len = flavour.store_window.min(end - code.value());
-                    let slot = flavour.read_store(process, code, len)?;
+                    let slot = Slot {
+                        address: flavour.read_store(process, code, len)?,
+                        ptr_size: flavour.ptr_size,
+                    };
                     flavour.has_title(process, slot).then_some((flavour, slot))
                 })
             })
@@ -470,8 +480,8 @@ impl Flavour {
         })
     }
 
-    fn has_title(&self, process: &Process, slot: Address) -> bool {
-        let title = field_pointer(slot, self.ptr_size, self.title);
+    fn has_title(&self, process: &Process, slot: Slot) -> bool {
+        let title: DeepPointer<2> = slot.field(self.title);
         let Ok(title) = title.deref_offsets(process) else {
             return false;
         };
