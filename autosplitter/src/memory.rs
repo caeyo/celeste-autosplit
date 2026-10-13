@@ -411,17 +411,8 @@ struct Flavour {
     auto_splitter_info: u64,
 }
 
-// Celeste's constructor passes the game and window sizes (1920x1080, 960x540) to Engine's,
-// then stores itself in Celeste.Instance. The signatures match the size arguments: pushed on
-// Windows, in registers on Mono. Then the store:
-// - On Windows, the slot's address goes to the GC's write barrier: lea edx, [slot]; call.
-// - On Mono, it's loaded into rax and stored through: mov eax or rax, slot; mov [rax], r15.
-//   The 4-byte form is used when the address fits, which on Linux depends on where the heap
-//   is, so both forms are listed. Where the heap is also changes the length of other
-//   instructions between the signature and the store, so the store is searched for rather
-//   than expected at a fixed distance.
-// The layout probe checks the same signatures and store patterns against the game's compiled
-// code, from its own copy in tools/layout-probe/Manifest.cs.
+// Copies of the layout probe's signatures and store patterns, in tools/layout-probe/Manifest.cs,
+// which explains them. The probe checks them against the game's compiled code.
 
 static CLR32_SIGNATURE: Signature<17> =
     Signature::new("68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35");

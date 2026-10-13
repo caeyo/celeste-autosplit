@@ -5,7 +5,7 @@ runtime, and writes it as `<flavour>.json`. What it measures is listed in
 [`Manifest.cs`](Manifest.cs). The
 [`layouts.yml`](../../.github/workflows/layouts.yml) workflow runs it against
 every vanilla flavour, runs the [live check](../../harness/) against the game it
-holds, and opens a pull request with the results. The
+holds, and when dispatched, opens a pull request with the results. The
 [layouts README](../../layouts/README.md) describes the output.
 
 In order, it:
@@ -19,7 +19,7 @@ In order, it:
 3. for each root, compiles the anchor method and checks the flavour's
    hand-written signature against its code: the signature must match once, and
    the earliest store pattern match after it must hold the static slot's
-   address, and end within the 256 bytes that `memory.rs` searches;
+   address, and end within the window that `memory.rs` searches;
 4. constructs the game (`new Celeste()`), writes distinctive values into every
    number and flag, and into strings that are still null, then reads every path
    back raw from the slot whose address the store holds. It does this twice,

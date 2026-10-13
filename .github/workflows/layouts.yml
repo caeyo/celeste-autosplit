@@ -2,7 +2,7 @@ name: Layouts
 
 # Measures each vanilla flavour's memory layout with the layout probe, inside the
 # flavour's own runtime next to the real game files. Then the live check runs the auto
-# splitter against the game the probe constructed, and holds. On dispatch, a last job
+# splitter against the game the probe constructed and holds. On dispatch, a last job
 # opens a pull request into the dispatched branch with the regenerated
 # layouts/<flavour>.json files.
 #
@@ -236,5 +236,5 @@ jobs:
             echo "Updated the open pull request from $BRANCH."
           else
             gh pr create --base "$BASE" --head "$BRANCH" --title "Regenerate layouts" \
-              --body "Measured by the layout probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code, live validation read every path back raw through the slot, and the live check found the auto splitter reporting the values the probe held."
+              --body "Measured by the layout probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code, the probe read every path back raw through the slot, and the live check found the auto splitter reporting the values the probe held."
           fi

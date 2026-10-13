@@ -7,8 +7,8 @@
 //!
 //!   --values FILE       the values the probe holds, from its own --values option.
 //!   --wasm FILE         the auto splitter (default: the release build in autosplitter/).
-//!   --timeout SECONDS   how long to wait for the values, and then for the auto splitter to
-//!                       report them (default: 120).
+//!   --timeout SECONDS   how long to wait in all, for the values and then for the auto
+//!                       splitter to report them (default: 120).
 //!
 //! The probe runs as the game, so the auto splitter finds its process by the game's name.
 //!
@@ -133,8 +133,6 @@ fn live(options: &Options) -> Result<bool> {
         options.wasm.display()
     );
 
-    // Only now that the probe holds its values: the runtime lists the processes when it's
-    // created.
     let timer = HarnessTimer::new(1);
     let auto_splitter = Runtime::new(Config::default())?
         .compile(&wasm)?

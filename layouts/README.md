@@ -18,9 +18,8 @@ Run the Layouts workflow, from the Actions tab or with:
 gh workflow run layouts.yml --ref <branch>
 ```
 
-It runs the probe on every vanilla flavour, and the live check against it, then
-opens a pull request into `<branch>` with the regenerated files, from the branch
-`layouts/<branch>`. If
+It runs the probe on every vanilla flavour, then opens a pull request into
+`<branch>` with the regenerated files, from the branch `layouts/<branch>`. If
 nothing changed, it says so and opens nothing. A later run updates an open pull
 request instead of opening another. The run uses `<branch>`'s workflow and
 probe, so changes can be tried before they're merged.
@@ -31,7 +30,7 @@ game files. It:
 1. resolves every name in the manifest, and measures each path's offsets;
 2. checks that the flavour's hand-written signature matches the root's anchor
    method once, in its compiled code, and that the earliest store pattern match
-   after it holds the slot's address, within the 256 bytes the auto splitter
+   after it holds the slot's address, within the window the auto splitter
    searches;
 3. constructs the game for real (`new Celeste()`), in a process named like the
    game. Then it writes distinctive values into every number and flag, and into
@@ -41,9 +40,7 @@ game files. It:
 Then the probe holds the game, and the [live check](../harness/) attaches the
 auto splitter to the probe's process: it must report the values the probe holds.
 
-Any failure fails the run, and no pull request is opened. The workflow also
-runs, without opening a pull request, for pull requests from this repository
-that change the auto splitter, the harness or the probe. To run the probe
+Any failure fails the run, and no pull request is opened. To run the probe
 yourself, see its [README](../tools/layout-probe/README.md).
 
 ## `<flavour>.json`

@@ -4,13 +4,13 @@ The live check: checks the auto splitter, `celeste_autosplit.wasm`, against the
 real game. It's a native program, outside the wasm build.
 
 The [layout probe](../tools/layout-probe/) constructs the real game, in the
-game's own runtime. It sets every number, flag and string the auto splitter
-reads through .NET's own reflection, and reads each one back raw, as the auto
-splitter does. With `--values`, it then writes the values the game holds, as
-reflection reads them, and with `--hold` it keeps the game and its process
-alive. The probe runs as the game, so the harness loads the auto splitter, which
-finds the probe's process by the game's name. Its debug variables must be
-exactly those values.
+game's own runtime. Through .NET's own reflection, it sets every number and flag
+the auto splitter reads, and every string that's still null, and reads each one
+back raw, as the auto splitter does. With `--values`, it then writes the values
+the game holds, as reflection reads them, and with `--hold` it keeps the game
+and its process alive. The probe runs as the game, so the harness loads the auto
+splitter, which finds the probe's process by the game's name. Its debug
+variables must be exactly those values.
 
 So a pass rests on the game's own runtime and one comparison, with no stand-in
 for the game. It checks:
@@ -31,11 +31,7 @@ hand has no watchdog of its own.
 ## In CI
 
 The [Layouts workflow](../.github/workflows/layouts.yml) runs the live check
-on every vanilla flavour, right after the probe. It runs on dispatch, and on
-pull requests from this repository that change the auto splitter, the harness
-or the probe. The game files never reach pull requests from forks. On Linux and
-macOS, the check runs as root, which reading another process's memory needs
-there.
+on every vanilla flavour, right after the probe.
 
 ## Running it
 
@@ -60,8 +56,8 @@ exits with 1 if they differ. Options:
 - `--values FILE`: the values the probe holds.
 - `--wasm FILE`: the auto splitter (default: the release build in
   `autosplitter/`).
-- `--timeout SECONDS`: how long to wait for the values, and then for the auto
-  splitter to report them (default: 120).
+- `--timeout SECONDS`: how long to wait in all, for the values and then for the
+  auto splitter to report them (default: 120).
 
 ## What it doesn't check
 
@@ -71,4 +67,4 @@ exits with 1 if they differ. Options:
   empty strings, and the smallest and largest numbers, are never read.
 - The rules for code the game doesn't have: a second match of the signature,
   and a 4-byte store pattern matching inside an 8-byte store. The probe checks
-  that the real store is within the 256 bytes `memory.rs` searches.
+  that the real store is within the window `memory.rs` searches.

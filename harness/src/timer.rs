@@ -1,6 +1,6 @@
 //! The timer that the auto splitter controls: livesplit-core's own `Timer`, behind the runtime's
 //! `Timer` trait, as in livesplit-core's own auto splitting. The variables the auto splitter
-//! sets and everything it logs are also recorded, for the tests to check.
+//! sets and everything it logs are also recorded, for the live check to compare and print.
 
 use std::{
     collections::BTreeMap,

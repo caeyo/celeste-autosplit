@@ -29,7 +29,8 @@ namespace LayoutProbe
     ///   --values FILE     once every check has passed, writes the values the paths hold, as
     ///                     reflection reads them: the second pass's, which --hold keeps.
     ///
-    /// The game's Linux launcher script changes directory first, so pass an absolute --out.
+    /// The game's Linux launcher script changes directory first, so pass absolute --out and
+    /// --values paths.
     /// </summary>
     internal static class Program
     {
@@ -673,7 +674,10 @@ namespace LayoutProbe
                 "}\n";
         }
 
-        /// <summary>A JSON string. The layout's strings are .NET names, which have nothing to escape.</summary>
+        /// <summary>
+        /// A JSON string. The probe's strings are .NET names and short game values, which shouldn't
+        /// need escaping, so it refuses one that would rather than escape it.
+        /// </summary>
         private static string Quote(string s)
         {
             if (s.Any(c => c == '"' || c == '\\' || c < ' '))
