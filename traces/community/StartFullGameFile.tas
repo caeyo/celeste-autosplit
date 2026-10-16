@@ -1,0 +1,18 @@
+Set,ScreenShake,Off
+Set,CrouchDashMode,Press
+Set,GrabMode,Hold
+Set,DisableFlashes,True
+Set,SpeedrunClock,File
+Set,Everest.UseKeyboardForTextInput,False
+Set,Everest.ShowModOptionsInGame,False
+
+SelectCampaign,Celeste
+EnforceLegal
+   1,O
+Add,131
+
+#Prologue
+   1,S
+   1,D,J
+  32
+Add,1
