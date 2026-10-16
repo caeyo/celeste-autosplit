@@ -4,10 +4,11 @@ Measures the memory layout the auto splitter reads, inside the game's own
 runtime, and writes it as Rust, `<flavour>.rs`, which the auto splitter uses.
 What it measures is listed in [`Manifest.cs`](Manifest.cs). The
 [`layouts.yml`](../../.github/workflows/layouts.yml) workflow runs it against
-every vanilla flavour, builds the auto splitter with its layout, and runs the
-[live check](../../harness/) against the game it holds. When dispatched, it then
-opens a pull request with the results. The
-[layouts README](../../layouts/README.md) describes the output.
+every vanilla flavour and builds the auto splitter with its layout. Then the
+[harness](../../harness/) starts it again, in its replay mode, for the live check
+and the replay of every trace. When dispatched, the workflow then opens a pull
+request with the results. The [layouts README](../../layouts/README.md)
+describes the output.
 
 In order, it:
 
@@ -25,12 +26,13 @@ In order, it:
    number and flag, and into strings that are still null, then reads every path
    back raw from the slot whose address the store holds. It does this twice,
    with different values;
-5. prints the layout, and writes it if `--out` is given. With `--values`, it
-   then writes the values the paths hold.
+5. prints the layout, and writes it if `--out` is given;
+6. prints `probe: ok`. With `--replay`, it then takes values to write into the
+   game: see [Replay mode](#replay-mode).
 
 It prints what it finds along the way, including every field of each type along
-the paths, and the anchor's machine code. It stops at the first failure, and
-exits with 1, or with 2 for bad arguments.
+the paths, and the anchor's machine code. It stops at the first failure, prints
+`probe: failed`, and exits with 1, or with 2 for bad arguments.
 
 ## The manifest
 
@@ -64,6 +66,26 @@ static field that the auto splitter finds through machine code:
 To add a root, add it without signatures first. The probe then prints the
 anchor's code and where the field's address appears in it, and stops. Write
 each flavour's signature and store patterns from that, here.
+
+## Replay mode
+
+With `--replay`, once every check has passed, the probe takes values from its
+standard input and writes them into the game, for the [harness](../../harness/).
+First it prints `probe: values`, and the values the paths hold as JSON on one
+line, keyed by root and then path: those of its second pass, which it read back
+raw. Then it reads sets of values, until its input ends:
+
+- a `path=value` line per path, with the value read as the path's type: `true`
+  or `false`, a whole number, or for a string, the rest of the line;
+- an empty line at the end of each set.
+
+It writes each set into the game through reflection, into the objects it read
+back raw, then prints `probe: written`. A path is named without its root, so the
+replay fails if two roots have paths with the same name. If a line can't be
+written, it prints why, then `probe: failed`, and exits with 1.
+
+Started from a terminal, it keeps the game until you end its input, so another
+program, such as the asr debugger, can read it, while you type in values.
 
 ## Building
 
@@ -102,11 +124,8 @@ Options:
 - `--out DIR`: writes `DIR/<flavour>.rs`, once every check has passed.
 - `--game PATH`: the game's `Celeste.exe`, relative to the probe (default:
   `Celeste.exe` next to it).
-- `--hold SECONDS`: once every check has passed, stays alive, so the process can
-  be read from outside. It prints `holding for N s` when it starts.
-- `--values FILE`: once every check has passed, writes the values the paths
-  hold, as reflection reads them: the second pass's, which `--hold` keeps. The
-  [live check](../../harness/) compares the auto splitter with them.
+- `--replay`: once every check has passed, takes values to write into the game,
+  until its input ends (see [Replay mode](#replay-mode)). The harness adds it.
 
 The Linux script changes to the game's folder first, and passes its arguments on
-unquoted, so give `--out` and `--values` absolute paths without spaces.
+unquoted, so give `--out` an absolute path without spaces.

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -8,7 +9,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Text;
-using System.Threading;
 
 namespace LayoutProbe
 {
@@ -24,13 +24,11 @@ namespace LayoutProbe
     ///   --game PATH       the game's Celeste.exe, relative to the probe's directory (default:
     ///                     Celeste.exe next to the probe). Lets the probe itself be Celeste.exe,
     ///                     so its process has the game's name.
-    ///   --hold SECONDS    once every check has passed, stays alive, so the process can be read
-    ///                     from outside.
-    ///   --values FILE     once every check has passed, writes the values the paths hold, as
-    ///                     reflection reads them: the second pass's, which --hold keeps.
+    ///   --replay          once every check has passed, prints the values the paths hold, then
+    ///                     writes the values it's sent into the game, until its input ends: see
+    ///                     Replay. The harness starts the probe this way.
     ///
-    /// The game's Linux launcher script changes directory first, so pass absolute --out and
-    /// --values paths.
+    /// The game's Linux launcher script changes directory first, so pass an absolute --out path.
     /// </summary>
     internal static class Program
     {
@@ -41,8 +39,7 @@ namespace LayoutProbe
 
         private static string outDirectory;
         private static string gamePath;
-        private static int holdSeconds;
-        private static string valuesFile;
+        private static bool replay;
 
         private static string os;
         private static string flavour;
@@ -63,7 +60,7 @@ namespace LayoutProbe
             catch (Exception e)
             {
                 Console.Error.WriteLine(e.Message);
-                Console.Error.WriteLine("usage: LayoutProbe.exe [--out DIR] [--game PATH] [--hold SECONDS] [--values FILE]");
+                Console.Error.WriteLine("usage: LayoutProbe.exe [--out DIR] [--game PATH] [--replay]");
                 return 2;
             }
 
@@ -74,17 +71,16 @@ namespace LayoutProbe
                 && Step("layout", MeasureLayout)
                 && roots.All(root => Step("root " + root.Name, () => FindSlot(root)))
                 && Step("live validation", ValidateLive)
-                && Step("output", WriteLayout)
-                && (valuesFile == null || Step("values", WriteValues));
+                && Step("output", WriteLayout);
 
             Console.WriteLine();
             Console.WriteLine(ok ? "probe: ok" : "probe: failed");
-            // Only a probe that passed holds, so that holding means its values can be read.
-            if (ok && holdSeconds > 0)
+            // Only a probe that passed replays, so that the values it starts from have been read
+            // back raw.
+            if (ok && replay && !Step("replay", Replay))
             {
-                Console.WriteLine("holding for {0} s", holdSeconds);
-                Console.Out.Flush();
-                Thread.Sleep(holdSeconds * 1000);
+                Console.WriteLine("probe: failed");
+                ok = false;
             }
             return ok ? 0 : 1;
         }
@@ -98,14 +94,9 @@ namespace LayoutProbe
                 {
                     case "--out": outDirectory = Path.GetFullPath(args[++i]); break;
                     case "--game": gameFile = args[++i]; break;
-                    case "--hold": holdSeconds = int.Parse(args[++i]); break;
-                    case "--values": valuesFile = Path.GetFullPath(args[++i]); break;
+                    case "--replay": replay = true; break;
                     default: throw new ArgumentException("unknown option " + args[i]);
                 }
-            }
-            if (holdSeconds < 0 || holdSeconds > int.MaxValue / 1000)
-            {
-                throw new ArgumentException("--hold takes 0 to " + int.MaxValue / 1000 + " seconds");
             }
             gamePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, gameFile));
         }
@@ -589,7 +580,7 @@ namespace LayoutProbe
                 case string s: return "\"" + s + "\"";
                 case bool b: return b ? "true" : "false";
                 case ulong address: return "the object at 0x" + address.ToString("x");
-                default: return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
+                default: return Convert.ToString(value, CultureInfo.InvariantCulture);
             }
         }
 
@@ -607,29 +598,89 @@ namespace LayoutProbe
         }
 
         /// <summary>
-        /// The values the paths hold now, as reflection reads them, for the live check to compare
-        /// the auto splitter with. Paths that end in an object other than a string are left out:
-        /// the auto splitter doesn't report those.
+        /// Replay mode, for the harness. First prints "probe: values", and the values the paths
+        /// hold. Then writes the values it's sent into the game, through the same paths, until its
+        /// input ends. They come in sets: a path=value line per path, with the value read as the
+        /// path's type (a string is the rest of the line), and an empty line at the end of each
+        /// set. Once a set is written, it prints "probe: written".
         /// </summary>
-        private static void WriteValues()
+        private static void Replay()
+        {
+            // The lines only name paths, and two roots can have paths with the same name.
+            var paths = new Dictionary<string, PathCheck>();
+            foreach (PathCheck check in held.Where(c => IsValue(c.Path.Last.FieldType)))
+            {
+                if (paths.ContainsKey(check.Path.Name))
+                {
+                    throw new ProbeException("two roots have the path " + check.Path.Name + ", which the replay can't tell apart");
+                }
+                paths.Add(check.Path.Name, check);
+            }
+
+            Console.WriteLine("probe: values " + ValuesJson());
+            Console.Out.Flush();
+            var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
+            var set = new List<KeyValuePair<PathCheck, object>>();
+            for (string line = input.ReadLine(); line != null; line = input.ReadLine())
+            {
+                if (line.Length > 0)
+                {
+                    set.Add(ParseLine(line, paths));
+                    continue;
+                }
+                foreach (KeyValuePair<PathCheck, object> entry in set)
+                {
+                    entry.Key.Path.Last.SetValue(entry.Key.Owner, entry.Value);
+                }
+                set.Clear();
+                Console.WriteLine("probe: written");
+                Console.Out.Flush();
+            }
+        }
+
+        /// <summary>A path=value line, with the value read as the path's type.</summary>
+        private static KeyValuePair<PathCheck, object> ParseLine(string line, Dictionary<string, PathCheck> paths)
+        {
+            int separator = line.IndexOf('=');
+            if (separator < 0 || !paths.TryGetValue(line.Substring(0, separator), out PathCheck check))
+            {
+                throw new ProbeException("can't write " + line + ": expected path=value, for a path that ends in a string, bool, int or long");
+            }
+            string text = line.Substring(separator + 1);
+            Type type = check.Path.Last.FieldType;
+            try
+            {
+                return new KeyValuePair<PathCheck, object>(check, ParseValue(type, text));
+            }
+            catch (Exception e) when (e is FormatException || e is OverflowException)
+            {
+                throw new ProbeException("can't write " + line + ": the path's type is " + Names.TypeName(type));
+            }
+        }
+
+        private static object ParseValue(Type type, string text)
+        {
+            if (type == typeof(string)) return text;
+            if (type == typeof(bool)) return bool.Parse(text);
+            if (type == typeof(int)) return int.Parse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
+            return long.Parse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// The values the paths hold now, as reflection reads them, as JSON on one line, for the
+        /// harness to compare the auto splitter with. Paths that end in an object other than a
+        /// string are left out: the auto splitter doesn't report those.
+        /// </summary>
+        private static string ValuesJson()
         {
             IEnumerable<string> rootsJson = roots.Select(root =>
-                "    " + Quote(root.Name) + ": {\n" +
-                string.Join(",\n", held
+                Quote(root.Name) + ":{" +
+                string.Join(",", held
                     .Where(c => c.Root == root && IsValue(c.Path.Last.FieldType))
-                    .Select(c => "      " + Quote(c.Path.Name) + ": " + ValueJson(c.Path.Last.GetValue(c.Owner)))
-                    .ToArray()) + "\n" +
-                "    }");
-            string text = "{\n" +
-                "  \"flavour\": " + Quote(flavour) + ",\n" +
-                "  \"roots\": {\n" +
-                string.Join(",\n", rootsJson.ToArray()) + "\n" +
-                "  }\n" +
-                "}\n";
-            Console.Write(text);
-            Directory.CreateDirectory(Path.GetDirectoryName(valuesFile));
-            File.WriteAllText(valuesFile, text, new UTF8Encoding(false));
-            Console.WriteLine("written to " + valuesFile);
+                    .Select(c => Quote(c.Path.Name) + ":" + ValueJson(c.Path.Last.GetValue(c.Owner)))
+                    .ToArray()) +
+                "}");
+            return "{\"flavour\":" + Quote(flavour) + ",\"roots\":{" + string.Join(",", rootsJson.ToArray()) + "}}";
         }
 
         private static bool IsValue(Type type) =>
@@ -642,7 +693,7 @@ namespace LayoutProbe
                 case null: return "null";
                 case string s: return Quote(s);
                 case bool b: return b ? "true" : "false";
-                default: return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
+                default: return Convert.ToString(value, CultureInfo.InvariantCulture);
             }
         }
 

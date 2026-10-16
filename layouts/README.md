@@ -48,17 +48,18 @@ game files. It:
    strings that are still null, and reads every path back raw from the slot, as
    the auto splitter does.
 
-Then the probe writes the flavour's layout and holds the game. The layout
-replaces the committed one, the auto splitter is rebuilt with it, and the
-[live check](../harness/) attaches the auto splitter to the probe's process: it
-must report the values the probe holds.
+Then the probe writes the flavour's layout, which replaces the committed one, and
+the auto splitter is rebuilt with it. The [harness](../harness/) starts the probe
+again and attaches the auto splitter to the probe's process: it must report the
+values the probe holds, then each frame of every trace, as the probe writes the
+frames into the game.
 
 Any failure fails the run, and no pull request is opened. The workflow also runs
 on pull requests from this repository that change the auto splitter, the
-layouts, the harness or the probe. There, each committed layout must be the one
-the probe writes: a difference is a hand edit, or a change to the probe (its
-manifest or its output) without regenerating. To run the probe yourself, see
-its [README](../tools/layout-probe/README.md).
+layouts, the harness, the probe or the traces. There, each committed layout must
+be the one the probe writes: a difference is a hand edit, or a change to the
+probe (its manifest or its output) without regenerating. To run the probe
+yourself, see its [README](../tools/layout-probe/README.md).
 
 ## `<flavour>.rs`
 
