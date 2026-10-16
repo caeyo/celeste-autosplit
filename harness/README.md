@@ -66,7 +66,7 @@ Options:
   `autosplitter/`).
 - `--timeout SECONDS`: how long to wait for the probe's checks, then for the auto
   splitter to report, then for each answer from the probe and each update of the
-  auto splitter (default: 120).
+  auto splitter, and at the end, for the probe to exit (default: 120).
 
 On Linux, the probe is the harness's descendant, whose memory Yama lets it read.
 On macOS, reading another process's memory needs root: run the harness with

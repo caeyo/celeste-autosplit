@@ -3,14 +3,14 @@
 //! values its paths hold, as JSON. Then it reads sets of values, a `path=value` line per path and
 //! an empty line at the end of each set. It writes each set into the game, through the paths it
 //! measured, and answers `probe: written`, until its input ends. It prints `probe: failed` if a
-//! check or the replay fails. Its other lines are its log, which is shown if anything goes wrong
-//! with it.
+//! check or the replay fails. Its other lines, and what it prints on its standard error, are its
+//! log, which is shown if anything goes wrong with it.
 
 use std::{
     collections::BTreeMap,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     process::{Child, ChildStdin, Command, Stdio},
-    sync::mpsc::{self, Receiver, RecvTimeoutError},
+    sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread,
     time::{Duration, Instant},
 };
@@ -28,40 +28,26 @@ pub struct Probe {
     lines: Receiver<String>,
     /// The lines it has printed so far, other than its answers.
     log: Vec<String>,
-    /// How long it has for each answer, and to exit.
+    /// How long it has for each answer.
     timeout: Duration,
 }
 
 impl Probe {
-    /// Starts the probe with the command, which the harness adds `--replay` to.
+    /// Starts the probe with the command, which the harness adds `--replay` to. Its standard error
+    /// goes into its log too: if it has to be killed, what it leaves running, such as the game
+    /// under the Linux script, then doesn't hold the harness's own output open.
     pub fn start(command: &[String], timeout: Duration) -> Result<Self> {
         let mut child = Command::new(&command[0])
             .args(&command[1..])
             .arg("--replay")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .with_context(|| format!("starting {}", command.join(" ")))?;
-        let output = child.stdout.take().context("the probe has no output")?;
         let (sender, lines) = mpsc::channel();
-        thread::spawn(move || {
-            let mut output = BufReader::new(output);
-            let mut line = Vec::new();
-            // Its log isn't always UTF-8: on Windows, paths are in the console's code page.
-            while output
-                .read_until(b'\n', &mut line)
-                .is_ok_and(|read| read > 0)
-            {
-                let text = String::from_utf8_lossy(&line);
-                if sender
-                    .send(text.trim_end_matches(['\r', '\n']).to_owned())
-                    .is_err()
-                {
-                    return;
-                }
-                line.clear();
-            }
-        });
+        forward(child.stdout.take().context("no output")?, sender.clone());
+        forward(child.stderr.take().context("no error output")?, sender);
         Ok(Self {
             input: child.stdin.take(),
             child,
@@ -105,16 +91,17 @@ impl Probe {
         set.push('\n');
         let input = self.input.as_mut().context("the probe's input is closed")?;
         if let Err(e) = input.write_all(set.as_bytes()).and_then(|()| input.flush()) {
-            // As when it has exited, which what it printed last explains.
+            // Most likely it has exited, and what it printed last says why.
             return Err(self.failure(&format!("writing to the probe failed: {e}")));
         }
         self.expect("written")
     }
 
-    /// Ends the probe's input, which ends its replay, and waits for it to exit.
-    pub fn finish(&mut self) -> Result<()> {
+    /// Ends the probe's input, which ends its replay, and waits for it to exit, for at most as long
+    /// as given, before killing it.
+    pub fn finish(&mut self, wait: Duration) -> Result<()> {
         self.input = None;
-        let deadline = Instant::now() + self.timeout;
+        let deadline = Instant::now() + wait;
         let status = loop {
             if let Some(status) = self.child.try_wait()? {
                 break status;
@@ -124,7 +111,7 @@ impl Probe {
                 let _ = self.child.wait();
                 return Err(self.failure(&format!(
                     "the probe didn't exit within {} s",
-                    self.timeout.as_secs()
+                    wait.as_secs()
                 )));
             }
             thread::sleep(Duration::from_millis(10));
@@ -184,4 +171,26 @@ impl Probe {
         let log = self.log.iter().map(|line| format!("\n  {line}"));
         anyhow!("{problem}. Its log:{}", log.collect::<String>())
     }
+}
+
+/// Sends each line of the stream as it's printed, until it ends.
+fn forward(stream: impl Read + Send + 'static, lines: Sender<String>) {
+    thread::spawn(move || {
+        let mut stream = BufReader::new(stream);
+        let mut line = Vec::new();
+        // Its log isn't always UTF-8: on Windows, paths are in the console's code page.
+        while stream
+            .read_until(b'\n', &mut line)
+            .is_ok_and(|read| read > 0)
+        {
+            let text = String::from_utf8_lossy(&line);
+            if lines
+                .send(text.trim_end_matches(['\r', '\n']).to_owned())
+                .is_err()
+            {
+                return;
+            }
+            line.clear();
+        }
+    });
 }

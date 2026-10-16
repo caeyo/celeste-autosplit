@@ -14,7 +14,7 @@
 //!   --wasm FILE         the auto splitter (default: the release build in autosplitter/).
 //!   --timeout SECONDS   how long to wait for the probe's checks, then for the auto splitter to
 //!                       report, then for each answer from the probe and each update of the auto
-//!                       splitter (default: 120).
+//!                       splitter, and at the end, for the probe to exit (default: 120).
 //!   TRACE               a trace to replay, from traces/. Without any, only the live check runs.
 //!   COMMAND             starts the probe as the game, the way players start the game. The
 //!                       harness adds --replay to it.
@@ -157,8 +157,13 @@ fn replay(options: &Options) -> Result<bool> {
 
     let mut probe = Probe::start(&options.command, options.timeout)?;
     let checked = check(&mut probe, &compiled, &traces, options);
-    // However the check ended, the probe's input ends, and it has to exit.
-    let exited = probe.finish();
+    // However the check ended, the probe's input ends, and it has to exit. After an error, which
+    // can be the probe's, it only gets a moment.
+    let wait = match checked {
+        Ok(_) => options.timeout,
+        Err(_) => Duration::from_secs(5),
+    };
+    let exited = probe.finish(wait);
     let ok = checked?;
     exited?;
     Ok(ok)
