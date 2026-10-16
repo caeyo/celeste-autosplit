@@ -621,6 +621,8 @@ namespace LayoutProbe
             Console.Out.Flush();
             var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
             var set = new List<KeyValuePair<PathCheck, object>>();
+            // Temporary: stops answering after 1,000 sets, to check that the harness fails at its timeout.
+            int sets = 0;
             for (string line = input.ReadLine(); line != null; line = input.ReadLine())
             {
                 if (line.Length > 0)
@@ -633,6 +635,7 @@ namespace LayoutProbe
                     entry.Key.Path.Last.SetValue(entry.Key.Owner, entry.Value);
                 }
                 set.Clear();
+                if (++sets == 1000) System.Threading.Thread.Sleep(System.Threading.Timeout.Infinite);
                 Console.WriteLine("probe: written");
                 Console.Out.Flush();
             }

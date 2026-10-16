@@ -188,11 +188,11 @@ jobs:
           game="$RUNNER_TEMP/game"
           case "$RUNNER_OS" in
             Windows)
-              "$harness" replay traces/*.jsonl -- "$game/Celeste.exe" --game real/Celeste.exe ;;
+              "$harness" replay --timeout 10 traces/*.jsonl -- "$game/Celeste.exe" --game real/Celeste.exe ;;
             Linux)
-              "$harness" replay traces/*.jsonl -- xvfb-run -a -s '-screen 0 1280x720x24' "$game/Celeste" --game real/Celeste.exe ;;
+              "$harness" replay --timeout 10 traces/*.jsonl -- xvfb-run -a -s '-screen 0 1280x720x24' "$game/Celeste" --game real/Celeste.exe ;;
             macOS)
-              sudo "$harness" replay traces/*.jsonl -- sudo -u "$(id -un)" "$game/Celeste.app/Contents/MacOS/Celeste" --game real/Celeste.exe ;;
+              sudo "$harness" replay --timeout 10 traces/*.jsonl -- sudo -u "$(id -un)" "$game/Celeste.app/Contents/MacOS/Celeste" --game real/Celeste.exe ;;
           esac
 
       # A difference is a hand edit, or a change to the probe (its manifest or its output)
