@@ -26,7 +26,7 @@ only used to record.
 
 ## Recording
 
-On Windows (in Git Bash), Linux or macOS, with the .NET SDK, `curl` and `unzip`.
+On Windows (in Git Bash) or Linux, with the .NET SDK, `curl` and `unzip`.
 From the repository's root:
 
 ```sh
@@ -34,9 +34,11 @@ tools/trace-recorder/record.sh <game> traces/prologue.tas
 ```
 
 `<game>` is the vanilla game's build for your OS, as a zip or a folder: on Windows,
-either build; on Linux, the Linux build; on macOS, the folder with `Celeste.app`.
-Copy it from an install without Everest. It records each TAS file given into the
-trace next to it, `traces/prologue.jsonl` here, in three steps:
+either build; on Linux, the Linux build, since Everest's installer tells the OS apart
+by the game's files. Copy it from an install without Everest.
+
+It records each TAS file given into the trace next to it, `traces/prologue.jsonl`
+here, in three steps:
 
 1. The first time, and when a pinned release changes, it sets up the recorder's own
    install of the game in `.deps/celeste/`: the game given, with Everest
@@ -47,9 +49,7 @@ trace next to it, `traces/prologue.jsonl` here, in three steps:
 3. It starts the game for each TAS file: CelesteTAS plays it, the recorder records
    it, and exits the game once it has ended. A Prologue takes under a minute.
 
-So far, it has only been run on Windows. On Linux and macOS, it runs Everest's
-installer and launcher for them, which tell the OS apart by the game's files. Linux
-needs a display: in CI, Xvfb would be one.
+On Windows and Linux, it records the same trace. Linux needs a display: Xvfb works.
 
 Its own install, rather than the player's: its versions are pinned, it has no other
 mods, and it can't touch the player's saves. Each recording starts with fresh saves,
