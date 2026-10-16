@@ -31,12 +31,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows
-            runner: windows-latest
-            zip: celeste-windows-fna.zip
-          - os: linux
-            runner: ubuntu-latest
-            zip: celeste-linux.zip
           - os: macos
             runner: macos-latest
             zip: celeste-macos.zip
@@ -95,6 +89,24 @@ jobs:
             fi
           done
           git diff --exit-code traces/prologue.tas
+
+      - name: Diagnose
+        if: failure() && runner.os == 'macOS'
+        working-directory: tools/trace-recorder/.deps/celeste/Celeste.app/Contents/Resources
+        run: |
+          set -x
+          sw_vers || true
+          uname -m
+          file MiniInstaller-osx piton-apphosts/osx Celeste || true
+          ls -la | head -70
+          ls -la ../MacOS
+          cat piton-runtime.yaml | head -30
+          ls -la piton-runtime 2>/dev/null || echo "no piton-runtime"
+          tail -30 miniinstaller-log.txt 2>/dev/null || echo "no miniinstaller-log.txt"
+          env | grep -i dotnet || true
+          ./MiniInstaller-osx; echo "exit $?"
+          arch -x86_64 ./MiniInstaller-osx; echo "exit $?"
+          ls -la piton-runtime 2>/dev/null || echo "no piton-runtime"
 
       - name: Upload trace and logs
         if: always()
