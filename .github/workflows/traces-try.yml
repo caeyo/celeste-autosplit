@@ -1,0 +1,108 @@
+name: Traces (temporary)
+
+# Temporary, deleted before the pull request: records the Prologue's trace with record.sh on each
+# OS, from a fresh checkout and the private game files, and checks it against the committed one.
+
+on:
+  push:
+    branches:
+      - 'i5-trace-recorder'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: traces-try-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GAME_FILES_REPO: caeyo/celeste-autosplit-gamefiles
+  GAME_FILES_TAG: gamefiles-v1
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  record:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows
+            runner: windows-latest
+            zip: celeste-windows-fna.zip
+          - os: linux
+            runner: ubuntu-latest
+            zip: celeste-linux.zip
+          - os: macos
+            runner: macos-latest
+            zip: celeste-macos.zip
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Fetch game files
+        env:
+          GH_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
+          ZIP: ${{ matrix.zip }}
+        run: gh release download "$GAME_FILES_TAG" --repo "$GAME_FILES_REPO" --pattern "$ZIP" --dir "$RUNNER_TEMP"
+
+      - name: Check x86_64 support
+        if: runner.os == 'macOS'
+        run: |
+          uname -m
+          if [ "$(uname -m)" = arm64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Installing Rosetta"
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+
+      # Linux needs a display for the game's window: Xvfb, with Mesa's software rendering.
+      - name: Record
+        timeout-minutes: 15
+        env:
+          ZIP: ${{ matrix.zip }}
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a -s '-screen 0 1280x720x24' tools/trace-recorder/record.sh "$RUNNER_TEMP/$ZIP" traces/prologue.tas
+          else
+            tools/trace-recorder/record.sh "$RUNNER_TEMP/$ZIP" traces/prologue.tas
+          fi
+
+      # Recordings agree except for how many updates the game waits for its save at the end of
+      # the chapter: past where the shorter trace ends, the longer one has no changes.
+      - name: Compare with the committed trace
+        run: |
+          git show HEAD:traces/prologue.jsonl > "$RUNNER_TEMP/committed.jsonl"
+          recorded=traces/prologue.jsonl committed=$RUNNER_TEMP/committed.jsonl
+          r=$(wc -l < "$recorded") c=$(wc -l < "$committed")
+          n=$(( r < c ? r : c ))
+          echo "recorded $((r - 1)) updates, committed $((c - 1))"
+          cmp <(head -n "$n" "$recorded") <(head -n "$n" "$committed")
+          for trace in "$recorded" "$committed"; do
+            if tail -n +"$((n + 1))" "$trace" | grep -qv '^{"frame":[0-9]*}$'; then
+              echo "::error::$trace has changes past the other's end"
+              exit 1
+            fi
+          done
+          git diff --exit-code traces/prologue.tas
+
+      - name: Upload trace and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: prologue-${{ matrix.os }}
+          path: |
+            traces/prologue.jsonl
+            tools/trace-recorder/.deps/miniinstaller.log
+            tools/trace-recorder/.deps/celeste/**/log.txt
+          if-no-files-found: ignore
