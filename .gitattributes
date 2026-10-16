@@ -1,0 +1,5 @@
+# Shell scripts keep LF endings on every OS: bash fails on CRLF, which checkouts on Windows
+# would give them. Traces and their TAS files keep the LF endings the recorder and CelesteTAS
+# write.
+*.sh text eol=lf
+traces/** text eol=lf

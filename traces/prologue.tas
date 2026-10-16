@@ -1,0 +1,6 @@
+# A new file through the Prologue: from the title screen, through starting a new file and the
+# Prologue, to the overworld, with the community's inputs.
+Read,community/StartFullGameFile
+Read,community/0 - Prologue,Start
+
+FileTime: 0:26.231(1543)

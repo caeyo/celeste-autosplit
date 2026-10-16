@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    An Everest code mod: Everest loads TraceRecorder.dll into the game's own process, from the
+    mod's folder in the game's Mods folder, next to everest.yaml. Everest runs the game on .NET 8.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    The Everest release the recorder builds against, which record.sh installs too, reading it
+    from here. everest.yaml requires at least this release.
+  -->
+  <PropertyGroup>
+    <EverestRelease>stable-1.6623.0</EverestRelease>
+    <EverestUrl>https://github.com/EverestAPI/Everest/releases/download/$(EverestRelease)/lib-stripped.zip</EverestUrl>
+    <EverestDepsDir>$(MSBuildThisFileDirectory).deps/</EverestDepsDir>
+    <EverestDir>$(EverestDepsDir)everest-$(EverestRelease)/</EverestDir>
+    <EverestLibDir>$(EverestDir)lib-stripped/</EverestLibDir>
+  </PropertyGroup>
+
+  <!--
+    Compile-time only: the game already loads these, so they are never copied to the output.
+    They're Everest's reference assemblies, which it publishes with each release: the game
+    patched by Everest, and its dependencies, without their code.
+  -->
+  <ItemGroup>
+    <Reference Include="Celeste" HintPath="$(EverestLibDir)Celeste.dll" Private="false" />
+    <Reference Include="FNA" HintPath="$(EverestLibDir)FNA.dll" Private="false" />
+    <Reference Include="MonoMod.Utils" HintPath="$(EverestLibDir)MonoMod.Utils.dll" Private="false" />
+  </ItemGroup>
+
+  <!--
+    Downloads and extracts the pinned Everest release's reference assemblies into .deps/ the
+    first time the project resolves its references. Delete .deps/ (or bump EverestRelease) to
+    fetch again.
+  -->
+  <Target Name="FetchEverest"
+          BeforeTargets="ResolveAssemblyReferences"
+          Condition="!Exists('$(EverestDir).complete')">
+    <Message Importance="high" Text="Fetching Everest's reference assemblies from $(EverestUrl)" />
+    <RemoveDir Directories="$(EverestDir)" />
+    <DownloadFile SourceUrl="$(EverestUrl)"
+                  DestinationFolder="$(EverestDepsDir)"
+                  DestinationFileName="lib-stripped-$(EverestRelease).zip"
+                  Retries="3" />
+    <Unzip SourceFiles="$(EverestDepsDir)lib-stripped-$(EverestRelease).zip"
+           DestinationFolder="$(EverestDir)" />
+    <Delete Files="$(EverestDepsDir)lib-stripped-$(EverestRelease).zip" />
+    <Touch Files="$(EverestDir).complete" AlwaysCreate="true" />
+  </Target>
+
+</Project>
