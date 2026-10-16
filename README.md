@@ -23,7 +23,7 @@ An auto splitter for Celeste that runs on every LiveSplit host.
 cd autosplitter && cargo b --release    # wasm module
 cd component && dotnet build            # LiveSplit component (+ dotnet test, after the wasm)
 cd harness && cargo build --release     # live check, against the layout probe (see its README)
-tools/trace-recorder/record.sh <game> traces/<name>.tas   # records a trace (see its README)
+cd tools/trace-recorder && dotnet build # trace recorder (see its README to record)
 node site/serve.mjs                     # website at http://localhost:8000
 ```
 

@@ -7,7 +7,7 @@ values only, nothing from the game's files.
 
 | Trace | What it covers |
 |---|---|
-| `prologue` | A new file through the Prologue: from the title screen, through naming the file and the Prologue, to the overworld. |
+| `prologue` | A new file through the Prologue: from the title screen, through starting a new file and the Prologue, to the overworld. |
 
 ## TAS files
 
@@ -15,15 +15,15 @@ Each TAS file plays from the title screen, with fresh saves. Its inputs come fro
 the community's [TAS files](https://github.com/VampireFlower/CelesteTAS), which it
 `Read`s from `community/`: unchanged copies of the ones read here, from commit
 [`eb4550a`](https://github.com/VampireFlower/CelesteTAS/tree/eb4550a253be97fd4942a5e609fe2a60e980f7ca),
-which CelesteTAS's own sync check plays for the CelesteTAS release traces are
-recorded with. To read another, copy it from the same commit. A TAS file can also
-have inputs of its own, for what the community's don't play.
+the one CelesteTAS's own sync check plays for the release `record.sh` pins. To read
+another, copy it from the same commit. A TAS file can also have inputs of its own,
+for what the community's don't play.
 
 A TAS file:
 
-- ends with `FileTime:`, which CelesteTAS fills in once the TAS reaches its end,
-  as Studio does. Commit the TAS file with the trace: a time that changes on a
-  later recording means the TAS played differently;
+- ends with `FileTime:`, which CelesteTAS fills in once the TAS reaches its end.
+  Commit the TAS file with the trace: a time that changes on a later recording
+  means the TAS played differently;
 - never fast-forwards or pauses: no `***` breakpoints. CelesteTAS doesn't update
   the auto splitter's values while it fast-forwards.
 
@@ -41,8 +41,8 @@ versions the trace was recorded with:
 {"celeste":"1.4.0.0","everest":"1.6623.0-azure-47d6a-stable","celesteTas":"3.47.1"}
 ```
 
-Then there's a line for each update of the game while the TAS plays, from the one
-before its first frame to the one after its last. Each holds the values the game
+Then there's a line for each update of the game while the TAS plays, from the state
+before its first frame to the state after its last. Each holds the values the game
 sets at the start of that update, from the state the previous update left, which an
 auto splitter reads until the next. It has:
 
@@ -67,6 +67,6 @@ holds them all. A line without changes has only its `frame`:
 Times are in ticks of 100 ns. The game adds 17 ms, 170,000 ticks, to them each
 update that its timers run.
 
-A trace has more lines than its TAS has frames. CelesteTAS doesn't count the
+A trace has more lines than its TAS has input frames. CelesteTAS doesn't count the
 updates in which the game is loading or saving, but the game still updates, and so
 does what the auto splitter reads.

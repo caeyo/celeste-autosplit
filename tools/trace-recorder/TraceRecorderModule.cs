@@ -14,19 +14,14 @@ using System.Text.Json;
 namespace TraceRecorder;
 
 // Records what an auto splitter reads while CelesteTAS plays a TAS, started with --tas FILE.
-// Given --trace FILE, it writes the trace to FILE as JSON lines, and exits the game once the TAS
-// has ended: with 0 if the trace is complete, or 1. The first line holds the versions it was
-// recorded with. Then there's a line for each update of the game while the TAS plays, from the
-// one before its first frame to the one after its last: the update's number from 0, as "frame",
-// and the values that changed since the previous line (all of them, in the first).
-//
-// - "roots": every field of the game's AutoSplitterInfo, by root and path as the layout probe
-//   names them: {"Celeste.Celeste::Instance": {"AutoSplitterInfo.ChapterTime": ...}}.
-// - "everest": Everest's own values, named after its struct's fields, with each string
-//   pointer's string.
+// Given --trace FILE, it writes the trace to FILE, in the format traces/README.md describes, and
+// exits the game once the TAS has ended: with 0 if the trace is complete, or 1, logging why.
 public class TraceRecorderModule : EverestModule
 {
     private const string Tag = "TraceRecorder";
+
+    // How CelesteTAS writes times: under an hour, and from an hour.
+    private static readonly string[] TimeFormats = [@"m\:ss\.fff", @"h\:mm\:ss\.fff"];
 
     // The layout probe's name for the root that the game's AutoSplitterInfo is read from.
     private const string Root = "Celeste.Celeste::Instance";
@@ -56,31 +51,33 @@ public class TraceRecorderModule : EverestModule
         {
             return false;
         }
-        if (args.TryDequeue(out string? file))
-        {
-            traceFile = Path.GetFullPath(file);
-        }
-        else
-        {
-            Logger.Error(Tag, "--trace needs a file");
-        }
+        // Without a file, Initialize fails the recording, once the game can exit.
+        traceFile = args.TryDequeue(out string? file) ? Path.GetFullPath(file) : "";
         return true;
     }
 
     public override void Load() => AutoSplitter.OnUpdateInfo += Record;
 
-    // Every mod has loaded by now, so CelesteTAS has registered its API, and taken --tas.
+    // Every mod has loaded by now, so CelesteTAS has registered its API.
     public override void Initialize()
     {
         typeof(CelesteTas).ModInterop();
-        int tas = Everest.Args.IndexOf("--tas");
-        if (tas >= 0 && tas + 1 < Everest.Args.Count)
+        if (traceFile == null)
         {
-            tasFile = Path.GetFullPath(Everest.Args[tas + 1]);
+            return;
         }
-        else if (traceFile != null)
+        int tas = Everest.Args.IndexOf("--tas");
+        if (traceFile == "")
+        {
+            Fail("--trace needs a file");
+        }
+        else if (tas < 0 || tas + 1 >= Everest.Args.Count)
         {
             Fail("--trace needs the TAS to play, given with --tas");
+        }
+        else
+        {
+            tasFile = Path.GetFullPath(Everest.Args[tas + 1]);
         }
     }
 
@@ -108,7 +105,7 @@ public class TraceRecorderModule : EverestModule
             // hasn't a second later, it couldn't.
             else if (Engine.Scene is Overworld && ++updatesWithoutTas > 60)
             {
-                Fail("the TAS didn't start: CelesteTAS logs why in log.txt");
+                Fail("the TAS didn't start: CelesteTAS logs why");
             }
             return;
         }
@@ -171,7 +168,7 @@ public class TraceRecorderModule : EverestModule
         {
             Fail($"the TAS paused after frame {frame - 1}, at a breakpoint or the end of a draft");
         }
-        else if (startFileTime == null)
+        else if (startFileTime is not long start)
         {
             Fail("the TAS never began a level, so CelesteTAS can't time it");
         }
@@ -179,10 +176,11 @@ public class TraceRecorderModule : EverestModule
         {
             Fail("the TAS has no FileTime: line for CelesteTAS to fill in");
         }
-        else if (!TimeSpan.TryParseExact(timed, [@"m\:ss\.fff", @"h\:mm\:ss\.fff"], CultureInfo.InvariantCulture, out TimeSpan time)
-                 || time.Ticks != fileTime - startFileTime)
+        else if (!TimeSpan.TryParseExact(timed, TimeFormats, CultureInfo.InvariantCulture, out TimeSpan time)
+                 || time.Ticks != fileTime - start)
         {
-            Fail($"the TAS didn't reach its end: its FileTime is \"{timed}\", but the trace's is {TimeSpan.FromTicks(fileTime - startFileTime.Value)}");
+            var traced = TimeSpan.FromTicks(fileTime - start);
+            Fail($"the TAS didn't reach its end: its FileTime is \"{timed}\", but the trace's is {traced.ToString(TimeFormats[traced.TotalHours < 1 ? 0 : 1])}");
         }
         else
         {
@@ -225,9 +223,9 @@ public class TraceRecorderModule : EverestModule
         return changes;
     }
 
-    // The struct's header, its magic bytes and versions, never changes, and InfoVersion reads 0xff
-    // while Everest updates it, as it does here. So neither is recorded. Its strings are UTF-8,
-    // NUL-terminated, with 0 for none.
+    // The struct's header isn't recorded: it's constant, except InfoVersion, which reads 0xff while
+    // Everest updates the struct, as it does here. Its strings are UTF-8, NUL-terminated, with 0 for
+    // none.
     private static Dictionary<string, object?> EverestValues(in AutoSplitter.CoreAutoSplitterInfo info) => new()
     {
         [nameof(info.LevelSetStrPtr)] = Marshal.PtrToStringUTF8(info.LevelSetStrPtr),

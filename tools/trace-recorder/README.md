@@ -18,11 +18,9 @@ Requires the .NET SDK.
 dotnet build tools/trace-recorder -c Release
 ```
 
-It builds against the reference assemblies Everest publishes with each release,
-which the build fetches into `.deps/` the first time: the game patched by Everest,
-and its dependencies, without their code. `EverestRelease` in
-`TraceRecorder.csproj` pins the release. CI doesn't build the recorder, which is
-only used to record.
+It builds against the reference assemblies of the Everest release that
+`TraceRecorder.csproj` pins, which the build fetches into `.deps/`. CI doesn't build
+it: it's only used to record.
 
 ## Recording
 
@@ -40,40 +38,40 @@ by the game's files. Copy it from an install without Everest.
 It records each TAS file given into the trace next to it, `traces/prologue.jsonl`
 here, in three steps:
 
-1. The first time, and when a pinned release changes, it sets up the recorder's own
+1. It builds the recorder.
+2. The first time, and when a pinned release changes, it sets up the recorder's own
    install of the game in `.deps/celeste/`: the game given, with Everest
-   (`TraceRecorder.csproj`'s release) and CelesteTAS (`record.sh`'s release). That
-   takes a couple of minutes and 1.6 GB. On its first launch, CelesteTAS also
-   downloads Celeste Studio into it.
-2. It builds the recorder, and puts it in the install's `Mods/`.
-3. It starts the game for each TAS file: CelesteTAS plays it, the recorder records
-   it, and exits the game once it has ended. A Prologue takes under a minute.
+   (`TraceRecorder.csproj`'s release), CelesteTAS (`record.sh`'s release) and the
+   recorder. That takes a couple of minutes and 1.6 GB. On its first launch,
+   CelesteTAS also downloads Celeste Studio into it.
+3. It starts the game for each TAS file, with fresh saves: CelesteTAS plays it, the
+   recorder records it, and exits the game once it has ended. A Prologue takes
+   under a minute.
 
-On Windows and Linux, it records the same trace. Linux needs a display: Xvfb works.
+On Windows and Linux, it records the same trace, but for how many updates the game
+waits for a save. Linux needs a display: Xvfb works.
 
 Its own install, rather than the player's: its versions are pinned, it has no other
-mods, and it can't touch the player's saves. Each recording starts with fresh saves,
-except for settings. Without them, the game would start fullscreen, after playing its
-intro, and Everest's first-run screens would take the TAS's inputs. Everest would
-also color its log.
+mods, and it can't touch the player's saves.
 
 The game runs in a window, at its own speed. CelesteTAS doesn't update the auto
 splitter's values in a sync check, or while it fast-forwards. And headless, Everest
 runs updates back to back, so anything the game waits for in real time, such as a
 save, would last thousands of updates.
 
-The recorder exits the game with 1, and logs why, when a trace is incomplete.
-`record.sh` then prints the end of the game's log. That's when:
+A trace only replaces the one next to its TAS file once the recorder says it's
+complete. Otherwise, `record.sh` prints the end of the game's log, and where the
+whole log is. The recorder exits the game, and logs why, when:
 
-- the TAS doesn't start, as when a `Read` fails: CelesteTAS's error is in the log;
+- the TAS doesn't start, as when a `Read` fails: CelesteTAS logs why;
 - an update isn't recorded, as when the TAS fast-forwards;
 - the TAS pauses, at a breakpoint or at the end of a draft;
 - the TAS doesn't reach its end, as when it aborts: CelesteTAS only fills in the TAS
-  file's `FileTime:` at the end. It holds the time the file has gained since the
-  TAS's first level began, which has to be the trace's.
+  file's `FileTime:` at the end, which `record.sh` clears first. It holds the time
+  the file has gained since the TAS's first level began, which has to be the
+  trace's.
 
-To record by hand, start the install's launcher as `record.sh` does, with
-`--tas <file.tas> --trace <file.jsonl>`.
+`record.sh` stops a game that hasn't exited after 30 minutes.
 
 ## Updating the pinned versions
 
@@ -82,6 +80,6 @@ To record by hand, start the install's launcher as `record.sh` does, with
 - **CelesteTAS:** `CELESTETAS_RELEASE` in `record.sh`, and the `CelesteTAS`
   dependency in `everest.yaml`. Then update the community's TAS files in
   [`traces/community/`](../../traces/community/) to the commit that the release's
-  `.github/workflows/Test.All.yml` sync-checks (its `tas-revision`).
+  `.github/workflows/Test.All.yml` sync-checks: its `vanilla` job's `tas-revision`.
 
 Then re-record every trace. Its header holds the versions it was recorded with.

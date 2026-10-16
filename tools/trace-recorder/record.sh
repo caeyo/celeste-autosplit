@@ -1,17 +1,11 @@
 #!/usr/bin/env bash
 # Records the trace of each TAS file given, next to it: traces/prologue.tas makes
-# traces/prologue.jsonl. Runs on Windows (in Git Bash) and Linux.
+# traces/prologue.jsonl. Runs on Windows (in Git Bash) and Linux. See README.md.
 #
 # Usage: tools/trace-recorder/record.sh GAME TAS_FILE...
 #
 #   GAME   the vanilla game's build for this OS, as a zip or a folder: on Windows, either
 #          build; on Linux, the Linux build. Only read to set up the install.
-#
-# The recorder has an install of the game of its own, in .deps/celeste/: the vanilla game with
-# Everest, CelesteTAS and the recorder. It's set up the first time, and again when a pinned
-# release changes. Then each TAS plays from the game's launch, with fresh saves, in a window at
-# the game's own speed. The recorder exits the game once the TAS has ended, and fails if the
-# trace isn't complete.
 set -euo pipefail
 
 # The CelesteTAS release traces are recorded with. The Everest release is TraceRecorder.csproj's.
@@ -45,7 +39,7 @@ dotnet build "$here" -c Release --nologo -v q
 
 if [ "$(cat "$install/.complete" 2>/dev/null)" != "$everest $CELESTETAS_RELEASE" ]; then
   echo "Setting up the install: Everest $everest, CelesteTAS $CELESTETAS_RELEASE"
-  rm -rf "$install"
+  rm -rf "$install" "$deps/everest"
   mkdir -p "$install"
   if [ -d "$game" ]; then cp -R "$game/." "$install/"; else unzip -q "$game" -d "$install"; fi
   if [ -e "$install/Celeste.Mod.mm.dll" ]; then
@@ -89,15 +83,21 @@ for tas in "$@"; do
     > "$run/Saves/settings.celeste"
   printf 'CurrentVersion: %s\nLaunchWithoutIntro: true\nColorizedLogging: false\n' "${everest#stable-}" \
     > "$run/Saves/modsettings-Everest.celeste"
+  # CelesteTAS fills it in again once the TAS reaches its end, which the recorder checks: a value
+  # left from an earlier recording could pass for this one's.
+  sed -i 's/^FileTime:.*/FileTime:/' "$tas"
   echo "Recording $trace"
-  if (cd "$install" && EVEREST_SAVEPATH=$(native "$run") "./$launcher" --disable-splash \
-    --tas "$(native "$tas")" --trace "$(native "$trace")") > "$run/log.txt" 2>&1; then
-    grep '\[TraceRecorder\]' "$run/log.txt" | tail -1
+  # The game can also exit without the recorder, as when it crashes, so the recorder has to have
+  # said the trace is complete.
+  if (cd "$install" && EVEREST_SAVEPATH=$(native "$run") timeout 30m "./$launcher" --disable-splash \
+      --tas "$(native "$tas")" --trace "$(native "$run/trace.jsonl")") > "$run/log.txt" 2>&1 \
+    && grep -o '\[TraceRecorder\] recorded [0-9]* updates' "$run/log.txt"; then
+    mv "$run/trace.jsonl" "$trace"
+    rm -rf "$run"
   else
     failed=1
-    echo "FAILED: the game's log ends with"
+    echo "FAILED: the game's log, $run/log.txt, ends with"
     tail -20 "$run/log.txt"
   fi
-  rm -rf "$run"
 done
 exit $failed
