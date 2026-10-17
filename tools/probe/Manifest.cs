@@ -37,6 +37,15 @@ namespace Probe
             "b8 SS SS SS SS 4c 89 38",
             "48 b8 SS SS SS SS SS SS SS SS 4c 89 38");
 
+        // AutoSplitterInfo.Update runs from the game's first update, and reads SaveData.Instance
+        // for the file's values, first for FileTime, right after setting ChapterTime from the
+        // level's session. The signatures match setting ChapterTime, and the reference is the
+        // load of SaveData.Instance that follows:
+        // - On Windows: mov ecx, [slot]; test ecx, ecx.
+        private static readonly Signature SaveDataClr32 = new Signature(
+            "75 06 33 c9 33 d2 eb 09 8b 47 2c 8b 48 04 8b 50 08 89 4e 04 89 56 08",
+            "8b 0d SS SS SS SS 85 c9");
+
         public static readonly ManifestRoot[] Roots =
         {
             new ManifestRoot
@@ -67,6 +76,22 @@ namespace Probe
                     "AutoSplitterInfo.FileStrawberries",
                     "AutoSplitterInfo.FileCassettes",
                     "AutoSplitterInfo.FileHearts",
+                },
+            },
+            new ManifestRoot
+            {
+                Field = "Celeste.SaveData::Instance",
+                Anchor = "Celeste.AutoSplitterInfo::Update()",
+                Signatures =
+                {
+                    ["windows-xna"] = SaveDataClr32,
+                    ["windows-fna"] = SaveDataClr32,
+                },
+                Paths =
+                {
+                    "Time",
+                    "DebugMode",
+                    "Version",
                 },
             },
         };
