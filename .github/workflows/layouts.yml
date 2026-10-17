@@ -9,13 +9,25 @@ name: Layouts
 #
 # The game files are release assets of a private repository, fetched with the
 # GAME_FILES_TOKEN secret. They never go into caches or artifacts (only the measured
-# layouts do). Besides dispatch, this runs for pull requests that change the auto
-# splitter, the layouts, the harness, the probe or the traces, but only from this
-# repository: secrets never reach pull requests from forks.
+# layouts do). Besides dispatch, this runs for pushes and pull requests that change the
+# auto splitter, the layouts, the harness, the probe or the traces, but only for pull
+# requests from this repository: secrets never reach pull requests from forks. A pull
+# request only restores the Rust build caches of its own runs and of master's, so the
+# runs on master keep every pull request's first run warm.
 
 on:
   workflow_dispatch:
   pull_request:
+    paths:
+      - 'autosplitter/**'
+      - 'layouts/**'
+      - 'harness/**'
+      - 'tools/probe/**'
+      - 'traces/**'
+      - '.github/workflows/layouts.yml'
+  push:
+    branches:
+      - 'master'
     paths:
       - 'autosplitter/**'
       - 'layouts/**'
@@ -45,7 +57,7 @@ defaults:
 jobs:
   probe:
     name: ${{ matrix.flavour }}
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -76,10 +88,18 @@ jobs:
         run: dotnet build tools/probe -c Release
 
       - name: Install Rust
-        uses: hecrj/setup-rust-action@v2
+        uses: dtolnay/rust-toolchain@stable
         with:
-          rust-version: stable
           targets: wasm32-unknown-unknown
+
+      # The two Windows flavours share one cache. Only ~/.cargo and the target directories
+      # go into it, never the game files.
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            autosplitter
+            harness
 
       # The auto splitter is rebuilt with the layout the probe writes, before the harness runs
       # it. Building it here builds its dependencies, so that the rebuild only takes seconds.
