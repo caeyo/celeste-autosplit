@@ -49,14 +49,14 @@ splitter reads after that update, until the next. It has:
 
 - `frame`: the update's number, from 0.
 - `roots`: by root and path as the
-  [probe](../tools/probe/README.md#the-manifest) names them, as strings, numbers,
-  booleans, or null for no string:
+  [probe](../tools/probe/README.md#the-manifest) names them, as strings, numbers
+  and booleans:
   - `Celeste.Celeste::Instance`: the game's `AutoSplitterInfo`, every field of
     it, which the game sets at the start of the update, from the state the
     previous update left.
-  - `Celeste.SaveData::Instance`: the save's `Time`, `DebugMode` and `Version`,
-    as the update leaves them, or null while there's no save. A save that
-    appears holds all three, as the new object it is. The game copies the save's
+  - `Celeste.SaveData::Instance`: the save's `Time` and `DebugMode`, as the
+    update leaves them, or null while there's no save. A save that appears
+    holds both, as the new object it is. The game copies the save's
     time into `AutoSplitterInfo.FileTime` at the start of the next update, so
     the save's leads it by an update, and a new file's save appears an update
     before `AutoSplitterInfo` and Everest show it.

@@ -1,6 +1,5 @@
 using Celeste;
 using Celeste.Mod;
-using Microsoft.Xna.Framework;
 using Monocle;
 using MonoMod.ModInterop;
 using System;
@@ -48,7 +47,7 @@ public class TraceRecorderModule : EverestModule
     private readonly Dictionary<string, object?> everest = new();
     // Whether the save was last recorded as null, or null before the first line.
     private bool? saveNull;
-    // The changes of the update that's running, until it ends: by root, and Everest's.
+    // The changes of the last update, until the next begins: by root, and Everest's.
     private Dictionary<string, object?>? pendingRoots;
     private Dictionary<string, object?>? pendingEverest;
     // The file's time when the TAS's first level began, and the last recorded.
@@ -66,11 +65,7 @@ public class TraceRecorderModule : EverestModule
         return true;
     }
 
-    public override void Load()
-    {
-        AutoSplitter.OnUpdateInfo += Record;
-        On.Celeste.Celeste.Update += RecordSave;
-    }
+    public override void Load() => AutoSplitter.OnUpdateInfo += Record;
 
     // Every mod has loaded by now, so CelesteTAS has registered its API.
     public override void Initialize()
@@ -98,14 +93,14 @@ public class TraceRecorderModule : EverestModule
     public override void Unload()
     {
         AutoSplitter.OnUpdateInfo -= Record;
-        On.Celeste.Celeste.Update -= RecordSave;
         trace?.Dispose();
     }
 
     // Everest raises this at the start of each update of the game: right after the game updates
     // its AutoSplitterInfo, and Everest its own values, from the state the previous update left.
-    // They hold until the next update, so they're the line's. The save changes during the update,
-    // so RecordSave adds it at the end, and writes the line.
+    // They hold until the next update, so they're this update's line. The save changes during the
+    // update, so the line is written at the start of the next, with the save as this update left
+    // it.
     private void Record(ref AutoSplitter.CoreAutoSplitterInfo info, Func<string, nint> stringWriter)
     {
         if (traceFile == null)
@@ -116,6 +111,7 @@ public class TraceRecorderModule : EverestModule
         {
             if (trace != null)
             {
+                WritePending();
                 Finish();
             }
             // CelesteTAS starts the TAS at the end of the title screen's first update, so if it
@@ -137,11 +133,7 @@ public class TraceRecorderModule : EverestModule
             Fail($"{Engine.FrameCounter - lastFrameCounter - 1} updates before frame {frame} weren't recorded: is the TAS fast-forwarding?");
             return;
         }
-        else if (pendingRoots != null)
-        {
-            Fail($"frame {frame - 1}'s update didn't end before the next began");
-            return;
-        }
+        WritePending();
         lastFrameCounter = Engine.FrameCounter;
 
         AutoSplitterInfo game = Celeste.Celeste.Instance.AutoSplitterInfo;
@@ -160,12 +152,12 @@ public class TraceRecorderModule : EverestModule
         pendingEverest = Changes(everest, EverestValues(info));
     }
 
-    // At the end of each update, the save is as an auto splitter reads it until the next update.
-    // The save that a new file starts appears in the update that starts it, which is one update
-    // before AutoSplitterInfo or Everest show it.
-    private void RecordSave(On.Celeste.Celeste.orig_Update orig, Celeste.Celeste self, GameTime gameTime)
+    // Writes the last update's line, with the save as that update left it, which is how an auto
+    // splitter reads it until this update. Nothing the game does before AutoSplitterInfo.Update
+    // changes what's recorded of the save. A new file's save appears in the update that starts the
+    // file, one update before AutoSplitterInfo or Everest show it.
+    private void WritePending()
     {
-        orig(self, gameTime);
         if (pendingRoots == null)
         {
             return;
@@ -187,7 +179,6 @@ public class TraceRecorderModule : EverestModule
             {
                 [nameof(data.Time)] = data.Time,
                 [nameof(data.DebugMode)] = data.DebugMode,
-                [nameof(data.Version)] = data.Version,
             });
             if (saveChanges.Count > 0)
             {

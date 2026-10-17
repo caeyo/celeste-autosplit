@@ -7,9 +7,8 @@ update by update, while CelesteTAS plays a TAS. It's an Everest code mod, and
 Each update, right after the game updates its `AutoSplitterInfo`, Everest updates
 its own values and raises `AutoSplitter.OnUpdateInfo`, from its patch of
 `AutoSplitterInfo.Update`. The recorder takes both then. The save changes during
-the update, so the recorder takes it once the update ends, from a hook on
-`Celeste.Update`, and writes the update's line into the trace, for every update
-while the TAS plays. The traces' README describes their
+the update, so the recorder writes the update's line at the start of the next,
+with the save as the update left it, for every update while the TAS plays. The traces' README describes their
 [format](../../traces/README.md#format).
 
 ## Building
@@ -66,8 +65,7 @@ complete. Otherwise, `record.sh` prints the end of the game's log, and where the
 whole log is. The recorder exits the game, and logs why, when:
 
 - the TAS doesn't start, as when a `Read` fails: CelesteTAS logs why;
-- an update isn't recorded, as when the TAS fast-forwards, or one begins before
-  the last has ended;
+- an update isn't recorded, as when the TAS fast-forwards;
 - the TAS pauses, at a breakpoint or at the end of a draft;
 - the TAS doesn't reach its end, as when it aborts: CelesteTAS only fills in the TAS
   file's `FileTime:` at the end, which `record.sh` clears first. It holds the time

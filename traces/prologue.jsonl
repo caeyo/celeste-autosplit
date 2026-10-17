@@ -263,7 +263,7 @@
 {"frame":261}
 {"frame":262}
 {"frame":263}
-{"frame":264,"roots":{"Celeste.SaveData::Instance":{"Time":0,"DebugMode":false,"Version":null}}}
+{"frame":264,"roots":{"Celeste.SaveData::Instance":{"Time":0,"DebugMode":false}}}
 {"frame":265,"everest":{"FileFlags":3221225472}}
 {"frame":266}
 {"frame":267}
@@ -1974,7 +1974,7 @@
 {"frame":1972,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.FileTime":261970000},"Celeste.SaveData::Instance":{"Time":262140000}},"everest":{"FileTime":261970000}}
 {"frame":1973,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.FileTime":262140000},"Celeste.SaveData::Instance":{"Time":262310000}},"everest":{"FileTime":262140000}}
 {"frame":1974,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.Chapter":-1,"AutoSplitterInfo.Mode":-1,"AutoSplitterInfo.Level":"","AutoSplitterInfo.ChapterStarted":false,"AutoSplitterInfo.ChapterComplete":false,"AutoSplitterInfo.ChapterTime":0,"AutoSplitterInfo.FileTime":262310000}},"everest":{"LevelSetStrPtr":null,"ChapterSIDStrPtr":null,"ChapterID":-1,"ChapterMode":-1,"RoomNameStrPtr":null,"ChapterTime":0,"ChapterFlags":0,"FileTime":262310000}}
-{"frame":1975,"roots":{"Celeste.SaveData::Instance":{"Version":"1.4.0.0"}}}
+{"frame":1975}
 {"frame":1976}
 {"frame":1977}
 {"frame":1978}

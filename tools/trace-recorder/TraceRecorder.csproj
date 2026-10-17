@@ -30,7 +30,6 @@
   <ItemGroup>
     <Reference Include="Celeste" HintPath="$(EverestLibDir)Celeste.dll" Private="false" />
     <Reference Include="FNA" HintPath="$(EverestLibDir)FNA.dll" Private="false" />
-    <Reference Include="MMHOOK_Celeste" HintPath="$(EverestLibDir)MMHOOK_Celeste.dll" Private="false" />
     <Reference Include="MonoMod.Utils" HintPath="$(EverestLibDir)MonoMod.Utils.dll" Private="false" />
   </ItemGroup>
 
