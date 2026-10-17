@@ -81,6 +81,4 @@ pub mod save_data_instance {
     pub const TIME: [u64; 1] = [0x4];
     /// DebugMode: System.Boolean
     pub const DEBUG_MODE: [u64; 1] = [0x51];
-    /// Version: System.String
-    pub const VERSION: [u64; 1] = [0xc];
 }
