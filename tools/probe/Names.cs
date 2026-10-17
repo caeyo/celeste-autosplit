@@ -2,7 +2,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 
-namespace LayoutProbe
+namespace Probe
 {
     /// <summary>Resolves the manifest's .NET names in the game's assembly, failing clearly when one doesn't.</summary>
     internal static class Names

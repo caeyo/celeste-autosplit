@@ -1,17 +1,17 @@
 name: Layouts
 
-# Measures each vanilla flavour's memory layout with the layout probe, inside the
-# flavour's own runtime next to the real game files, as layouts/<flavour>.rs. Then the
-# auto splitter is built with it, and the live check runs it against the game the probe
-# constructed and holds. On dispatch, a last job opens a pull request into the dispatched
-# branch with the regenerated layouts. On a pull request, each committed layout must be
-# the one the probe writes.
+# Measures each vanilla flavour's memory layout with the probe, inside the flavour's own
+# runtime next to the real game files, as layouts/<flavour>.rs. Then the auto splitter is
+# built with it, and the harness runs it against the game, which the probe constructs
+# again: the live check, then the replay of every trace. On dispatch, a last job opens a
+# pull request into the dispatched branch with the regenerated layouts. On a pull request,
+# each committed layout must be the one the probe writes.
 #
 # The game files are release assets of a private repository, fetched with the
 # GAME_FILES_TOKEN secret. They never go into caches or artifacts (only the measured
 # layouts do). Besides dispatch, this runs for pull requests that change the auto
-# splitter, the layouts, the harness or the probe, but only from this repository:
-# secrets never reach pull requests from forks.
+# splitter, the layouts, the harness, the probe or the traces, but only from this
+# repository: secrets never reach pull requests from forks.
 
 on:
   workflow_dispatch:
@@ -20,7 +20,8 @@ on:
       - 'autosplitter/**'
       - 'layouts/**'
       - 'harness/**'
-      - 'tools/layout-probe/**'
+      - 'tools/probe/**'
+      - 'traces/**'
       - '.github/workflows/layouts.yml'
 
 permissions:
@@ -33,7 +34,9 @@ concurrency:
 env:
   GAME_FILES_REPO: caeyo/celeste-autosplit-gamefiles
   GAME_FILES_TAG: gamefiles-v1
-  PROBE_BUILD: tools/layout-probe/bin/Release/net45
+  PROBE_BUILD: tools/probe/bin/Release/net45
+  # The screen Xvfb gives FNA's window, on Linux.
+  XVFB_SCREEN: '-screen 0 1280x720x24'
 
 defaults:
   run:
@@ -70,7 +73,7 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Build probe
-        run: dotnet build tools/layout-probe -c Release
+        run: dotnet build tools/probe -c Release
 
       - name: Install Rust
         uses: hecrj/setup-rust-action@v2
@@ -78,8 +81,8 @@ jobs:
           rust-version: stable
           targets: wasm32-unknown-unknown
 
-      # The auto splitter is rebuilt with the layout the probe writes, before the live check.
-      # Building it here builds its dependencies, so that the rebuild only takes seconds.
+      # The auto splitter is rebuilt with the layout the probe writes, before the harness runs
+      # it. Building it here builds its dependencies, so that the rebuild only takes seconds.
       - name: Build auto splitter and harness
         run: |
           (cd autosplitter && cargo b --release --locked)
@@ -122,63 +125,52 @@ jobs:
       # The probe runs as the game, the way the auto splitter will see it: the probe
       # becomes Celeste.exe, the game's own Celeste.exe moves to real/, and it starts the
       # way players start the game. The game's Linux script changes directory first, so
-      # the paths given to the probe are absolute. Its output goes to a file, so that it
-      # can keep running, and holding the game for the live check, once the step ends.
+      # the paths given to the probe are absolute. Once every check has passed, it writes
+      # its layout and prints "probe: ok". Otherwise it prints "probe: failed" and exits
+      # with 1.
 
-      - name: Start probe (Windows)
+      - name: Probe (Windows)
         if: runner.os == 'Windows'
+        timeout-minutes: 4
         working-directory: ${{ runner.temp }}/game
         run: |
           mkdir real
           mv Celeste.exe real/
           [ ! -f Celeste.exe.config ] || mv Celeste.exe.config real/
-          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
-          ./Celeste.exe --game real/Celeste.exe --out "$RUNNER_TEMP/layouts" --values "$RUNNER_TEMP/values.json" --hold 120 > "$RUNNER_TEMP/probe.log" 2>&1 &
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/Probe.exe" Celeste.exe
+          ./Celeste.exe --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
       # The script runs Celeste.bin.x86_64, a MonoKickstart that runs Celeste.exe with the
       # game's own Mono. FNA needs a display to create its window. The runner image already
       # has Xvfb and Mesa, and the window never gets a GL context, so software rendering is
       # enough.
-      - name: Start probe (Linux)
+      - name: Probe (Linux)
         if: runner.os == 'Linux'
+        timeout-minutes: 4
         working-directory: ${{ runner.temp }}/game
         run: |
           mkdir real
           mv Celeste.exe Celeste.exe.config real/
-          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/Probe.exe" Celeste.exe
           chmod +x Celeste Celeste.bin.x86_64
-          xvfb-run -a -s '-screen 0 1280x720x24' ./Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts" --values "$RUNNER_TEMP/values.json" --hold 120 > "$RUNNER_TEMP/probe.log" 2>&1 &
+          xvfb-run -a -s "$XVFB_SCREEN" ./Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
       # MacOS/Celeste is a MonoKickstart that runs Resources/Celeste.exe with the game's own
       # Mono.
-      - name: Start probe (macOS)
+      - name: Probe (macOS)
         if: runner.os == 'macOS'
+        timeout-minutes: 4
         working-directory: ${{ runner.temp }}/game/Celeste.app/Contents
         run: |
           mkdir Resources/real
           mv Resources/Celeste.exe Resources/real/
-          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Resources/Celeste.exe
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/Probe.exe" Resources/Celeste.exe
           chmod +x MacOS/Celeste
-          MacOS/Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts" --values "$RUNNER_TEMP/values.json" --hold 120 > "$RUNNER_TEMP/probe.log" 2>&1 &
+          MacOS/Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
-      # Once every check has passed, the probe writes its layout and the values it holds,
-      # prints "probe: ok", and holds the game. Otherwise it prints "probe: failed".
-      - name: Wait for probe
-        timeout-minutes: 4
-        run: |
-          for _ in $(seq 180); do
-            grep -q '^probe: ' "$RUNNER_TEMP/probe.log" && break
-            sleep 1
-          done
-          cat "$RUNNER_TEMP/probe.log"
-          grep -q '^probe: ok' "$RUNNER_TEMP/probe.log" || {
-            echo "::error::The probe failed, or didn't finish within 180 s: see its log above."
-            exit 1
-          }
-
-      # The probe's layout replaces the committed one, so that the live check always tests
-      # the offsets just measured. The probe names the file after the flavour it detected, so
-      # a mislabelled matrix entry fails here.
+      # The probe's layout replaces the committed one, so that the harness always tests the
+      # offsets just measured. The probe names the file after the flavour it detected, so a
+      # mislabelled matrix entry fails here.
       - name: Build auto splitter with the probe's layout
         env:
           FLAVOUR: ${{ matrix.flavour }}
@@ -186,14 +178,27 @@ jobs:
           cp "$RUNNER_TEMP/layouts/$FLAVOUR.rs" layouts/
           (cd autosplitter && cargo b --release --locked)
 
-      # The live check attaches the auto splitter to the probe's process, and compares. It
-      # runs as root on Linux, where Yama only lets a process read the memory of its own
-      # descendants, and on macOS, where reading another process's memory needs root.
-      - name: Live check
-        timeout-minutes: 3
+      # The harness starts the probe again, as the game, attaches the auto splitter to it, and
+      # runs the live check, then replays every trace. On Linux, the probe is then the
+      # harness's descendant, whose memory Yama lets it read. On macOS, reading another
+      # process's memory needs root, so the harness runs as root, and starts the probe as the
+      # normal user, as players run the game.
+      - name: Live check and replay
+        timeout-minutes: 5
         run: |
-          [ "$RUNNER_OS" = Windows ] || sudo=sudo
-          $sudo harness/target/release/harness live --values "$RUNNER_TEMP/values.json"
+          harness=harness/target/release/harness
+          game="$RUNNER_TEMP/game"
+          case "$RUNNER_OS" in
+            Windows)
+              "$harness" replay traces/*.jsonl -- "$game/Celeste.exe" --game real/Celeste.exe ;;
+            Linux)
+              "$harness" replay traces/*.jsonl -- xvfb-run -a -s "$XVFB_SCREEN" "$game/Celeste" --game real/Celeste.exe ;;
+            macOS)
+              sudo "$harness" replay traces/*.jsonl -- sudo -u "$(id -un)" "$game/Celeste.app/Contents/MacOS/Celeste" --game real/Celeste.exe ;;
+            *)
+              echo "::error::No way to start the probe on $RUNNER_OS."
+              exit 1 ;;
+          esac
 
       # A difference is a hand edit, or a change to the probe (its manifest or its output)
       # without regenerating the layouts.
@@ -268,5 +273,5 @@ jobs:
             echo "Updated the open pull request from $BRANCH."
           else
             gh pr create --base "$BASE" --head "$BRANCH" --title "Regenerate layouts" \
-              --body "Measured by the layout probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code, the probe read every path back raw through the slot, and the live check found the auto splitter, built with the regenerated layout, reporting the values the probe held."
+              --body "Measured by the probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code. The auto splitter, built with the regenerated layout, reported the distinctive values the probe wrote into the game, the same values flipped, and each flag set alone, in the live check, then every trace's values as the harness replayed them through the probe."
           fi

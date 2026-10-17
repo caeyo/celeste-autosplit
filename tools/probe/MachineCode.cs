@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace LayoutProbe
+namespace Probe
 {
     /// <summary>
     /// A hand-written byte pattern: hex bytes separated by spaces, with ?? for any byte, and SS

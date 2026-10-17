@@ -23,7 +23,7 @@ public class TraceRecorderModule : EverestModule
     // How CelesteTAS writes times: under an hour, and from an hour.
     private static readonly string[] TimeFormats = [@"m\:ss\.fff", @"h\:mm\:ss\.fff"];
 
-    // The layout probe's name for the root that the game's AutoSplitterInfo is read from.
+    // The probe's name for the root that the game's AutoSplitterInfo is read from.
     private const string Root = "Celeste.Celeste::Instance";
 
     // Every field of the game's AutoSplitterInfo, in the order it declares them.

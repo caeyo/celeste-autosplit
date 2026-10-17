@@ -4,8 +4,8 @@ use asr::{
 };
 
 // The memory layouts, in layouts/ at the repository's root: each vanilla flavour's is generated
-// by the layout probe, and Everest's is transcribed from its source. rustfmt leaves them as
-// they're written, and they can hold more than this reads.
+// by the probe, and Everest's is transcribed from its source. rustfmt leaves them as they're
+// written, and they can hold more than this reads.
 #[rustfmt::skip]
 #[allow(dead_code)]
 #[path = "../../layouts/everest.rs"]

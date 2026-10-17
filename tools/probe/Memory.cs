@@ -3,19 +3,14 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.InteropServices;
 
-namespace LayoutProbe
+namespace Probe
 {
     /// <summary>
-    /// Raw addresses of managed objects and fields in this process. The IL here is
-    /// unverifiable, which dynamic methods may be in a full-trust process.
+    /// Field offsets, static fields' addresses, and reads of mapped memory, in this process. The IL
+    /// here is unverifiable, which dynamic methods may be in a full-trust process.
     /// </summary>
     internal static class Memory
     {
-        private static readonly Func<object, IntPtr> addressOf = BuildAddressOf();
-
-        /// <summary>The object's current address. The GC may move it afterwards.</summary>
-        public static ulong AddressOf(object obj) => ToAddress(addressOf(obj));
-
         /// <summary>
         /// Offset of an instance field from its object's address. Marshal.OffsetOf only
         /// works for sequential and explicit layouts, and these classes use auto layout.
@@ -47,32 +42,11 @@ namespace LayoutProbe
             return ToAddress(((Func<IntPtr>)method.CreateDelegate(typeof(Func<IntPtr>)))());
         }
 
-        private static Func<object, IntPtr> BuildAddressOf()
-        {
-            var method = new DynamicMethod("AddressOf", typeof(IntPtr), new[] { typeof(object) }, typeof(Memory).Module, true);
-            ILGenerator il = method.GetILGenerator();
-            // Reads the argument's reference as a plain pointer.
-            il.Emit(OpCodes.Ldarga_S, (byte)0);
-            il.Emit(OpCodes.Ldind_I);
-            il.Emit(OpCodes.Ret);
-            return (Func<object, IntPtr>)method.CreateDelegate(typeof(Func<object, IntPtr>));
-        }
-
         public static ulong ToAddress(IntPtr pointer) =>
             IntPtr.Size == 4 ? (uint)pointer.ToInt32() : (ulong)pointer.ToInt64();
 
-        public static IntPtr ToPointer(ulong address) =>
+        private static IntPtr ToPointer(ulong address) =>
             IntPtr.Size == 4 ? new IntPtr(unchecked((int)(uint)address)) : new IntPtr(unchecked((long)address));
-
-        public static ulong ReadPointer(ulong address) => ToAddress(Marshal.ReadIntPtr(ToPointer(address)));
-
-        public static long ReadInt64(ulong address) => Marshal.ReadInt64(ToPointer(address));
-
-        public static int ReadInt32(ulong address) => Marshal.ReadInt32(ToPointer(address));
-
-        public static byte ReadByte(ulong address) => Marshal.ReadByte(ToPointer(address));
-
-        public static char ReadChar(ulong address) => (char)Marshal.ReadInt16(ToPointer(address));
 
         /// <summary>
         /// Reads up to <paramref name="max"/> bytes, stopping at the first unmapped page:

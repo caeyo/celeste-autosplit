@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace LayoutProbe
+namespace Probe
 {
     /// <summary>
     /// What the auto splitter reads, by .NET names. Each root is a static field that the auto
