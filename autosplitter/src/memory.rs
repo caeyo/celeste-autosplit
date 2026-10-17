@@ -50,33 +50,49 @@ pub enum GameState {
         chapter_complete: DeepPointer<3>,
         chapter_cassette: DeepPointer<3>,
         chapter_heart: DeepPointer<3>,
-        save_data: SaveData,
+        /// `SaveData.Instance`'s slot, which holds null until a file starts.
+        save_data: Slot,
+        save_time: DeepPointer<3>,
+        save_debug_mode: DeepPointer<3>,
     },
     Everest {
         info: Address,
     },
 }
 
-/// A save, as `SaveData.Instance` holds it.
-pub struct Save {
-    pub time: i64,
-    pub debug_mode: bool,
-}
-
 impl GameState {
-    /// Runs once per tick, before the game is read: finds a slot not found yet, every few seconds,
-    /// and drops one that fails its check.
-    pub fn update(&mut self, process: &Process) {
-        if let Self::Vanilla { save_data, .. } = self {
-            save_data.update(process);
+    /// The time of the save `SaveData.Instance` holds, or `Some(None)` while it holds none. On
+    /// Everest, the module only reads Everest's own values.
+    pub fn save_time(&self, process: &Process) -> Option<Option<i64>> {
+        match self {
+            Self::Vanilla {
+                save_data,
+                save_time,
+                ..
+            } => {
+                if !save_data.holds_object(process)? {
+                    return Some(None);
+                }
+                Some(Some(save_time.deref(process).ok()?))
+            }
+            Self::Everest { .. } => None,
         }
     }
 
-    /// The save `SaveData.Instance` holds, or `Some(None)` while it holds none. On Everest, the
-    /// module only reads Everest's own values.
-    pub fn save(&self, process: &Process) -> Option<Option<Save>> {
+    /// Whether the save `SaveData.Instance` holds is in debug mode, or `Some(None)` while it holds
+    /// none. On Everest, the module only reads Everest's own values.
+    pub fn save_debug_mode(&self, process: &Process) -> Option<Option<bool>> {
         match self {
-            Self::Vanilla { save_data, .. } => save_data.read(process),
+            Self::Vanilla {
+                save_data,
+                save_debug_mode,
+                ..
+            } => {
+                if !save_data.holds_object(process)? {
+                    return Some(None);
+                }
+                Some(Some(save_debug_mode.deref::<u8>(process).ok()? != 0))
+            }
             Self::Everest { .. } => None,
         }
     }
@@ -361,14 +377,10 @@ struct Flavour {
     instance: Anchor,
     /// The offsets of `Engine.Title`, which holds "Celeste", from the object in the slot.
     title: [u64; 1],
-    /// The game's state, read through `Celeste.Instance`'s slot.
-    state: fn(Slot, SaveData) -> GameState,
     /// `SaveData.Instance`, found from `AutoSplitterInfo.Update`.
     save_data: Anchor,
-    /// The offsets of `SaveData`'s fields from the object in its slot.
-    save_time: [u64; 1],
-    save_debug_mode: [u64; 1],
-    save_version: [u64; 1],
+    /// The game's state, read through the slots of `Celeste.Instance` and `SaveData.Instance`.
+    state: fn(Slot, Slot) -> GameState,
 }
 
 /// How to find a root's static slot, from the compiled code of its anchor method.
@@ -412,10 +424,7 @@ macro_rules! flavour {
             instance: anchor!(instance),
             title: instance::TITLE,
             save_data: anchor!(save_data),
-            save_time: save_data::TIME,
-            save_debug_mode: save_data::DEBUG_MODE,
-            save_version: save_data::VERSION,
-            state: |slot, save_data| GameState::Vanilla {
+            state: |slot, save_slot| GameState::Vanilla {
                 ptr_size: slot.ptr_size,
                 string_len: $layout::STRING_LENGTH,
                 string_chars: $layout::STRING_CHARS,
@@ -433,7 +442,9 @@ macro_rules! flavour {
                 chapter_complete: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_COMPLETE),
                 chapter_cassette: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE),
                 chapter_heart: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_HEART),
-                save_data,
+                save_data: save_slot,
+                save_time: save_slot.field(save_data::TIME),
+                save_debug_mode: save_slot.field(save_data::DEBUG_MODE),
             },
         }
     }};
@@ -476,7 +487,7 @@ fn signature_ends<const N: usize>(
 /// A root's static slot, which holds a reference to the object that each of its paths starts
 /// from.
 #[derive(Clone, Copy)]
-struct Slot {
+pub struct Slot {
     address: Address,
     ptr_size: PointerSize,
 }
@@ -491,6 +502,12 @@ impl Slot {
         let mut path = [0; CAP];
         path[1..=N].copy_from_slice(&offsets);
         DeepPointer::new(self.address, self.ptr_size, &path[..=N])
+    }
+
+    /// Whether the slot holds an object rather than null.
+    fn holds_object(self, process: &Process) -> Option<bool> {
+        let object = process.read_pointer(self.address, self.ptr_size).ok()?;
+        Some(!object.is_null())
     }
 }
 
@@ -555,101 +572,17 @@ impl Flavour {
     }
 }
 
-/// `SaveData.Instance`, which holds the save of the file being played, and null until a file
-/// starts. Its slot is found on its own, after `Celeste.Instance`'s, since `AutoSplitterInfo.Update`,
-/// which it's found from, is only compiled once the game first updates. Until it's found, it's
-/// unread.
-pub struct SaveData {
-    flavour: &'static Flavour,
-    slot: Option<Slot>,
-    /// Ticks until the next search for the slot.
-    search_in: u32,
-}
-
-/// How many ticks pass between two searches for a slot, since a scan of executable memory is slow:
-/// 3 s at the default tick rate.
-const SEARCH_INTERVAL: u32 = 360;
-
-impl SaveData {
-    fn new(flavour: &'static Flavour) -> Self {
-        Self {
-            flavour,
-            slot: None,
-            search_in: 0,
-        }
-    }
-
-    fn update(&mut self, process: &Process) {
-        if self.slot.is_none() {
-            if self.search_in > 0 {
-                self.search_in -= 1;
-                return;
-            }
-            self.slot = self.find(process);
-            self.search_in = SEARCH_INTERVAL;
-        }
-        if !self.check(process) {
-            self.slot = None;
-        }
-    }
-
-    /// The slot, from the first match of the signature whose reference holds an address.
-    fn find(&self, process: &Process) -> Option<Slot> {
-        let anchor = &self.flavour.save_data;
-        scan_executable(process, |(start, size)| {
-            let end = start.value() + size;
-            (anchor.scan)(process, (start, size))
-                .into_iter()
-                .find_map(|code| anchor.read_slot(process, self.flavour, code, end))
-        })
-    }
-
-    /// Whether the save in the slot, if it holds one, has a version that reads as one: null until
-    /// the game first saves it, and then numbers separated by dots, as the game version it was
-    /// saved with. A wrong slot is unlikely to pass this once it holds an object. Only a version
-    /// that reads as something else fails: a read that fails doesn't.
-    fn check(&self, process: &Process) -> bool {
-        let Some(Ok(Some(save))) = self.slot.map(|slot| slot.object(process)) else {
-            return true;
-        };
-        let flavour = self.flavour;
-        let Ok(version) = process.read_pointer(save + flavour.save_version[0], flavour.ptr_size)
-        else {
-            return true;
-        };
-        version.is_null()
-            || read_dotnet_string(
-                process,
-                version.value(),
-                flavour.string_len,
-                flavour.string_chars,
-            )
-            .is_some_and(|version| {
-                version
-                    .split('.')
-                    .all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
-            })
-    }
-
-    fn read(&self, process: &Process) -> Option<Option<Save>> {
-        let Some(save) = self.slot?.object(process).ok()? else {
-            return Some(None);
-        };
-        let flavour = self.flavour;
-        let debug_mode: u8 = process.read(save + flavour.save_debug_mode[0]).ok()?;
-        Some(Some(Save {
-            time: process.read(save + flavour.save_time[0]).ok()?,
-            debug_mode: debug_mode != 0,
-        }))
-    }
-}
-
-impl Slot {
-    /// The object the slot holds, or `None` for null.
-    fn object(self, process: &Process) -> Result<Option<Address>, asr::Error> {
-        let object = process.read_pointer(self.address, self.ptr_size)?;
-        Ok((!object.is_null()).then_some(object))
-    }
+/// Finds the static slot of `SaveData.Instance`, from the first match of the flavour's signature
+/// whose reference holds an address. Its anchor, `AutoSplitterInfo.Update`, is only compiled once
+/// the game first updates.
+fn find_save_data(process: &Process, flavour: &Flavour) -> Option<Slot> {
+    let anchor = &flavour.save_data;
+    scan_executable(process, |(start, size)| {
+        let end = start.value() + size;
+        (anchor.scan)(process, (start, size))
+            .into_iter()
+            .find_map(|code| anchor.read_slot(process, flavour, code, end))
+    })
 }
 
 /// The slot's address in the reference, if the reference pattern matches at the start of the code.
@@ -748,5 +681,5 @@ pub fn init(process: &Process) -> Option<GameState> {
     let (flavour, slot) = groups
         .iter()
         .find_map(|group| find_instance(process, group))?;
-    Some((flavour.state)(slot, SaveData::new(flavour)))
+    Some((flavour.state)(slot, find_save_data(process, flavour)?))
 }

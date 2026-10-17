@@ -312,11 +312,10 @@ fn replay_frame(
             held.null = false;
             roots.insert(root.clone(), false);
         }
-        // The probe would take a value of another type for some paths, such as a number for a
-        // string.
+        // The probe would take any value for a string: it's the rest of the line.
         for (path, value) in values {
             match held.paths.get(path) {
-                Some(old) if kind(old) == kind(value) => {}
+                Some(old) if mem::discriminant(old) == mem::discriminant(value) => {}
                 Some(old) => bail!("{path} holds {old}, which {value} can't replace"),
                 None => bail!("{root} has no path {path}"),
             }
@@ -329,14 +328,6 @@ fn replay_frame(
         Ok(read) => differences(&expected(held)?, &read),
         Err(problem) => vec![problem],
     })
-}
-
-/// A value's type, with `None` for a string or null, since only a string can be null.
-fn kind(value: &Value) -> Option<mem::Discriminant<Value>> {
-    match value {
-        Value::Null | Value::String(_) => None,
-        value => Some(mem::discriminant(value)),
-    }
 }
 
 /// The values, with every number negated and every flag flipped. Strings are left out: the probe's

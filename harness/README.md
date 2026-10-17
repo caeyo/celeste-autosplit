@@ -35,11 +35,9 @@ So a pass rests on the game's own runtime and one comparison per update, with no
 stand-in for the game. It checks:
 
 - finding each root's slot: the signature, and the reference to its slot,
-  and for `Celeste.Instance`, the title, which tells XNA and FNA apart, and for
-  `SaveData.Instance`, the version check, with a save's version null, as the
-  traces have it until the game first saves, and set;
-- reading a slot that holds null as no object, not as a failed read that the
-  auto splitter would search again for;
+  and for `Celeste.Instance`, the title, which tells XNA and FNA apart;
+- reading a slot that holds null as no object, and the object's values once
+  it holds one again;
 - every offset and pointer size `memory.rs` reads through;
 - reading .NET strings, numbers and flags: the live check's distinctive values,
   and the values real play produces, such as empty strings;
@@ -99,8 +97,9 @@ probe's command, so that it runs as you, as players run the game.
 - The anchors as the game compiles them: the probe compiles each itself, before
   constructing the game. `AutoSplitterInfo.Update` was checked by hand to be
   found at the title screen of the real game, on Windows with XNA.
-- Searching again for a slot not found yet, as when the auto splitter attaches
-  before the game's first update: the probe has compiled every anchor by then.
+- Attaching before the game's first update, which the auto splitter waits for,
+  since `SaveData.Instance`'s anchor is only compiled then: the probe has
+  compiled every anchor by the time the auto splitter attaches.
 - The rules for code the game doesn't have: a second match of the signature,
   and a reference pattern with a 4-byte address matching inside one with an
   8-byte address. The probe checks that the real reference is within the

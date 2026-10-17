@@ -3,10 +3,10 @@
 //! the game, and prints `probe: values` and, as JSON, its flavour, the values its paths hold,
 //! keyed by root and then path, and the roots it set up, since the game left them null. Then it
 //! reads sets of lines, with an empty line at the end of each: `root=null` or `root=object`, which
-//! make a root hold null or its object again, and `path=value`, with a string in double quotes, or
-//! `null` for no string. It writes each set into the game and answers `probe: written`, until its
-//! input ends. It prints `probe: failed` if a check or the replay fails. Its other lines, and what
-//! it prints on its standard error, are its log, which is shown if anything goes wrong with it.
+//! make a root hold null or its object again, and `path=value`, with a string as the rest of the
+//! line. It writes each set into the game and answers `probe: written`, until its input ends. It
+//! prints `probe: failed` if a check or the replay fails. Its other lines, and what it prints on
+//! its standard error, are its log, which is shown if anything goes wrong with it.
 
 use std::{
     collections::BTreeMap,
@@ -103,11 +103,10 @@ impl Probe {
         }
         for (path, value) in values {
             let text = match value {
-                Value::Null => "null".to_owned(),
                 Value::Bool(flag) => flag.to_string(),
                 Value::Number(number) => number.to_string(),
                 // A string ends with its line.
-                Value::String(text) if !text.contains(['\r', '\n']) => format!("\"{text}\""),
+                Value::String(text) if !text.contains(['\r', '\n']) => text.clone(),
                 _ => bail!("can't send the probe {value} for {path}"),
             };
             set += &format!("{path}={text}\n");

@@ -455,12 +455,6 @@ namespace Probe
             root.Object = FormatterServices.GetUninitializedObject(root.Field.FieldType);
             GC.SuppressFinalize(root.Object);
             root.SetUp = true;
-            // The game gives a save its version when it saves it, and the auto splitter checks the
-            // version of a save that has one.
-            if (root.Name == "Celeste.SaveData::Instance")
-            {
-                Names.InstanceField(root.Object.GetType(), "Version").SetValue(root.Object, gameVersion);
-            }
             root.Field.SetValue(null, root.Object);
             Console.WriteLine("{0} is null after new Celeste(), so the probe sets up an uninitialized {1}", root.Name, Names.TypeName(root.Field.FieldType));
         }
@@ -498,8 +492,7 @@ namespace Probe
         /// values the paths hold, and the roots it set up. Then writes what it's sent into the game,
         /// until its input ends. It comes in sets of lines, with an empty line at the end of each:
         /// - path=value writes the value through the path. The value is read as the path's type:
-        ///   true or false, a whole number, or a string in double quotes, taken as it is between
-        ///   them, or null for no string.
+        ///   true or false, a whole number, or for a string, the rest of the line.
         /// - root=null stores null in the root's static, and root=object stores the root's object
         ///   in it again.
         /// Once a set is written, it prints "probe: written".
@@ -516,8 +509,7 @@ namespace Probe
                 }
                 paths.Add(path.Path.Name, path);
                 // Every number and flag gets a distinctive value, and a string only while it's
-                // null: the title keeps "Celeste", and the save its version, which the auto
-                // splitter checks.
+                // null: the title keeps "Celeste", which the auto splitter checks for.
                 FieldInfo last = path.Path.Last;
                 if (last.FieldType.IsValueType || last.GetValue(path.Owner) == null)
                 {
@@ -585,18 +577,7 @@ namespace Probe
 
         private static object ParseValue(Type type, string text)
         {
-            if (type == typeof(string))
-            {
-                if (text == "null")
-                {
-                    return null;
-                }
-                if (text.Length < 2 || text[0] != '"' || text[text.Length - 1] != '"')
-                {
-                    throw new FormatException();
-                }
-                return text.Substring(1, text.Length - 2);
-            }
+            if (type == typeof(string)) return text;
             if (type == typeof(bool)) return bool.Parse(text);
             if (type == typeof(int)) return int.Parse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
             return long.Parse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);

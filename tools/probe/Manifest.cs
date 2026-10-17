@@ -100,7 +100,6 @@ namespace Probe
                 {
                     "Time",
                     "DebugMode",
-                    "Version",
                 },
             },
         };
