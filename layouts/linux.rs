@@ -18,14 +18,14 @@ pub const STRING_CHARS: u64 = 0x14;
 pub mod celeste_instance {
     /// Matches the code once: hex bytes, with `??` for any byte.
     pub const SIGNATURE: &str = "be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00";
-    /// The store into the slot: the earliest match of any of these after the signature, with `SS`
+    /// A reference to the slot: the earliest match of any of these after the signature, with `SS`
     /// for the slot's address.
-    pub const STORES: &[&str] = &[
+    pub const REFERENCES: &[&str] = &[
         "b8 SS SS SS SS 4c 89 38",
         "48 b8 SS SS SS SS SS SS SS SS 4c 89 38",
     ];
-    /// How many bytes after the signature are searched for the store, which ends within them.
-    pub const STORE_WINDOW: u64 = 256;
+    /// How many bytes after the signature are searched for the reference, which ends within them.
+    pub const REFERENCE_WINDOW: u64 = 256;
 
     // Each path's offsets from the object in the slot, and the name and type of each field
     // along it.

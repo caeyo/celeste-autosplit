@@ -362,26 +362,26 @@ namespace Probe
                 throw new ProbeException(matches.Length == 0 ? "the signature doesn't match the anchor's code" : "the signature matches the anchor's code more than once");
             }
 
-            // The store is the earliest match of any store pattern after the signature, and must
-            // hold the slot's address.
+            // The reference is the earliest match of any reference pattern after the signature,
+            // and must hold the slot's address.
             int after = matches[0] + root.Signature.Code.Length;
-            var store = root.Signature.Store
+            var reference = root.Signature.References
                 .Select(p => new { Pattern = p, Match = p.Matches(code, after).DefaultIfEmpty(-1).First() })
-                .Where(s => s.Match >= 0)
-                .OrderBy(s => s.Match)
+                .Where(r => r.Match >= 0)
+                .OrderBy(r => r.Match)
                 .FirstOrDefault()
-                ?? throw new ProbeException("no store pattern matches after the signature");
-            Console.WriteLine("store {0}: the earliest match, at +0x{1:x}, {2} bytes after the signature", store.Pattern, store.Match, store.Match - after);
-            ulong stored = store.Pattern.Slot(code, store.Match);
-            if (stored != slot)
+                ?? throw new ProbeException("no reference pattern matches after the signature");
+            Console.WriteLine("reference {0}: the earliest match, at +0x{1:x}, {2} bytes after the signature", reference.Pattern, reference.Match, reference.Match - after);
+            ulong referenced = reference.Pattern.Slot(code, reference.Match);
+            if (referenced != slot)
             {
-                throw new ProbeException("the store's address is 0x" + stored.ToString("x") + ", but the slot is at 0x" + slot.ToString("x"));
+                throw new ProbeException("the reference's address is 0x" + referenced.ToString("x") + ", but the slot is at 0x" + slot.ToString("x"));
             }
-            Console.WriteLine("the store's address is the slot's");
-            int end = store.Match + store.Pattern.Length - after;
-            if (end > Manifest.StoreWindow)
+            Console.WriteLine("the reference's address is the slot's");
+            int end = reference.Match + reference.Pattern.Length - after;
+            if (end > Manifest.ReferenceWindow)
             {
-                throw new ProbeException("the store ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.StoreWindow + ": widen StoreWindow, in Manifest.cs");
+                throw new ProbeException("the reference ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.ReferenceWindow + ": widen ReferenceWindow, in Manifest.cs");
             }
         }
 
@@ -604,16 +604,16 @@ namespace Probe
                 Line("pub mod " + ConstantName(root.Field.DeclaringType.Name + "." + root.Field.Name).ToLowerInvariant() + " {");
                 Line("    /// Matches the code once: hex bytes, with `??` for any byte.");
                 Line("    pub const SIGNATURE: &str = \"" + root.Signature.Code + "\";");
-                Line("    /// The store into the slot: the earliest match of any of these after the signature, with `SS`");
+                Line("    /// A reference to the slot: the earliest match of any of these after the signature, with `SS`");
                 Line("    /// for the slot's address.");
-                Line("    pub const STORES: &[&str] = &[");
-                foreach (Pattern store in root.Signature.Store)
+                Line("    pub const REFERENCES: &[&str] = &[");
+                foreach (Pattern reference in root.Signature.References)
                 {
-                    Line("        \"" + store + "\",");
+                    Line("        \"" + reference + "\",");
                 }
                 Line("    ];");
-                Line("    /// How many bytes after the signature are searched for the store, which ends within them.");
-                Line("    pub const STORE_WINDOW: u64 = " + Manifest.StoreWindow + ";");
+                Line("    /// How many bytes after the signature are searched for the reference, which ends within them.");
+                Line("    pub const REFERENCE_WINDOW: u64 = " + Manifest.ReferenceWindow + ";");
                 Line("");
                 Line("    // Each path's offsets from the object in the slot, and the name and type of each field");
                 Line("    // along it.");

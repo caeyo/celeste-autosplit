@@ -29,8 +29,8 @@ adds the values only real play produces.
 So a pass rests on the game's own runtime and one comparison per update, with no
 stand-in for the game. It checks:
 
-- finding `Celeste.Instance`: the signature, the store into its slot, and the
-  title, which tells XNA and FNA apart;
+- finding `Celeste.Instance`: the signature, the reference to its slot, and
+  the title, which tells XNA and FNA apart;
 - every offset and pointer size `memory.rs` reads through;
 - reading .NET strings, numbers and flags: the live check's distinctive values,
   and the values real play produces, such as empty strings;
@@ -88,8 +88,9 @@ probe's command, so that it runs as you, as players run the game.
 - Values that neither the probe nor a trace holds, such as the smallest and
   largest numbers.
 - The rules for code the game doesn't have: a second match of the signature,
-  and a 4-byte store pattern matching inside an 8-byte store. The probe checks
-  that the real store is within the window `memory.rs` searches.
+  and a reference pattern with a 4-byte address matching inside one with an
+  8-byte address. The probe checks that the real reference is within the
+  window `memory.rs` searches.
 - Reads in the middle of the game's update: the probe writes each line whole,
   between two updates of the auto splitter.
 - Reading at the auto splitter's own tick rate, 120 Hz by default, which hosts
