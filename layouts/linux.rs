@@ -61,3 +61,28 @@ pub mod celeste_instance {
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, FileHearts: System.Int32
     pub const AUTO_SPLITTER_INFO_FILE_HEARTS: [u64; 2] = [0x118, 0x48];
 }
+
+/// `Celeste.SaveData::Instance`: its slot is found from the compiled code of its anchor,
+/// `Celeste.AutoSplitterInfo::Update()`.
+pub mod save_data_instance {
+    /// Matches the code once: hex bytes, with `??` for any byte.
+    pub const SIGNATURE: &str = "75 04 33 ed eb 0b 49 8b 46 58 48 8b a8 98 00 00 00 49 89 6c 24 28";
+    /// A reference to the slot: the earliest match of any of these after the signature, with `SS`
+    /// for the slot's address.
+    pub const REFERENCES: &[&str] = &[
+        "48 8b 04 25 SS SS SS SS",
+        "48 b8 SS SS SS SS SS SS SS SS 48 8b 00",
+    ];
+    /// How many bytes after the signature are searched for the reference, which ends within them.
+    pub const REFERENCE_WINDOW: u64 = 256;
+
+    // Each path's offsets from the object in the slot, and the name and type of each field
+    // along it.
+
+    /// Time: System.Int64
+    pub const TIME: [u64; 1] = [0x50];
+    /// DebugMode: System.Boolean
+    pub const DEBUG_MODE: [u64; 1] = [0xa9];
+    /// Version: System.String
+    pub const VERSION: [u64; 1] = [0x10];
+}
