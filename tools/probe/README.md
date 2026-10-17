@@ -24,10 +24,13 @@ In order, it:
    - where strings hold their length and characters;
 3. for each root, compiles the anchor method and checks the flavour's
    hand-written signature against its code: the signature must match once, and
-   the earliest store pattern match after it must hold the static slot's
+   the earliest reference pattern match after it must hold the static slot's
    address, and end within the window that `memory.rs` searches;
 4. constructs the game (`new Celeste()`), which sets the game's version that
-   the layout records, and finds the object that holds each path's last field;
+   the layout records, and finds the object that holds each path's last field.
+   A root the game leaves null until later, as it does `SaveData.Instance`
+   until a file starts, gets an uninitialized object of the probe's own, so
+   that the probe can write values into it;
 5. prints the layout, and writes it if `--out` is given;
 6. prints `probe: ok`. With `--replay`, it then writes distinctive values into
    the game, and takes values to write: see [Replay mode](#replay-mode).
@@ -48,27 +51,30 @@ static field that the auto splitter finds through machine code:
   anchor's code. Each has:
   - a signature that matches the anchor's code once: hex bytes, with `??` for
     any byte;
-  - store patterns for the code that stores into the field after it, with `SS`
-    for the field's address: 4 or 8 bytes in a row. The earliest match of any
-    of them after the signature holds the address: earliest, because a 4-byte
-    pattern can also match inside an 8-byte store. They're searched for rather
-    than expected at a fixed distance, because the instructions in between can
-    change length. On Linux, an address takes 4 or 8 bytes depending on where
-    the heap is.
+  - reference patterns for an instruction after it that stores into the field
+    or loads from it, with `SS` for the field's address: 4 or 8 bytes in a row.
+    The earliest match of any of them after the signature holds the address:
+    earliest, because a pattern with a 4-byte address can also match inside
+    one with an 8-byte address. They're searched for rather than expected at a
+    fixed distance, because the instructions in between can change length. On
+    Linux, an address takes 4 or 8 bytes depending on where the heap is.
 
   Once it has checked them, the probe writes them into each flavour's layout,
   and [`memory.rs`](../../autosplitter/src/memory.rs) finds the address from
   them the same way. It only searches the 256 bytes after each signature match:
-  `StoreWindow` in `Manifest.cs`, which the probe writes into the layouts too.
+  `ReferenceWindow` in `Manifest.cs`, which the probe writes into the layouts
+  too.
 - **`Paths`**: instance fields to read from the root's object, joined with dots.
   Each name is looked up in the previous field's type, or its nearest base
   class with that field. A path only goes through objects of concrete classes,
   and ends in a `string`, `bool`, `int` or `long`, which the probe can write for
-  the harness to check.
+  the harness to check. The paths of a root the game leaves null until later
+  are single fields of its object, since the probe's object has nothing in its
+  fields.
 
 To add a root, add it without signatures first. The probe then prints the
 anchor's code and where the field's address appears in it, and stops. Write
-each flavour's signature and store patterns from that, here.
+each flavour's signature and reference patterns from that, here.
 
 ## Replay mode
 
@@ -77,13 +83,20 @@ game, for the [harness](../../harness/). First, it writes distinctive values int
 every number and flag, and into strings that are still null: every number and
 string gets a value of its own, and the harness tells the flags apart by setting
 each alone. The title keeps "Celeste", which the auto splitter checks for. It
-prints `probe: values`, and as JSON on one line, its flavour and the values the
-paths hold, keyed by root and then path. Then it reads sets of values from its
-standard input, until its input ends:
+prints `probe: values`, and as JSON on one line, its flavour, the values the
+paths hold, keyed by root and then path, and the roots it set up:
 
-- a `path=value` line per path, with the value read as the path's type: `true`
-  or `false`, a whole number, or for a string, the rest of the line;
-- an empty line at the end of each set.
+```json
+{"flavour":"windows-xna","roots":{"Celeste.Celeste::Instance":{"Title":"Celeste",...},"Celeste.SaveData::Instance":{"Time":1157442765409226768,"DebugMode":true}},"setUp":["Celeste.SaveData::Instance"]}
+```
+
+Then it reads sets of lines from its standard input, until its input ends, with
+an empty line at the end of each set:
+
+- `root=null` stores null in the root's static, and `root=object` stores the
+  root's object in it again;
+- `path=value` writes a value through the path, read as the path's type: `true`
+  or `false`, a whole number, or for a string, the rest of the line.
 
 It writes each set into the game through reflection, then prints
 `probe: written`. A path is named without its root, so the replay fails if two

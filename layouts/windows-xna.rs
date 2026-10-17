@@ -18,13 +18,13 @@ pub const STRING_CHARS: u64 = 0x8;
 pub mod celeste_instance {
     /// Matches the code once: hex bytes, with `??` for any byte.
     pub const SIGNATURE: &str = "68 38 04 00 00 68 c0 03 00 00 68 1c 02 00 00 ff 35";
-    /// The store into the slot: the earliest match of any of these after the signature, with `SS`
+    /// A reference to the slot: the earliest match of any of these after the signature, with `SS`
     /// for the slot's address.
-    pub const STORES: &[&str] = &[
+    pub const REFERENCES: &[&str] = &[
         "8d 15 SS SS SS SS e8",
     ];
-    /// How many bytes after the signature are searched for the store, which ends within them.
-    pub const STORE_WINDOW: u64 = 256;
+    /// How many bytes after the signature are searched for the reference, which ends within them.
+    pub const REFERENCE_WINDOW: u64 = 256;
 
     // Each path's offsets from the object in the slot, and the name and type of each field
     // along it.
@@ -59,4 +59,26 @@ pub mod celeste_instance {
     pub const AUTO_SPLITTER_INFO_FILE_CASSETTES: [u64; 2] = [0xac, 0x28];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, FileHearts: System.Int32
     pub const AUTO_SPLITTER_INFO_FILE_HEARTS: [u64; 2] = [0xac, 0x2c];
+}
+
+/// `Celeste.SaveData::Instance`: its slot is found from the compiled code of its anchor,
+/// `Celeste.AutoSplitterInfo::Update()`.
+pub mod save_data_instance {
+    /// Matches the code once: hex bytes, with `??` for any byte.
+    pub const SIGNATURE: &str = "75 06 33 c9 33 d2 eb 09 8b 47 2c 8b 48 04 8b 50 08 89 4e 04 89 56 08";
+    /// A reference to the slot: the earliest match of any of these after the signature, with `SS`
+    /// for the slot's address.
+    pub const REFERENCES: &[&str] = &[
+        "8b 0d SS SS SS SS 85 c9",
+    ];
+    /// How many bytes after the signature are searched for the reference, which ends within them.
+    pub const REFERENCE_WINDOW: u64 = 256;
+
+    // Each path's offsets from the object in the slot, and the name and type of each field
+    // along it.
+
+    /// Time: System.Int64
+    pub const TIME: [u64; 1] = [0x4];
+    /// DebugMode: System.Boolean
+    pub const DEBUG_MODE: [u64; 1] = [0x51];
 }

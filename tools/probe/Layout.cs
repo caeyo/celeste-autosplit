@@ -19,6 +19,15 @@ namespace Probe
 
         /// <summary>The flavour's signature, once it has matched the anchor's code.</summary>
         public Signature Signature;
+
+        /// <summary>
+        /// The object the root holds once the game is constructed: the game's, or one the probe
+        /// set up, which the replay can store in the static again after making it null.
+        /// </summary>
+        public object Object;
+
+        /// <summary>Whether the probe set up the object, since the game left the root null.</summary>
+        public bool SetUp;
     }
 
     /// <summary>A manifest path from a root's object: an instance field per hop, and its measured offset.</summary>

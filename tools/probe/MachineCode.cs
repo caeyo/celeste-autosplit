@@ -62,24 +62,25 @@ namespace Probe
 
     /// <summary>
     /// How to find a static slot in compiled code. The signature matches the anchor's code once.
-    /// The store into the slot follows it, at a distance that can depend on the length of the
-    /// instructions in between: it's the earliest match of any store pattern after the
-    /// signature, and its SS bytes are the slot's address. Earliest, not the first pattern
-    /// listed, because patterns can overlap: a 4-byte store pattern can also match inside an
-    /// 8-byte store, when the address's fourth byte happens to be the 4-byte form's opcode.
+    /// A reference to the slot, an instruction that stores into it or loads from it, follows it,
+    /// at a distance that can depend on the length of the instructions in between: it's the
+    /// earliest match of any reference pattern after the signature, and its SS bytes are the
+    /// slot's address. Earliest, not the first pattern listed, because patterns can overlap: a
+    /// pattern with a 4-byte address can also match inside one with an 8-byte address, when the
+    /// address's fourth byte happens to be the 4-byte form's opcode.
     /// </summary>
     internal sealed class Signature
     {
         public readonly Pattern Code;
-        public readonly Pattern[] Store;
+        public readonly Pattern[] References;
 
-        public Signature(string code, params string[] store)
+        public Signature(string code, params string[] references)
         {
             Code = new Pattern(code);
-            Store = store.Select(s => new Pattern(s)).ToArray();
-            if (Code.SlotWidth != 0 || Store.Length == 0 || Store.Any(s => s.SlotWidth == 0))
+            References = references.Select(r => new Pattern(r)).ToArray();
+            if (Code.SlotWidth != 0 || References.Length == 0 || References.Any(r => r.SlotWidth == 0))
             {
-                throw new ArgumentException(code + ": the signature has no SS, and each store pattern has them");
+                throw new ArgumentException(code + ": the signature has no SS, and each reference pattern has them");
             }
         }
     }
@@ -97,7 +98,7 @@ namespace Probe
     {
         /// <summary>
         /// Every place the slot's address appears in the code: as a u32, and in 64-bit processes
-        /// also as a u64. For reference when writing store patterns. On these runtimes it's never
+        /// also as a u64. For reference when writing reference patterns. On these runtimes it's never
         /// relative to the instruction: x86 has no RIP-relative addressing, and Mono's JIT writes
         /// a static's address into the instruction.
         /// </summary>

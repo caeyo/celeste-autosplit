@@ -50,6 +50,9 @@ pub enum GameState {
         chapter_complete: DeepPointer<3>,
         chapter_cassette: DeepPointer<3>,
         chapter_heart: DeepPointer<3>,
+        save: DeepPointer<3>,
+        save_time: DeepPointer<3>,
+        save_debug_mode: DeepPointer<3>,
     },
     Everest {
         info: Address,
@@ -57,6 +60,36 @@ pub enum GameState {
 }
 
 impl GameState {
+    pub fn save_time(&self, process: &Process) -> Option<Option<i64>> {
+        match self {
+            Self::Vanilla {
+                save, save_time, ..
+            } => {
+                if save.deref_offsets(process).ok()?.is_null() {
+                    return Some(None);
+                }
+                Some(Some(save_time.deref(process).ok()?))
+            }
+            Self::Everest { .. } => None,
+        }
+    }
+
+    pub fn save_debug_mode(&self, process: &Process) -> Option<Option<bool>> {
+        match self {
+            Self::Vanilla {
+                save,
+                save_debug_mode,
+                ..
+            } => {
+                if save.deref_offsets(process).ok()?.is_null() {
+                    return Some(None);
+                }
+                Some(Some(save_debug_mode.deref::<u8>(process).ok()? != 0))
+            }
+            Self::Everest { .. } => None,
+        }
+    }
+
     pub fn chapter_time(&self, process: &Process) -> Option<i64> {
         match self {
             Self::Vanilla { chapter_time, .. } => chapter_time.deref(process).ok(),
@@ -325,49 +358,63 @@ fn read_everest_string(process: &Process, ptr: u64) -> Option<String> {
     String::from_utf8(buf).ok()
 }
 
-/// A vanilla flavour of the game, from its layout: how to find `Celeste.Instance`, and how to
-/// read the game through it.
+/// A vanilla flavour of the game, from its layout: how to find each root's static slot, and how
+/// to read the game through them.
 struct Flavour {
     /// As `asr::get_os` names it.
     os: &'static str,
     ptr_size: PointerSize,
     string_len: u64,
     string_chars: u64,
-    /// The signature in `Celeste`'s constructor: hex bytes, with `??` for any byte. Flavours can
-    /// share one.
+    /// `Celeste.Instance`, found from `Celeste`'s constructor. Flavours can share its signature.
+    instance: Anchor,
+    /// The offsets of `Engine.Title`, which holds "Celeste", from the object in the slot.
+    title: [u64; 1],
+    save_data: Anchor,
+    /// The game's state, read through the slots of `Celeste.Instance` and `SaveData.Instance`.
+    state: fn(Slot, Slot) -> GameState,
+}
+
+struct Anchor {
+    /// Hex bytes, with `??` for any byte.
     signature: &'static str,
     /// Where each match of the signature ends, in an executable range.
     scan: fn(&Process, (Address, u64)) -> Vec<Address>,
-    /// Patterns for the store into `Celeste.Instance` after the signature: hex bytes, with `??`
-    /// for any byte, and `SS` for the static slot's address, 4 or 8 of them in a row.
-    stores: &'static [&'static str],
-    /// How many bytes after the signature are searched for the store.
-    store_window: u64,
-    /// The offsets of `Engine.Title`, which holds "Celeste", from the object in the slot.
-    title: [u64; 1],
-    /// The game's state, read through the static slot.
-    state: fn(Slot) -> GameState,
+    /// Patterns for a reference to the slot after the signature: hex bytes, with `??` for any
+    /// byte, and `SS` for the slot's address, 4 or 8 of them in a row.
+    references: &'static [&'static str],
+    /// How many bytes after the signature are searched for the reference.
+    reference_window: u64,
+}
+
+macro_rules! anchor {
+    ($root:ident) => {
+        Anchor {
+            signature: $root::SIGNATURE,
+            scan: |process, range| {
+                static SIGNATURE: Signature<{ pattern_len($root::SIGNATURE) }> =
+                    Signature::new($root::SIGNATURE);
+                signature_ends(&SIGNATURE, process, range)
+            },
+            references: $root::REFERENCES,
+            reference_window: $root::REFERENCE_WINDOW,
+        }
+    };
 }
 
 /// A vanilla flavour, from its layout's module.
 macro_rules! flavour {
     ($layout:ident) => {{
-        use $layout::celeste_instance as instance;
+        use $layout::{celeste_instance as instance, save_data_instance as save_data};
         Flavour {
             os: $layout::OS,
             ptr_size: pointer_size($layout::POINTER_SIZE),
             string_len: $layout::STRING_LENGTH,
             string_chars: $layout::STRING_CHARS,
-            signature: instance::SIGNATURE,
-            scan: |process, range| {
-                static SIGNATURE: Signature<{ pattern_len(instance::SIGNATURE) }> =
-                    Signature::new(instance::SIGNATURE);
-                signature_ends(&SIGNATURE, process, range)
-            },
-            stores: instance::STORES,
-            store_window: instance::STORE_WINDOW,
+            instance: anchor!(instance),
             title: instance::TITLE,
-            state: |slot| GameState::Vanilla {
+            save_data: anchor!(save_data),
+            state: |slot, save_slot| GameState::Vanilla {
                 ptr_size: slot.ptr_size,
                 string_len: $layout::STRING_LENGTH,
                 string_chars: $layout::STRING_CHARS,
@@ -385,14 +432,17 @@ macro_rules! flavour {
                 chapter_complete: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_COMPLETE),
                 chapter_cassette: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE),
                 chapter_heart: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_HEART),
+                save: save_slot.field([0]),
+                save_time: save_slot.field(save_data::TIME),
+                save_debug_mode: save_slot.field(save_data::DEBUG_MODE),
             },
         }
     }};
 }
 
-/// In the order they're tried. Both Windows flavours have the same signature and store, so only
-/// their title offsets tell them apart: XNA's and FNA's `Game` classes, which `Engine` derives
-/// from, have different fields.
+/// In the order they're tried. Both Windows flavours have the same anchors, so only their title
+/// offsets tell them apart: XNA's and FNA's `Game` classes, which `Engine` derives from, have
+/// different fields.
 const FLAVOURS: &[Flavour] = &[
     flavour!(windows_xna),
     flavour!(windows_fna),
@@ -424,8 +474,8 @@ fn signature_ends<const N: usize>(
         .collect()
 }
 
-/// The static slot of `Celeste.Instance`, which holds a reference to the object that each field's
-/// path starts from.
+/// A root's static slot, which holds a reference to the object that each of its paths starts
+/// from.
 #[derive(Clone, Copy)]
 struct Slot {
     address: Address,
@@ -447,40 +497,52 @@ impl Slot {
 
 /// Finds the static slot of `Celeste.Instance`, and which of the flavours the game is. They must
 /// all have the same signature, and there must be at least one. Each match of the signature is
-/// tried in turn, with each flavour's store patterns, and a flavour's slot is only accepted if the
-/// object in it has the title "Celeste" at the flavour's offsets.
-fn find_slot(process: &Process, flavours: &[&'static Flavour]) -> Option<(&'static Flavour, Slot)> {
+/// tried in turn, with each flavour's reference patterns, and a flavour's slot is only accepted if
+/// the object in it has the title "Celeste" at the flavour's offsets.
+fn find_instance(
+    process: &Process,
+    flavours: &[&'static Flavour],
+) -> Option<(&'static Flavour, Slot)> {
     scan_executable(process, |(start, size)| {
         let end = start.value() + size;
-        (flavours[0].scan)(process, (start, size))
+        (flavours[0].instance.scan)(process, (start, size))
             .into_iter()
             .find_map(|code| {
                 flavours.iter().find_map(|&flavour| {
-                    // Only within the range, which is all mapped.
-                    let len = flavour.store_window.min(end - code.value());
-                    let slot = Slot {
-                        address: flavour.read_store(process, code, len)?,
-                        ptr_size: flavour.ptr_size,
-                    };
+                    let slot = flavour.instance.read_slot(process, flavour, code, end)?;
                     flavour.has_title(process, slot).then_some((flavour, slot))
                 })
             })
     })
 }
 
-impl Flavour {
-    /// The slot's address, from the earliest match of any store pattern in the code. Earliest,
-    /// not the first pattern listed, because a 4-byte pattern can also match inside an 8-byte
-    /// store, when the address's fourth byte happens to be the 4-byte form's opcode.
-    fn read_store(&self, process: &Process, code: Address, len: u64) -> Option<Address> {
+impl Anchor {
+    /// The slot, from the earliest match of any reference pattern in the code. Earliest, not the
+    /// first pattern listed, because a pattern with a 4-byte address can also match inside one with
+    /// an 8-byte address, when the address's fourth byte happens to be the 4-byte form's opcode.
+    fn read_slot(
+        &self,
+        process: &Process,
+        flavour: &Flavour,
+        code: Address,
+        end: u64,
+    ) -> Option<Slot> {
+        // Only within the range, which is all mapped.
+        let len = self.reference_window.min(end - code.value());
         let code = process.read_vec::<u8>(code, len as usize).ok()?;
-        (0..code.len()).find_map(|start| {
-            self.stores
+        let address = (0..code.len()).find_map(|start| {
+            self.references
                 .iter()
-                .find_map(|store| match_store(store, &code[start..]))
+                .find_map(|reference| match_reference(reference, &code[start..]))
+        })?;
+        Some(Slot {
+            address,
+            ptr_size: flavour.ptr_size,
         })
     }
+}
 
+impl Flavour {
     fn has_title(&self, process: &Process, slot: Slot) -> bool {
         let title: DeepPointer<2> = slot.field(self.title);
         let Ok(title) = title.deref_offsets(process) else {
@@ -494,11 +556,21 @@ impl Flavour {
     }
 }
 
-/// The slot's address in the store, if the store pattern matches at the start of the code.
-fn match_store(store: &str, code: &[u8]) -> Option<Address> {
+fn find_save_data(process: &Process, flavour: &Flavour) -> Option<Slot> {
+    let anchor = &flavour.save_data;
+    scan_executable(process, |(start, size)| {
+        let end = start.value() + size;
+        (anchor.scan)(process, (start, size))
+            .into_iter()
+            .find_map(|code| anchor.read_slot(process, flavour, code, end))
+    })
+}
+
+/// The slot's address in the reference, if the reference pattern matches at the start of the code.
+fn match_reference(reference: &str, code: &[u8]) -> Option<Address> {
     let mut slot = 0;
     let mut slot_bytes = 0;
-    for (i, byte) in store.split(' ').enumerate() {
+    for (i, byte) in reference.split(' ').enumerate() {
         let actual = *code.get(i)?;
         match byte {
             "SS" => {
@@ -581,12 +653,14 @@ pub fn init(process: &Process) -> Option<GameState> {
     for flavour in FLAVOURS.iter().filter(|flavour| flavour.os == os.as_str()) {
         match groups
             .iter_mut()
-            .find(|group| group[0].signature == flavour.signature)
+            .find(|group| group[0].instance.signature == flavour.instance.signature)
         {
             Some(group) => group.push(flavour),
             None => groups.push(vec![flavour]),
         }
     }
-    let (flavour, slot) = groups.iter().find_map(|group| find_slot(process, group))?;
-    Some((flavour.state)(slot))
+    let (flavour, slot) = groups
+        .iter()
+        .find_map(|group| find_instance(process, group))?;
+    Some((flavour.state)(slot, find_save_data(process, flavour)?))
 }

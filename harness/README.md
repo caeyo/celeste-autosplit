@@ -5,23 +5,28 @@ The live check and the replay: they check the auto splitter,
 the wasm build.
 
 The harness starts the [probe](../tools/probe/) as the game, in the probe's
-replay mode. The probe constructs the real game, in the game's own runtime.
-Through .NET's own reflection, it writes distinctive values into every number
-and flag the auto splitter reads, and every string that's still null, and sends
-the harness those values. The probe runs as the game, so the auto splitter,
+replay mode. The probe constructs the real game, in the game's own runtime,
+with an object of its own for each root the game leaves null until later, such
+as `SaveData.Instance`. Through .NET's own reflection, it writes distinctive
+values into every number and flag the auto splitter reads, and every string
+that's still null, and sends the harness those values. The probe runs as the game, so the auto splitter,
 which the harness loads, finds the probe's process by the game's name. From
 then on, the probe writes each set of values the harness sends into the game,
 through reflection, and the harness updates the auto splitter once. Its debug
 variables must then be exactly the values the game holds:
 
 - **The live check:** first the probe's values, then the same values with every
-  number negated and every flag flipped, then each flag set alone. Every number
-  and string has a value of its own, spread over all its bytes, and setting each
-  flag alone tells the flags apart. So reading the wrong field, or the wrong
-  width, shows in every field, and so does a flag that only ever reads one way.
+  number negated and every flag flipped, then each flag set alone, then each
+  root the probe set up null, and back. Every number and string has a value of
+  its own, spread over all its bytes, and setting each flag alone tells the
+  flags apart. So reading the wrong field, or the wrong width, shows in every
+  field, and so does a flag that only ever reads one way. While a root is
+  null, the auto splitter reports none of its values, and once it's back, it
+  has to report them again.
 - **The replay:** then each line of each [trace](../traces/) given: its changes
   to the game's values, over all the values before. A value a trace doesn't
-  record keeps the one it had.
+  record keeps the one it had, and a root that holds null keeps its values for
+  when it's back.
 
 The live check catches layout mistakes whatever traces there are. The replay
 adds the values only real play produces.
@@ -29,8 +34,10 @@ adds the values only real play produces.
 So a pass rests on the game's own runtime and one comparison per update, with no
 stand-in for the game. It checks:
 
-- finding `Celeste.Instance`: the signature, the store into its slot, and the
-  title, which tells XNA and FNA apart;
+- finding each root's slot: the signature, and the reference to its slot,
+  and for `Celeste.Instance`, the title, which tells XNA and FNA apart;
+- reading a slot that holds null as no object, and the object's values once
+  it holds one again;
 - every offset and pointer size `memory.rs` reads through;
 - reading .NET strings, numbers and flags: the live check's distinctive values,
   and the values real play produces, such as empty strings;
@@ -87,9 +94,16 @@ probe's command, so that it runs as you, as players run the game.
   in [`layouts/everest.rs`](../layouts/everest.rs).
 - Values that neither the probe nor a trace holds, such as the smallest and
   largest numbers.
+- The anchors as the game compiles them: the probe compiles each itself, before
+  constructing the game. `AutoSplitterInfo.Update` was checked by hand to be
+  found at the title screen of the real game, on Windows with XNA.
+- Attaching before the game's first update, which the auto splitter waits for,
+  since `SaveData.Instance`'s anchor is only compiled then: the probe has
+  compiled every anchor by the time the auto splitter attaches.
 - The rules for code the game doesn't have: a second match of the signature,
-  and a 4-byte store pattern matching inside an 8-byte store. The probe checks
-  that the real store is within the window `memory.rs` searches.
+  and a reference pattern with a 4-byte address matching inside one with an
+  8-byte address. The probe checks that the real reference is within the
+  window `memory.rs` searches.
 - Reads in the middle of the game's update: the probe writes each line whole,
   between two updates of the auto splitter.
 - Reading at the auto splitter's own tick rate, 120 Hz by default, which hosts

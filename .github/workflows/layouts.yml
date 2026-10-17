@@ -309,5 +309,5 @@ jobs:
             echo "Updated the open pull request from $BRANCH."
           else
             gh pr create --base "$BASE" --head "$BRANCH" --title "Regenerate layouts" \
-              --body "Measured by the probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code. The auto splitter, built with the regenerated layout, reported the distinctive values the probe wrote into the game, the same values flipped, and each flag set alone, in the live check, then every trace's values as the harness replayed them through the probe."
+              --body "Measured by the probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and reference patterns matched its anchor's compiled code. The auto splitter, built with the regenerated layout, reported the distinctive values the probe wrote into the game, the same values flipped, and each flag set alone, in the live check, then every trace's values as the harness replayed them through the probe."
           fi

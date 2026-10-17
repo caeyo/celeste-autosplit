@@ -107,8 +107,9 @@ Presets are never stored. Editors show the preset whose values all match, or
 | `checkpoints` | In order, so checkpoint `n` is entry `n - 1`. |
 
 Each checkpoint has:
-- `names`: indexed by side. A missing entry means the side has no named
-  checkpoint there.
-- `rooms`: indexed by side. `rooms[side]` is the room that fires the
-  `checkpoint` trigger on that side. A missing entry means it never fires on
-  that side.
+- `names`: indexed by side. A missing entry means the side doesn't have this
+  checkpoint.
+- `rooms`: indexed by side, with an entry for each side in `names`.
+  `rooms[side]` is the room that fires the `checkpoint` trigger on that side.
+  A side without an entry never fires it. C-sides have no checkpoints, so no
+  checkpoint has a C-side entry.

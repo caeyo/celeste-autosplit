@@ -6,8 +6,9 @@ update by update, while CelesteTAS plays a TAS. It's an Everest code mod, and
 
 Each update, right after the game updates its `AutoSplitterInfo`, Everest updates
 its own values and raises `AutoSplitter.OnUpdateInfo`, from its patch of
-`AutoSplitterInfo.Update`. The recorder writes both into the trace then, for every
-update while the TAS plays. The traces' README describes their
+`AutoSplitterInfo.Update`. The recorder takes both then. The save changes during
+the update, so the recorder writes the update's line at the start of the next,
+with the save as the update left it, for every update while the TAS plays. The traces' README describes their
 [format](../../traces/README.md#format).
 
 ## Building

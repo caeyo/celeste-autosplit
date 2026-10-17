@@ -77,6 +77,12 @@ fn set_debug_info(state: &memory::GameState, process: &Process) {
     if let Some(v) = state.file_active(process) {
         asr::timer::set_variable_int("File Active", v as i32);
     }
+    if let Some(Some(time)) = state.save_time(process) {
+        asr::timer::set_variable("Save Time", &time.to_string());
+    }
+    if let Some(Some(v)) = state.save_debug_mode(process) {
+        asr::timer::set_variable_int("Save Debug Mode", v as i32);
+    }
 }
 
 async fn main() {

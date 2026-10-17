@@ -334,6 +334,8 @@ namespace Probe
         {
             // Run the class constructors first, as the game has by the time it runs the anchor:
             // the JIT may compile static accesses differently before a class is initialized.
+            // SaveData has none, so it doesn't matter that the game may not have initialized it
+            // when it first runs AutoSplitterInfo.Update.
             RuntimeHelpers.RunClassConstructor(root.Field.DeclaringType.TypeHandle);
             RuntimeHelpers.RunClassConstructor(root.Anchor.DeclaringType.TypeHandle);
             ulong slot = Memory.StaticFieldAddress(root.Field);
@@ -362,26 +364,26 @@ namespace Probe
                 throw new ProbeException(matches.Length == 0 ? "the signature doesn't match the anchor's code" : "the signature matches the anchor's code more than once");
             }
 
-            // The store is the earliest match of any store pattern after the signature, and must
-            // hold the slot's address.
+            // The reference is the earliest match of any reference pattern after the signature,
+            // and must hold the slot's address.
             int after = matches[0] + root.Signature.Code.Length;
-            var store = root.Signature.Store
+            var reference = root.Signature.References
                 .Select(p => new { Pattern = p, Match = p.Matches(code, after).DefaultIfEmpty(-1).First() })
-                .Where(s => s.Match >= 0)
-                .OrderBy(s => s.Match)
+                .Where(r => r.Match >= 0)
+                .OrderBy(r => r.Match)
                 .FirstOrDefault()
-                ?? throw new ProbeException("no store pattern matches after the signature");
-            Console.WriteLine("store {0}: the earliest match, at +0x{1:x}, {2} bytes after the signature", store.Pattern, store.Match, store.Match - after);
-            ulong stored = store.Pattern.Slot(code, store.Match);
-            if (stored != slot)
+                ?? throw new ProbeException("no reference pattern matches after the signature");
+            Console.WriteLine("reference {0}: the earliest match, at +0x{1:x}, {2} bytes after the signature", reference.Pattern, reference.Match, reference.Match - after);
+            ulong referenced = reference.Pattern.Slot(code, reference.Match);
+            if (referenced != slot)
             {
-                throw new ProbeException("the store's address is 0x" + stored.ToString("x") + ", but the slot is at 0x" + slot.ToString("x"));
+                throw new ProbeException("the reference's address is 0x" + referenced.ToString("x") + ", but the slot is at 0x" + slot.ToString("x"));
             }
-            Console.WriteLine("the store's address is the slot's");
-            int end = store.Match + store.Pattern.Length - after;
-            if (end > Manifest.StoreWindow)
+            Console.WriteLine("the reference's address is the slot's");
+            int end = reference.Match + reference.Pattern.Length - after;
+            if (end > Manifest.ReferenceWindow)
             {
-                throw new ProbeException("the store ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.StoreWindow + ": widen StoreWindow, in Manifest.cs");
+                throw new ProbeException("the reference ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.ReferenceWindow + ": widen ReferenceWindow, in Manifest.cs");
             }
         }
 
@@ -426,10 +428,14 @@ namespace Probe
             held = new List<HeldPath>();
             foreach (Root root in roots)
             {
-                object value = root.Field.GetValue(null) ?? throw new ProbeException(root.Name + " is still null after new Celeste(), so the auto splitter would have nothing to read: set it up in the probe first");
+                root.Object = root.Field.GetValue(null);
+                if (root.Object == null)
+                {
+                    SetUp(root);
+                }
                 foreach (FieldPath path in root.Paths)
                 {
-                    object owner = value;
+                    object owner = root.Object;
                     foreach (FieldInfo field in path.Fields.Take(path.Fields.Length - 1))
                     {
                         owner = field.GetValue(owner) ?? throw new ProbeException(path.Name + ": " + field.Name + " is null after new Celeste()");
@@ -437,6 +443,20 @@ namespace Probe
                     held.Add(new HeldPath { Root = root, Path = path, Owner = owner });
                 }
             }
+        }
+
+        /// <summary>
+        /// Sets up the object of a root that the game leaves null until later, as it does
+        /// SaveData.Instance until a file starts: uninitialized, and stored in the static, so that
+        /// the probe can write values into it, for the auto splitter to read.
+        /// </summary>
+        private static void SetUp(Root root)
+        {
+            root.Object = FormatterServices.GetUninitializedObject(root.Field.FieldType);
+            GC.SuppressFinalize(root.Object);
+            root.SetUp = true;
+            root.Field.SetValue(null, root.Object);
+            Console.WriteLine("{0} is null after new Celeste(), so the probe sets up an uninitialized {1}", root.Name, Names.TypeName(root.Field.FieldType));
         }
 
         /// <summary>
@@ -468,11 +488,14 @@ namespace Probe
 
         /// <summary>
         /// Replay mode, for the harness. First writes distinctive values into every number and flag,
-        /// and into strings that are still null, then prints "probe: values", and its flavour and
-        /// the values the paths hold. Then writes the values it's sent into the game, through the
-        /// same paths, until its input ends. They come in sets: a path=value line per path, with the
-        /// value read as the path's type (a string is the rest of the line), and an empty line at the
-        /// end of each set. Once a set is written, it prints "probe: written".
+        /// and into strings that are still null, then prints "probe: values", and its flavour, the
+        /// values the paths hold, and the roots it set up. Then writes what it's sent into the game,
+        /// until its input ends. It comes in sets of lines, with an empty line at the end of each:
+        /// - path=value writes the value through the path. The value is read as the path's type:
+        ///   true or false, a whole number, or for a string, the rest of the line.
+        /// - root=null stores null in the root's static, and root=object stores the root's object
+        ///   in it again.
+        /// Once a set is written, it prints "probe: written".
         /// </summary>
         private static void Replay()
         {
@@ -497,7 +520,7 @@ namespace Probe
             Console.WriteLine("probe: values " + ValuesJson());
             Console.Out.Flush();
             var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
-            var set = new List<KeyValuePair<HeldPath, object>>();
+            var set = new List<Action>();
             for (string line = input.ReadLine(); line != null; line = input.ReadLine())
             {
                 if (line.Length > 0)
@@ -505,9 +528,9 @@ namespace Probe
                     set.Add(ParseLine(line, paths));
                     continue;
                 }
-                foreach (KeyValuePair<HeldPath, object> entry in set)
+                foreach (Action write in set)
                 {
-                    entry.Key.Path.Last.SetValue(entry.Key.Owner, entry.Value);
+                    write();
                 }
                 set.Clear();
                 Console.WriteLine("probe: written");
@@ -515,24 +538,41 @@ namespace Probe
             }
         }
 
-        /// <summary>A path=value line, with the value read as the path's type.</summary>
-        private static KeyValuePair<HeldPath, object> ParseLine(string line, Dictionary<string, HeldPath> paths)
+        /// <summary>A line of a set, as what writes it.</summary>
+        private static Action ParseLine(string line, Dictionary<string, HeldPath> paths)
         {
             int separator = line.IndexOf('=');
-            if (separator < 0 || !paths.TryGetValue(line.Substring(0, separator), out HeldPath path))
+            if (separator < 0)
             {
-                throw new ProbeException("can't write " + line + ": expected path=value, for one of the manifest's paths");
+                throw new ProbeException("can't write " + line + ": expected path=value, or root=null or object");
             }
+            string name = line.Substring(0, separator);
             string text = line.Substring(separator + 1);
+            Root root = roots.FirstOrDefault(r => r.Name == name);
+            if (root != null)
+            {
+                switch (text)
+                {
+                    case "null": return () => root.Field.SetValue(null, null);
+                    case "object": return () => root.Field.SetValue(null, root.Object);
+                    default: throw new ProbeException("can't write " + line + ": a root takes null or object");
+                }
+            }
+            if (!paths.TryGetValue(name, out HeldPath path))
+            {
+                throw new ProbeException("can't write " + line + ": " + name + " is none of the manifest's paths or roots");
+            }
             Type type = path.Path.Last.FieldType;
+            object value;
             try
             {
-                return new KeyValuePair<HeldPath, object>(path, ParseValue(type, text));
+                value = ParseValue(type, text);
             }
             catch (Exception e) when (e is FormatException || e is OverflowException)
             {
                 throw new ProbeException("can't write " + line + ": the path's type is " + Names.TypeName(type));
             }
+            return () => path.Path.Last.SetValue(path.Owner, value);
         }
 
         private static object ParseValue(Type type, string text)
@@ -544,8 +584,9 @@ namespace Probe
         }
 
         /// <summary>
-        /// The flavour, and the values the paths hold now, as reflection reads them, as JSON on one
-        /// line, for the harness to compare the auto splitter with.
+        /// As JSON on one line, for the harness to compare the auto splitter with: the flavour, the
+        /// values the paths hold now, as reflection reads them, keyed by root and then path, and the
+        /// roots the probe set up.
         /// </summary>
         private static string ValuesJson()
         {
@@ -556,7 +597,10 @@ namespace Probe
                     .Select(p => Quote(p.Path.Name) + ":" + ValueJson(p.Path.Last.GetValue(p.Owner)))
                     .ToArray()) +
                 "}");
-            return "{\"flavour\":" + Quote(flavour) + ",\"roots\":{" + string.Join(",", rootsJson.ToArray()) + "}}";
+            IEnumerable<string> setUpJson = roots.Where(r => r.SetUp).Select(r => Quote(r.Name));
+            return "{\"flavour\":" + Quote(flavour)
+                + ",\"roots\":{" + string.Join(",", rootsJson.ToArray()) + "}"
+                + ",\"setUp\":[" + string.Join(",", setUpJson.ToArray()) + "]}";
         }
 
         private static bool IsValue(Type type) =>
@@ -604,16 +648,16 @@ namespace Probe
                 Line("pub mod " + ConstantName(root.Field.DeclaringType.Name + "." + root.Field.Name).ToLowerInvariant() + " {");
                 Line("    /// Matches the code once: hex bytes, with `??` for any byte.");
                 Line("    pub const SIGNATURE: &str = \"" + root.Signature.Code + "\";");
-                Line("    /// The store into the slot: the earliest match of any of these after the signature, with `SS`");
+                Line("    /// A reference to the slot: the earliest match of any of these after the signature, with `SS`");
                 Line("    /// for the slot's address.");
-                Line("    pub const STORES: &[&str] = &[");
-                foreach (Pattern store in root.Signature.Store)
+                Line("    pub const REFERENCES: &[&str] = &[");
+                foreach (Pattern reference in root.Signature.References)
                 {
-                    Line("        \"" + store + "\",");
+                    Line("        \"" + reference + "\",");
                 }
                 Line("    ];");
-                Line("    /// How many bytes after the signature are searched for the store, which ends within them.");
-                Line("    pub const STORE_WINDOW: u64 = " + Manifest.StoreWindow + ";");
+                Line("    /// How many bytes after the signature are searched for the reference, which ends within them.");
+                Line("    pub const REFERENCE_WINDOW: u64 = " + Manifest.ReferenceWindow + ";");
                 Line("");
                 Line("    // Each path's offsets from the object in the slot, and the name and type of each field");
                 Line("    // along it.");

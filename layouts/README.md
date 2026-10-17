@@ -40,8 +40,8 @@ game files. It:
 
 1. resolves every name in the manifest, and measures each path's offsets;
 2. checks that the flavour's hand-written signature matches the root's anchor
-   method once, in its compiled code, and that the earliest store pattern match
-   after it holds the slot's address, within the window the auto splitter
+   method once, in its compiled code, and that the earliest reference pattern
+   match after it holds the slot's address, within the window the auto splitter
    searches;
 3. constructs the game for real (`new Celeste()`), in a process named like the
    game.
@@ -82,13 +82,13 @@ pub const STRING_CHARS: u64 = 0x8;
 pub mod celeste_instance {
     /// Matches the code once: hex bytes, with `??` for any byte.
     pub const SIGNATURE: &str = "68 38 04 00 00 68 c0 03 00 00 68 1c 02 00 00 ff 35";
-    /// The store into the slot: the earliest match of any of these after the signature, with `SS`
+    /// A reference to the slot: the earliest match of any of these after the signature, with `SS`
     /// for the slot's address.
-    pub const STORES: &[&str] = &[
+    pub const REFERENCES: &[&str] = &[
         "8d 15 SS SS SS SS e8",
     ];
-    /// How many bytes after the signature are searched for the store, which ends within them.
-    pub const STORE_WINDOW: u64 = 256;
+    /// How many bytes after the signature are searched for the reference, which ends within them.
+    pub const REFERENCE_WINDOW: u64 = 256;
 
     // Each path's offsets from the object in the slot, and the name and type of each field
     // along it.
@@ -109,10 +109,10 @@ The comments say what each constant is. Beyond them:
   (`Celeste.Celeste::Instance` is `celeste_instance`), and each path an array
   named after the path (`AutoSplitterInfo.Chapter` is
   `AUTO_SPLITTER_INFO_CHAPTER`), with one offset per field.
-- `SIGNATURE` and `STORES` are the manifest's hand-written patterns, and
-  `STORE_WINDOW` is its `StoreWindow`. The store is the earliest match of any
-  store pattern, because a 4-byte pattern can also match inside an 8-byte
-  store.
+- `SIGNATURE` and `REFERENCES` are the manifest's hand-written patterns, and
+  `REFERENCE_WINDOW` is its `ReferenceWindow`. The reference is the earliest
+  match of any reference pattern, because a pattern with a 4-byte address can
+  also match inside one with an 8-byte address.
 - A path's length is part of its type, and `memory.rs`'s build fails if a
   field's pointer path has no room for it. `cargo check` and clippy don't catch
   that.
