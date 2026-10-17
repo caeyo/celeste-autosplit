@@ -171,7 +171,7 @@ cfg: map
 |---|---|
 | `start` | The trigger that starts the timer. |
 | `splits` | `splits[i]` is the trigger that ends segment `i`. Bound by position to the timer's current split index (`asr::timer::current_split_index`, supported by ASR 0.0.12), so manual splits, skips and undos keep it aligned. Segments past the end of the list are split by hand. Extra entries are ignored. |
-| `timing_method` | Which game time the module reports. `file` is the save file's time. `chapter` is the chapter time, held while outside a chapter so a save and quit doesn't drop it to zero. `*_since_start` subtracts the value at the moment the start trigger fired. |
+| `timing_method` | Which game time the module reports. `file` is the save file's time. `chapter` is the chapter time, held while outside a chapter so a save and quit doesn't drop it to zero. `*_since_start` subtracts the value at the tick the run started, whether the start trigger started it or the runner did. |
 | `auto_reset` | Whenever the start trigger fires while a run is in progress **or has ended**, reset and start again in the same tick. That reset is how an attempt is committed. Only use it with a start trigger that can't recur during a run: `new_file` and `chapter_start` are safe, but for example `room_enter` on a room the run passes through again would reset mid-run, so editors warn about that combination. |
 | `everest` | Turns on the Everest-only fields (rule 9). |
 | `high_priority` | The wrapper sets the Celeste process's priority. |
@@ -233,7 +233,7 @@ A trigger is a map with a `kind` and kind-specific fields. Every kind is valid i
 
 `checkpoint` triggers fire on entering a room that depends on the side being played. The names and rooms for every vanilla checkpoint live in the `chapters` section of `schema/settings-schema.json`, taken from the legacy component.
 
-C-sides have no checkpoints, but legacy also checks the B-side rooms on C-sides, so the C-side entries repeat B for parity.
+A side only has the rooms of the checkpoints it has, so C-sides have none. Legacy also checked the B-side rooms on C-sides, and on B-sides for the checkpoints only A-sides have, but none of those rooms exist on those sides.
 
 ### 5.4 Rules
 
@@ -294,8 +294,9 @@ fn register_native_ui() {
 
 - **The module starts before its settings arrive.** On Windows the ASR component starts the runtime in its constructor with an empty map, and the real map is applied moments later by `SetSettings`. The module must therefore never read settings only once at startup.
 - `Map::load()` returns a snapshot.
-- Re-read the snapshot periodically (for example once a second, and on timer reset) and re-parse `cfg` only when it has changed.
+- Re-read the snapshot every 120 ticks (1 s at the default tick rate) and whenever the timer goes back to not running, counting ticks rather than wall-clock time, and log problems only when `cfg` has changed.
 - Parse defensively: wrong types or out-of-range values fall back to defaults and are logged.
+- **`schema_version`:** a missing one means the current version, since a map nobody has edited has none. A newer one is logged, and the module behaves as with an empty `cfg`, because a bump means some setting changed its meaning. One that isn't a positive integer is logged and treated as 1.
 
 ### 6.4 Portability
 
@@ -303,22 +304,28 @@ Use only `asr` crate APIs available in every host's runtime. Assume nothing host
 
 ### 6.5 Trigger behaviour
 
-These rules for implementing the §5.3 triggers keep parity with the legacy component (§11.1). None of them is a user choice, so none has a setting.
+These rules for implementing the §5.3 triggers keep what legacy did on purpose (§11.1), and drop what it did by accident or to work around its own design (§11.4). None of them is a user choice, so none has a setting.
 
+The game's `AutoSplitterInfo` derives every chapter value from the current scene in one update: `ChapterStarted` is whether the scene is a level, and `Chapter`, `Mode`, `Level`, `ChapterComplete` and the chapter's time come from that level, or are `-1`, `""`, `false` and `0` without one. So leaving a chapter changes all of them in the same update.
+
+- **Edges compare against the module's own previous read.** Its first read after attaching only records the values, so nothing fires from it: attaching mid-chapter doesn't look like the chapter starting. Legacy compared its first read with `false`, and made up for it by ignoring `ChapterStarted` for 3 s after attaching.
+- **On the tick a run starts,** by the start trigger or by `auto_reset`, split triggers aren't checked. An event that starts the run never also ends its first segment.
+- **`new_file`** fires when a new file's save is loaded:
+  - On vanilla: when a save with a time of 0, not in debug mode, becomes `SaveData.Instance`, where there was no save or one with a time above 0. The file select starts a new file through `SaveData.Start`, which sets it; continuing a file goes through the same call, with the file's own time, and so does debug mode. It watches the values, never which object the static points to, since the garbage collector moves objects.
+  - On Everest: on the rising edge of Everest's `StartingNewFile` flag, which rises on the same choice.
+  - Both fire when the runner chooses to begin, as legacy did, before the Prologue loads.
 - **`chapter_complete`** works in two phases:
-  - It arms on the rising edge of `ChapterComplete` in the matching chapter.
-  - With `timing: "chapter_complete"` it fires as soon as it arms. With `timing: "chapter_exit"` it fires when `ChapterComplete` falls again, in any chapter. That's the flag falling, not the chapter ID changing as for the `chapter_exit` kind. The two may land on different frames, so keep the legacy signal.
-  - For chapter 7, it only arms when the current room doesn't start with `credits`. Legacy skips this check for "any chapter" (no `chapter` filter); keep that.
-  - Side matching uses the side from the previous tick, as legacy does.
+  - It arms on the rising edge of `ChapterComplete`, when the chapter and side, read in the same tick, match.
+  - With `timing: "chapter_complete"` it fires as soon as it arms. With `timing: "chapter_exit"` it fires when the game leaves the chapter, which is when `ChapterComplete` falls too.
+  - In chapter 7 it only arms when the current room doesn't start with `credits`, whether or not it has a `chapter` filter.
 - **`heart` and `cassette`** fire on the rising edge of the chapter's heart or cassette flag, in every setup.
   - Legacy also split when the file's total count went up by one, and used the flag only in IL and file-time-offset setups.
   - Counting breaks ILs on a file that already has the heart. Reacting to the flag while it stays set double-splits consecutive heart splits. The rising edge avoids both.
-- **`auto_reset`** resets and then starts in the same tick, so the new attempt doesn't lose its first frame. It applies while running, paused or ended. The split trigger isn't checked on that tick.
-- **`checkpoint`** fires on entering the room, including spawning into it from the menu. Legacy fired whenever the current room matched. The two only differ when the previous split fired in that same room.
-- **`chapter_start`** ignores the first 3 s after attaching, as legacy does.
-- **`chapter_enter` and `chapter_exit` with a `side`** require the side to change too, as legacy does.
-- **`room_enter` and `room_exit`** fire only inside a chapter.
-- **Game time** is paused whenever its value doesn't change.
+- **`auto_reset`** resets and then starts in the same tick, so the new attempt doesn't lose its first frame. It applies while running, paused or ended.
+- **`checkpoint`** fires on entering the room, including spawning into it from the menu. Legacy fired whenever the current room matched, so it also split when its segment began in that room: after a split there, a start there, or a split or skip by hand there.
+- **`chapter_enter` and `chapter_exit` with a `side`** fire when the chapter entered or left is on that side.
+- **`room_enter` and `room_exit`** fire only while the game is in a chapter. Entering includes spawning into the room from the menu, and exiting means going to another room, so leaving the chapter (save and quit, return to map, completing it) doesn't count as leaving its room.
+- **Game time** is set on every tick, and paused once when each attempt starts. While game time isn't paused, hosts advance it with real time between two times the module sets it, and a new attempt starts unpaused. Pausing it keeps it exactly at what the module set, between ticks and in each split's time.
 
 ---
 
@@ -618,12 +625,12 @@ Together they produce four cases:
 
 | Case | Condition | Start | Segment `i` split by | Game time | Chapter complete splits | `AutoReset` |
 |---|---|---|---|---|---|---|
-| **E: empty** | no splits | any room change | 1-segment run: next room change, unless the start room is re-entered within 2.5 s, which moves the start. Otherwise never. | chapter time − chapter time at start | — | applies |
+| **E: empty** | no splits | moving from one room to another (not into a chapter from the menu) | 1-segment run: next room change, unless the start room is re-entered within 2.5 s, which moves the start. Otherwise never. | chapter time − chapter time at start | — | applies |
 | **F: full game** | `ChapterSplits && !ILSplits` | new file | `splits[i]` | file time | when the complete flag falls again | ignored |
 | **I: IL** | `ChapterSplits && ILSplits` | chapter started | `splits[i]` | chapter time, held in the menu | when the complete flag rises | applies |
 | **C: custom start** | splits present, none counted | **`splits[0]`** | `splits[i+1]`. 1-segment run with only `splits[0]`: next room change. | chapter time − chapter time at start | — | applies |
 
-`FileTimeOffset` makes game time "file time − file time at start" in every case. It also lets heart and cassette splits use the chapter's own collected flag, which they otherwise do only in IL modes. When `AutoReset` applies, the timer resets whenever the game is outside a chapter.
+`FileTimeOffset` makes game time "file time − file time at start" in every case, with the file time taken at every start, including one by hand. It also lets heart and cassette splits use the chapter's own collected flag, which they otherwise do only in IL modes. When `AutoReset` applies, the timer resets whenever the game is outside a chapter.
 
 **Per-type behaviour:**
 
@@ -632,10 +639,10 @@ Together they produce four cases:
 | `Manual` | never |
 | `Prologue`, `Chapter1`–`Chapter9`, `Epilogue` | `ChapterComplete` rises in that chapter, on any side. In case F the split waits until the flag falls again. Chapter 7 additionally needs a room not starting with `credits`. |
 | `ChapterA` | as above for any chapter, without the `credits` check |
-| `AreaComplete,<chapter>[-<side>]` | as above for that chapter, optionally only on that side |
-| `AreaOnEnter` / `AreaOnExit,<chapter>[-<side>]` | the chapter ID changes to / from that chapter. With a side, the side must also change to / from it. |
+| `AreaComplete,<chapter>[-<side>]` | as above for that chapter. A side is only checked when the split would fire, against the previous tick's side, and arming ignores it: armed on another side, it splits when the complete flag next falls on its side, in any chapter. |
+| `AreaOnEnter` / `AreaOnExit,<chapter>[-<side>]` | the chapter ID changes to / from that chapter. With a side, the side must also change to / from it. "Changes" is against the last tick on which a split other than `Manual` was checked, so after a `Manual` segment or a start it compares with old values. |
 | `ChapterNCheckpointK` | in chapter N, whenever the current room is that checkpoint's room for the current side (§5.3 chapter data) |
-| `HeartGemAny`, `ChapterNHeartGem` | the file's heart count goes up by 1, or the chapter heart flag is set (IL or `FileTimeOffset` only). The chapter versions also require that chapter. |
+| `HeartGemAny`, `ChapterNHeartGem` | the file's heart count goes up by 1 (against the last tick on which a split other than `Manual` was checked, as for `AreaOnEnter`), or the chapter heart flag is set (IL or `FileTimeOffset` only). The chapter versions also require that chapter. |
 | `ChapterNCassette` | as hearts, with cassettes. There is no "any cassette". |
 | `LevelEnter` / `LevelExit,<room>` | inside a chapter, the room changes, and the new / previous room equals `<room>`, ignoring case |
 
@@ -676,7 +683,7 @@ The legacy node is the migration's only input. It never looks at the run.
 | `timing_method` | `file` | `file` | `chapter` | `chapter_since_start` |
 | `auto_reset` | `AutoReset` | `AutoReset` | `AutoReset` | `AutoReset` |
 
-- **Case E becomes an empty configuration.** The legacy behaviour (start on any room change, auto reset, split one-segment runs on room changes) is dropped.
+- **Case E becomes an empty configuration.** The legacy behaviour (start on moving between rooms, auto reset, split one-segment runs on room changes) is dropped.
 - **Case C's room-change fallback is dropped too.** It came from the same code path as case E, without E's grace logic. The segment is split by hand.
 - **Case C has no `chapter_complete` splits,** because any of them would have made the list case F or I.
 - **`FileTimeOffset = True`** sets `timing_method` to `file_since_start` in every column. It doesn't trigger anything, so it's kept even in E.
@@ -734,11 +741,17 @@ legacy: map
 | Unknown types silently manual | `unknown`: still never fires, but flagged | Nobody, timing-wise. |
 | Case C final split time is absolute | Consistent with the rest of the run | Custom-start runners, whose final time was wrong. |
 | `FileTimeOffset` in cases C and E mixes clocks | `file_since_start` | Rare combination. |
-| No splits (case E): start on any room change, auto reset, split one-segment runs on room changes | Nothing automatic | Users who never configured splits, and single-room timers. |
+| No splits (case E): start on moving between rooms, auto reset, split one-segment runs on room changes | Nothing automatic | Users who never configured splits, and single-room timers. |
 | Case C with only a start trigger and one segment: split on the next room change | Split by hand | Custom-start single-room timers. |
 | Room names match ignoring case | Exact match | Users whose saved room name differs in case from the game's. Migration can't fix this without the map's room list. |
 | Heart and cassette splits use count increments, or the flag only in some setups | Rising edge of the chapter flag (§6.5) | Nobody, if it works as intended. |
-| Checkpoints fire while in the room | Fire on entering it (§6.5) | Only lists where the previous split fired in the same room. |
+| Checkpoints fire while in the room | Fire on entering it (§6.5) | Lists where a checkpoint's segment begins in its room: after a split, a start, or a split or skip by hand there. |
+| `AreaComplete` with a side arms on any side, and then splits on that side's next completion in any chapter | The chapter and the side are checked together, when it arms (§6.5) | Lists with an `AreaComplete` for one side that played the chapter's other sides first. |
+| `ChapterA` skips chapter 7's `credits` check, by accident: it passes the Prologue as both the current chapter and the split's | Every `chapter_complete` in chapter 7 has it (§6.5) | "Any chapter" splits through the Summit, if the credits complete the chapter again. |
+| Chapter changes and heart and cassette counts compare with the last tick a split other than `Manual` was checked, and no split is checked on the tick the run starts | Every trigger compares with the previous read, and no split trigger is checked on the tick the run starts (§6.5) | Lists whose first split is the event that starts the run, such as entering the chapter: legacy split one tick after starting. |
+| `AreaOnEnter`/`AreaOnExit` with a side need the side to change too | The chapter entered or left is on that side (§6.5) | Nobody: the side is `-1` outside a chapter, so it always changes. |
+| IL starts ignore the first 3 s after attaching | The first read after attaching only records the values (§6.5) | Runners who start a chapter within 3 s of the auto splitter attaching. |
+| Game time is paused while its value doesn't change | Paused from each start, and set every tick (§6.5) | Nobody: only what the timer shows between two of the module's updates changes. |
 
 ### 11.5 Persistence
 
