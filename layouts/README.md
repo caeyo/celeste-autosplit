@@ -51,11 +51,11 @@ the auto splitter is rebuilt with it. The [harness](../harness/) starts the prob
 again, and runs the live check and the replay against it: see its README.
 
 Any failure fails the run, and no pull request is opened. The workflow also runs
-on pull requests from this repository that change the auto splitter, the
-layouts, the harness, the probe or the traces. There, each committed layout must
-be the one the probe writes: a difference is a hand edit, or a change to the
-probe (its manifest or its output) without regenerating. To run the probe
-yourself, see its [README](../tools/probe/README.md).
+on pull requests that change the auto splitter, the layouts, the harness, the
+probe or the traces, from forks once a maintainer approves the run. There, each
+committed layout must be the one the probe writes: a difference is a hand edit,
+or a change to the probe (its manifest or its output) without regenerating. To
+run the probe yourself, see its [README](../tools/probe/README.md).
 
 ## `<flavour>.rs`
 
