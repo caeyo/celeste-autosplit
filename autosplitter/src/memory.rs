@@ -50,8 +50,10 @@ pub enum GameState {
         chapter_complete: DeepPointer<3>,
         chapter_cassette: DeepPointer<3>,
         chapter_heart: DeepPointer<3>,
-        /// `SaveData.Instance`'s slot, which holds null until a file starts.
-        save_data: Slot,
+        /// The path to the save `SaveData.Instance` holds, which is null until a file starts. It
+        /// stops at the save's address, without reading through it, so no save reads as null
+        /// rather than as a failed read.
+        save: DeepPointer<3>,
         save_time: DeepPointer<3>,
         save_debug_mode: DeepPointer<3>,
     },
@@ -66,11 +68,9 @@ impl GameState {
     pub fn save_time(&self, process: &Process) -> Option<Option<i64>> {
         match self {
             Self::Vanilla {
-                save_data,
-                save_time,
-                ..
+                save, save_time, ..
             } => {
-                if !save_data.holds_object(process)? {
+                if save.deref_offsets(process).ok()?.is_null() {
                     return Some(None);
                 }
                 Some(Some(save_time.deref(process).ok()?))
@@ -84,11 +84,11 @@ impl GameState {
     pub fn save_debug_mode(&self, process: &Process) -> Option<Option<bool>> {
         match self {
             Self::Vanilla {
-                save_data,
+                save,
                 save_debug_mode,
                 ..
             } => {
-                if !save_data.holds_object(process)? {
+                if save.deref_offsets(process).ok()?.is_null() {
                     return Some(None);
                 }
                 Some(Some(save_debug_mode.deref::<u8>(process).ok()? != 0))
@@ -442,7 +442,7 @@ macro_rules! flavour {
                 chapter_complete: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_COMPLETE),
                 chapter_cassette: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE),
                 chapter_heart: slot.field(instance::AUTO_SPLITTER_INFO_CHAPTER_HEART),
-                save_data: save_slot,
+                save: save_slot.field([0]),
                 save_time: save_slot.field(save_data::TIME),
                 save_debug_mode: save_slot.field(save_data::DEBUG_MODE),
             },
@@ -487,7 +487,7 @@ fn signature_ends<const N: usize>(
 /// A root's static slot, which holds a reference to the object that each of its paths starts
 /// from.
 #[derive(Clone, Copy)]
-pub struct Slot {
+struct Slot {
     address: Address,
     ptr_size: PointerSize,
 }
@@ -502,12 +502,6 @@ impl Slot {
         let mut path = [0; CAP];
         path[1..=N].copy_from_slice(&offsets);
         DeepPointer::new(self.address, self.ptr_size, &path[..=N])
-    }
-
-    /// Whether the slot holds an object rather than null.
-    fn holds_object(self, process: &Process) -> Option<bool> {
-        let object = process.read_pointer(self.address, self.ptr_size).ok()?;
-        Some(!object.is_null())
     }
 }
 
