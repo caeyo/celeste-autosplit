@@ -40,11 +40,18 @@ namespace Probe
         // AutoSplitterInfo.Update runs from the game's first update, and reads SaveData.Instance
         // for the file's values, first for FileTime, right after setting ChapterTime from the
         // level's session. The signatures match setting ChapterTime, and the reference is the
-        // load of SaveData.Instance that follows:
+        // load from SaveData.Instance that follows:
         // - On Windows: mov ecx, [slot]; test ecx, ecx.
+        // - On Mono: mov rax, [slot], when the address fits in 32 bits, as it does on Linux, and
+        //   otherwise, as on macOS, mov rax, slot; mov rax, [rax]. Which one depends on where
+        //   the heap is, as for Celeste.Instance, so both are listed.
         private static readonly Signature SaveDataClr32 = new Signature(
             "75 06 33 c9 33 d2 eb 09 8b 47 2c 8b 48 04 8b 50 08 89 4e 04 89 56 08",
             "8b 0d SS SS SS SS 85 c9");
+        private static readonly Signature SaveDataMono64 = new Signature(
+            "75 04 33 ed eb 0b 49 8b 46 58 48 8b a8 98 00 00 00 49 89 6c 24 28",
+            "48 8b 04 25 SS SS SS SS",
+            "48 b8 SS SS SS SS SS SS SS SS 48 8b 00");
 
         public static readonly ManifestRoot[] Roots =
         {
@@ -86,6 +93,8 @@ namespace Probe
                 {
                     ["windows-xna"] = SaveDataClr32,
                     ["windows-fna"] = SaveDataClr32,
+                    ["linux"] = SaveDataMono64,
+                    ["macos"] = SaveDataMono64,
                 },
                 Paths =
                 {

@@ -1,11 +1,12 @@
 //! The probe, started as the game in its replay mode, and the lines it exchanges with the harness.
 //! Once every check has passed, the probe prints `probe: ok`. It writes distinctive values into
-//! the game, and prints `probe: values` and, as JSON, its flavour and the values its paths hold,
-//! keyed by root and then path. Then it reads sets
-//! of values, a `path=value` line per path and an empty line at the end of each set. It writes each
-//! set into the game, through the same paths, and answers `probe: written`, until its input ends.
-//! It prints `probe: failed` if a check or the replay fails. Its other lines, and what it prints
-//! on its standard error, are its log, which is shown if anything goes wrong with it.
+//! the game, and prints `probe: values` and, as JSON, its flavour, the values its paths hold,
+//! keyed by root and then path, and the roots it set up, since the game left them null. Then it
+//! reads sets of lines, with an empty line at the end of each: `root=null` or `root=object`, which
+//! make a root hold null or its object again, and `path=value`, with a string in double quotes, or
+//! `null` for no string. It writes each set into the game and answers `probe: written`, until its
+//! input ends. It prints `probe: failed` if a check or the replay fails. Its other lines, and what
+//! it prints on its standard error, are its log, which is shown if anything goes wrong with it.
 
 use std::{
     collections::BTreeMap,
@@ -19,7 +20,7 @@ use std::{
 use anyhow::{Context, Error, Result, anyhow, bail};
 use serde_json::Value;
 
-use crate::by_path;
+use crate::{Held, roots};
 
 pub struct Probe {
     child: Child,
@@ -59,9 +60,9 @@ impl Probe {
         })
     }
 
-    /// Waits for the probe to pass its checks, then returns its flavour and the values its paths
-    /// hold, by path.
-    pub fn values(&mut self) -> Result<(String, BTreeMap<String, Value>)> {
+    /// Waits for the probe to pass its checks, then returns its flavour, what the game holds for
+    /// each root, and the roots it set up.
+    pub fn values(&mut self) -> Result<(String, BTreeMap<String, Held>, Vec<String>)> {
         self.expect("ok")?;
         let answer = self.answer()?;
         let Some(values) = answer
@@ -73,19 +74,40 @@ impl Probe {
         let flavour = values["flavour"]
             .as_str()
             .context("the probe's values have no flavour")?;
-        let held = by_path(&values["roots"]).context("the probe's values")?;
-        Ok((flavour.to_owned(), held))
+        let held = roots(&values["roots"])
+            .context("the probe's values")?
+            .into_iter()
+            .map(|(root, paths)| {
+                let held = Held {
+                    null: paths.is_none(),
+                    paths: paths.unwrap_or_default(),
+                };
+                (root, held)
+            })
+            .collect();
+        let set_up = serde_json::from_value(values["setUp"].clone())
+            .context("the probe's values have no roots it set up")?;
+        Ok((flavour.to_owned(), held, set_up))
     }
 
-    /// Has the probe write the values into the game, by path, and waits until it has.
-    pub fn write(&mut self, values: &BTreeMap<String, Value>) -> Result<()> {
+    /// Has the probe make each root given hold null, if it's true, or its object again, then write
+    /// each value into the game, by path, and waits until it has.
+    pub fn write(
+        &mut self,
+        roots: &BTreeMap<String, bool>,
+        values: &BTreeMap<String, Value>,
+    ) -> Result<()> {
         let mut set = String::new();
+        for (root, null) in roots {
+            set += &format!("{root}={}\n", if *null { "null" } else { "object" });
+        }
         for (path, value) in values {
             let text = match value {
+                Value::Null => "null".to_owned(),
                 Value::Bool(flag) => flag.to_string(),
                 Value::Number(number) => number.to_string(),
                 // A string ends with its line.
-                Value::String(text) if !text.contains(['\r', '\n']) => text.clone(),
+                Value::String(text) if !text.contains(['\r', '\n']) => format!("\"{text}\""),
                 _ => bail!("can't send the probe {value} for {path}"),
             };
             set += &format!("{path}={text}\n");

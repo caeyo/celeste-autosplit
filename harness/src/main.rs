@@ -79,8 +79,21 @@ struct Options {
     command: Vec<String>,
 }
 
-/// A trace's frames: each line after its header, as its changes to the game's values, by path.
-type Trace = Vec<BTreeMap<String, Value>>;
+/// The game's values, or changes to them, by root and then path, as the probe sends them and the
+/// traces hold them. A root that holds null has `None`. As a change, a root's values also make it
+/// hold its object again, if it was null.
+type Roots = BTreeMap<String, Option<BTreeMap<String, Value>>>;
+
+/// A trace's frames: each line after its header, as its changes to the game's values.
+type Trace = Vec<Roots>;
+
+/// What the game holds for a root: whether it holds null, and the values of its paths. While it's
+/// null, the auto splitter reads none of them, and they're kept, since the probe stores the same
+/// object in the root again.
+pub struct Held {
+    null: bool,
+    paths: BTreeMap<String, Value>,
+}
 
 fn main() -> ExitCode {
     let args = env::args().skip(1).collect::<Vec<_>>();
@@ -182,7 +195,7 @@ fn check(
     traces: &[Trace],
     options: &Options,
 ) -> Result<bool> {
-    let (flavour, mut held) = probe.values()?;
+    let (flavour, mut held, set_up) = probe.values()?;
     println!(
         "live check: {} against the {flavour} probe",
         options.wasm.display()
@@ -212,16 +225,29 @@ fn check(
     // Negating shows a number read with the wrong sign. A flag has only two values, so the probe's
     // can't tell them all apart, even flipped: setting each alone does, and shows each both ways.
     let mut frames = vec![("the values flipped".to_owned(), flipped(&held)?)];
-    let flags = held
+    let flags = |held: &Held| {
+        let flags = held.paths.iter().filter(|(_, value)| value.is_boolean());
+        flags.map(|(path, _)| path.clone()).collect::<Vec<_>>()
+    };
+    for (root, flag) in held
         .iter()
-        .filter(|(_, value)| value.is_boolean())
-        .map(|(path, _)| path.clone())
-        .collect::<Vec<_>>();
-    for flag in &flags {
-        let alone = flags
-            .iter()
-            .map(|other| (other.clone(), Value::Bool(other == flag)));
+        .flat_map(|(root, held)| flags(held).into_iter().map(move |flag| (root, flag)))
+    {
+        let alone = held.iter().map(|(other_root, other)| {
+            let paths = flags(other).into_iter().map(|path| {
+                let set = other_root == root && path == flag;
+                (path, Value::Bool(set))
+            });
+            (other_root.clone(), Some(paths.collect()))
+        });
         frames.push((format!("only {flag} set"), alone.collect()));
+    }
+    // The game leaves the roots the probe set up null until later, and a null root has to read as
+    // no object, not as a failed read, and then as its object again.
+    for root in &set_up {
+        frames.push((format!("{root} null"), Roots::from([(root.clone(), None)])));
+        let back = Roots::from([(root.clone(), Some(BTreeMap::new()))]);
+        frames.push((format!("{root} holding its object again"), back));
     }
     for (frame, changes) in &frames {
         let problems = replay_frame(probe, &module, &mut held, changes)
@@ -235,7 +261,7 @@ fn check(
         }
     }
     println!(
-        "live check: ok, the auto splitter reports the {} values the probe holds, flipped, and each flag alone",
+        "live check: ok, the auto splitter reports the {} values the probe holds, flipped, each flag alone, and each root it set up null and back",
         read.len()
     );
 
@@ -263,41 +289,72 @@ fn check(
 fn replay_frame(
     probe: &mut Probe,
     module: &Module,
-    held: &mut BTreeMap<String, Value>,
-    changes: &BTreeMap<String, Value>,
+    held: &mut BTreeMap<String, Held>,
+    changes: &Roots,
 ) -> Result<Vec<String>> {
-    // The probe would take any value for a string: it's the rest of the line.
-    for (path, value) in changes {
-        match held.get(path) {
-            Some(old) if mem::discriminant(old) == mem::discriminant(value) => {}
-            Some(old) => bail!("{path} holds {old}, which {value} can't replace"),
-            None => bail!("the probe has no path {path}"),
+    // Whether each root changed holds null, and the values written.
+    let mut roots = BTreeMap::new();
+    let mut paths = BTreeMap::new();
+    for (root, change) in changes {
+        let held = held
+            .get_mut(root)
+            .with_context(|| format!("the probe has no root {root}"))?;
+        let Some(values) = change else {
+            held.null = true;
+            roots.insert(root.clone(), true);
+            continue;
+        };
+        if held.null {
+            held.null = false;
+            roots.insert(root.clone(), false);
         }
+        // The probe would take a value of another type for some paths, such as a number for a
+        // string.
+        for (path, value) in values {
+            match held.paths.get(path) {
+                Some(old) if kind(old) == kind(value) => {}
+                Some(old) => bail!("{path} holds {old}, which {value} can't replace"),
+                None => bail!("{root} has no path {path}"),
+            }
+        }
+        held.paths.extend(values.clone());
+        paths.extend(values.clone());
     }
-    probe.write(changes)?;
-    held.extend(changes.clone());
+    probe.write(&roots, &paths)?;
     Ok(match module.update() {
         Ok(read) => differences(&expected(held)?, &read),
         Err(problem) => vec![problem],
     })
 }
 
+/// A value's type, with `None` for a string or null, since only a string can be null.
+fn kind(value: &Value) -> Option<mem::Discriminant<Value>> {
+    match value {
+        Value::Null | Value::String(_) => None,
+        value => Some(mem::discriminant(value)),
+    }
+}
+
 /// The values, with every number negated and every flag flipped. Strings are left out: the probe's
 /// can't be matched by chance.
-fn flipped(held: &BTreeMap<String, Value>) -> Result<BTreeMap<String, Value>> {
-    let mut flipped = BTreeMap::new();
-    for (path, value) in held {
-        let value = match value {
-            Value::String(_) => continue,
-            Value::Bool(flag) => Value::Bool(!flag),
-            Value::Number(number) => number
-                .as_i64()
-                .and_then(i64::checked_neg)
-                .with_context(|| format!("can't negate {path}'s {number}"))?
-                .into(),
-            _ => bail!("can't flip {path}'s {value}"),
-        };
-        flipped.insert(path.clone(), value);
+fn flipped(held: &BTreeMap<String, Held>) -> Result<Roots> {
+    let mut flipped = Roots::new();
+    for (root, held) in held {
+        let mut paths = BTreeMap::new();
+        for (path, value) in &held.paths {
+            let value = match value {
+                Value::String(_) => continue,
+                Value::Bool(flag) => Value::Bool(!flag),
+                Value::Number(number) => number
+                    .as_i64()
+                    .and_then(i64::checked_neg)
+                    .with_context(|| format!("can't negate {path}'s {number}"))?
+                    .into(),
+                _ => bail!("can't flip {path}'s {value}"),
+            };
+            paths.insert(path.clone(), value);
+        }
+        flipped.insert(root.clone(), Some(paths));
     }
     Ok(flipped)
 }
@@ -384,45 +441,49 @@ fn read_trace(file: &Path) -> Result<Trace> {
 }
 
 /// A frame's changes to the game's values, from its line, which has to hold the frame's number.
-fn read_frame(line: &str, number: usize) -> Result<BTreeMap<String, Value>> {
+fn read_frame(line: &str, number: usize) -> Result<Roots> {
     let line: serde_json::Map<String, Value> = serde_json::from_str(line)?;
     if line.get("frame") != Some(&Value::from(number)) {
         bail!("expected frame {number}");
     }
-    let mut changes = BTreeMap::new();
+    let mut changes = Roots::new();
     for (key, value) in &line {
         match key.as_str() {
             "frame" | "everest" => {}
-            "roots" => changes = by_path(value)?,
+            "roots" => changes = roots(value)?,
             _ => bail!("unexpected {key}"),
         }
     }
     Ok(changes)
 }
 
-/// Every root's values, by path, from JSON keyed by root and then path, as the probe sends them
-/// and the traces hold them.
-fn by_path(roots: &Value) -> Result<BTreeMap<String, Value>> {
-    let mut values = BTreeMap::new();
-    for paths in roots.as_object().context("no roots")?.values() {
-        for (path, value) in paths.as_object().context("a root with no paths")? {
-            if values.insert(path.clone(), value.clone()).is_some() {
-                bail!("two roots have the path {path}");
-            }
-        }
+/// The roots' values, from JSON keyed by root and then path, with null for a root that holds
+/// null, as the probe sends them and the traces hold them.
+fn roots(json: &Value) -> Result<Roots> {
+    let mut roots = Roots::new();
+    for (root, paths) in json.as_object().context("no roots")? {
+        let paths = match paths {
+            Value::Null => None,
+            Value::Object(paths) => Some(paths.clone().into_iter().collect()),
+            _ => bail!("{root} holds neither paths nor null"),
+        };
+        roots.insert(root.clone(), paths);
     }
-    Ok(values)
+    Ok(roots)
 }
 
 /// The debug variables the auto splitter should report for the values the game holds.
-fn expected(held: &BTreeMap<String, Value>) -> Result<BTreeMap<String, String>> {
+fn expected(held: &BTreeMap<String, Held>) -> Result<BTreeMap<String, String>> {
     let mut expected = BTreeMap::new();
     for &(path, variable) in REPORTED {
-        let text = match held
-            .get(path)
-            .with_context(|| format!("the probe holds no {path}"))?
-        {
-            // The auto splitter doesn't report a null .NET string.
+        let held = held
+            .values()
+            .find(|held| held.paths.contains_key(path))
+            .with_context(|| format!("the probe holds no {path}"))?;
+        let text = match &held.paths[path] {
+            // The auto splitter reads nothing through a root that holds null, and doesn't report
+            // a null .NET string.
+            _ if held.null => continue,
             Value::Null => continue,
             Value::Bool(flag) => u8::from(*flag).to_string(),
             Value::String(text) => text.clone(),
