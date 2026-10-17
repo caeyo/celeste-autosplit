@@ -3,8 +3,9 @@
 Traces of what the auto splitter reads from the real game, update by update, while
 CelesteTAS plays a TAS through it. Each `<name>.jsonl` is recorded from the
 `<name>.tas` next to it, by the [trace recorder](../tools/trace-recorder/). They hold
-values only, nothing from the game's files. The [harness](../harness/) replays every
-trace through the real game, on every vanilla flavour, in the Layouts workflow.
+values only, nothing from the game's files. The [harness](../harness/) replays the
+game's values in every trace, not Everest's, through the real game, on every vanilla
+flavour, in the Layouts workflow.
 
 | Trace | What it covers |
 |---|---|
@@ -49,8 +50,8 @@ auto splitter reads until the next. It has:
 
 - `frame`: the update's number, from 0.
 - `roots`: the game's `AutoSplitterInfo`, every field of it, by root and path as
-  the [probe](../tools/probe/README.md#the-manifest) names them:
-  strings, numbers and booleans.
+  the [probe](../tools/probe/README.md#the-manifest) names them: strings, numbers
+  and booleans.
 - `everest`: Everest's own values, named after its struct's fields (see
   [`layouts/everest.rs`](../layouts/everest.rs)): each string pointer's string, or
   null for none, and its flags as numbers. Its header, which doesn't change, isn't

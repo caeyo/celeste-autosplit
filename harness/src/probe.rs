@@ -1,6 +1,7 @@
 //! The probe, started as the game in its replay mode, and the lines it exchanges with the harness.
 //! Once every check has passed, the probe prints `probe: ok`. It writes distinctive values into
-//! the game, and prints `probe: values` and the values its paths hold, as JSON. Then it reads sets
+//! the game, and prints `probe: values` and, as JSON, its flavour and the values its paths hold,
+//! keyed by root and then path. Then it reads sets
 //! of values, a `path=value` line per path and an empty line at the end of each set. It writes each
 //! set into the game, through the same paths, and answers `probe: written`, until its input ends.
 //! It prints `probe: failed` if a check or the replay fails. Its other lines, and what it prints
@@ -33,9 +34,10 @@ pub struct Probe {
 }
 
 impl Probe {
-    /// Starts the probe with the command, which the harness adds `--replay` to. Its standard error
-    /// goes into its log too: if it has to be killed, what it leaves running, such as the game
-    /// under the Linux script, then doesn't hold the harness's own output open.
+    /// Starts the probe with the command, which the harness adds `--replay` to. On Linux and macOS,
+    /// the command runs the probe through `xvfb-run` or `sudo`, so killing it leaves a probe that
+    /// hangs running, until CI ends the job. Its standard error goes into its log too, so that what
+    /// it leaves running doesn't hold the harness's own output open.
     pub fn start(command: &[String], timeout: Duration) -> Result<Self> {
         let mut child = Command::new(&command[0])
             .args(&command[1..])
@@ -98,26 +100,25 @@ impl Probe {
     }
 
     /// Ends the probe's input, which ends its replay, and waits for it to exit, for at most as long
-    /// as given, before killing it.
-    pub fn finish(&mut self, wait: Duration) -> Result<()> {
+    /// as given, before killing it. Returns what went wrong, without the probe's log.
+    pub fn finish(&mut self, wait: Duration) -> Result<(), String> {
         self.input = None;
         let deadline = Instant::now() + wait;
         let status = loop {
-            if let Some(status) = self.child.try_wait()? {
-                break status;
+            match self.child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) => {}
+                Err(e) => return Err(format!("waiting for the probe failed: {e}")),
             }
             if Instant::now() >= deadline {
                 let _ = self.child.kill();
                 let _ = self.child.wait();
-                return Err(self.failure(&format!(
-                    "the probe didn't exit within {} s",
-                    wait.as_secs()
-                )));
+                return Err(format!("the probe didn't exit within {} s", wait.as_secs()));
             }
             thread::sleep(Duration::from_millis(10));
         };
         if !status.success() {
-            return Err(self.failure(&format!("the probe exited with {status}")));
+            return Err(format!("the probe exited with {status}"));
         }
         Ok(())
     }
@@ -161,9 +162,13 @@ impl Probe {
     }
 
     /// The problem, followed by the probe's log.
-    fn failure(&mut self, problem: &str) -> Error {
-        // Including what it prints last, such as why it fails, if it does.
-        while let Ok(line) = self.lines.recv_timeout(Duration::from_secs(1)) {
+    pub fn failure(&mut self, problem: &str) -> Error {
+        // Including what it prints last, such as why it fails, if it does, for up to a second.
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while let Ok(line) = self
+            .lines
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        {
             if !line.starts_with("probe: ") {
                 self.log.push(line);
             }

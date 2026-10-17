@@ -15,7 +15,7 @@ namespace Probe
     /// <summary>
     /// Measures the memory layout the auto splitter reads, inside the runtime of the game flavour
     /// it runs with, and writes it as Rust, &lt;flavour&gt;.rs, for the auto splitter's memory.rs.
-    /// Manifest.cs says what to measure. Then it constructs the game, which the harness reads
+    /// Manifest.cs says what to measure. It also constructs the game, which the harness reads
     /// through the auto splitter, in replay mode. It has to run in the game's own runtime, from
     /// the game's folder: 32-bit .NET Framework on Windows, and the Mono bundled with the game on
     /// Linux and macOS, through the game's MonoKickstart launcher (which runs the .exe named after
@@ -224,9 +224,10 @@ namespace Probe
                 fields.Add(field);
                 type = field.FieldType;
             }
-            if (type.IsValueType && type != typeof(bool) && type != typeof(int) && type != typeof(long))
+            // Only values the probe can write, so that the harness checks every path.
+            if (!IsValue(type))
             {
-                throw new ProbeException(name + " ends in a " + type + ", which the probe can't write yet: add sample values and parsing for it");
+                throw new ProbeException(name + " ends in a " + Names.TypeName(type) + ", but the probe can only write a string, bool, int or long: another type needs sample values and parsing here, and checking in the harness");
             }
             Console.WriteLine("  {0} : {1}", name, Names.TypeName(type));
             return new FieldPath { Name = name, Fields = fields.ToArray() };
@@ -467,17 +468,17 @@ namespace Probe
 
         /// <summary>
         /// Replay mode, for the harness. First writes distinctive values into every number and flag,
-        /// and into strings that are still null, and prints "probe: values" and the values the
-        /// paths hold. Then writes the values it's sent into the game, through the same paths, until
-        /// its input ends. They come in sets: a path=value line per path, with the value read as the
-        /// path's type (a string is the rest of the line), and an empty line at the end of each
-        /// set. Once a set is written, it prints "probe: written".
+        /// and into strings that are still null, then prints "probe: values", and its flavour and
+        /// the values the paths hold. Then writes the values it's sent into the game, through the
+        /// same paths, until its input ends. They come in sets: a path=value line per path, with the
+        /// value read as the path's type (a string is the rest of the line), and an empty line at the
+        /// end of each set. Once a set is written, it prints "probe: written".
         /// </summary>
         private static void Replay()
         {
             // The lines only name paths, and two roots can have paths with the same name.
             var paths = new Dictionary<string, HeldPath>();
-            foreach (HeldPath path in held.Where(p => IsValue(p.Path.Last.FieldType)))
+            foreach (HeldPath path in held)
             {
                 if (paths.ContainsKey(path.Path.Name))
                 {
@@ -520,7 +521,7 @@ namespace Probe
             int separator = line.IndexOf('=');
             if (separator < 0 || !paths.TryGetValue(line.Substring(0, separator), out HeldPath path))
             {
-                throw new ProbeException("can't write " + line + ": expected path=value, for a path that ends in a string, bool, int or long");
+                throw new ProbeException("can't write " + line + ": expected path=value, for one of the manifest's paths");
             }
             string text = line.Substring(separator + 1);
             Type type = path.Path.Last.FieldType;
@@ -543,16 +544,15 @@ namespace Probe
         }
 
         /// <summary>
-        /// The values the paths hold now, as reflection reads them, as JSON on one line, for the
-        /// harness to compare the auto splitter with. Paths that end in an object other than a
-        /// string are left out: the auto splitter doesn't report those.
+        /// The flavour, and the values the paths hold now, as reflection reads them, as JSON on one
+        /// line, for the harness to compare the auto splitter with.
         /// </summary>
         private static string ValuesJson()
         {
             IEnumerable<string> rootsJson = roots.Select(root =>
                 Quote(root.Name) + ":{" +
                 string.Join(",", held
-                    .Where(p => p.Root == root && IsValue(p.Path.Last.FieldType))
+                    .Where(p => p.Root == root)
                     .Select(p => Quote(p.Path.Name) + ":" + ValueJson(p.Path.Last.GetValue(p.Owner)))
                     .ToArray()) +
                 "}");

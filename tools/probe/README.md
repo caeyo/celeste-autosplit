@@ -5,8 +5,8 @@ memory layout the auto splitter reads, and writes it as Rust, `<flavour>.rs`,
 which the auto splitter uses. What it measures is listed in
 [`Manifest.cs`](Manifest.cs). It also constructs the real game, which, in its
 replay mode, it holds for the [harness](../../harness/) to check the auto
-splitter against: the probe only writes values into the game, and the harness
-does the checking.
+splitter against. The probe only checks what it measures: the harness checks
+what the auto splitter reads.
 
 The [`layouts.yml`](../../.github/workflows/layouts.yml) workflow runs it against
 every vanilla flavour and builds the auto splitter with its layout. Then the
@@ -63,7 +63,8 @@ static field that the auto splitter finds through machine code:
 - **`Paths`**: instance fields to read from the root's object, joined with dots.
   Each name is looked up in the previous field's type, or its nearest base
   class with that field. A path only goes through objects of concrete classes,
-  and ends in a `string`, `bool`, `int`, `long` or object.
+  and ends in a `string`, `bool`, `int` or `long`, which the probe can write for
+  the harness to check.
 
 To add a root, add it without signatures first. The probe then prints the
 anchor's code and where the field's address appears in it, and stops. Write
@@ -73,11 +74,12 @@ each flavour's signature and store patterns from that, here.
 
 With `--replay`, once every check has passed, the probe writes values into the
 game, for the [harness](../../harness/). First, it writes distinctive values into
-every number and flag, and into strings that are still null: each path gets a
-value of its own, and neighbouring flags differ. The title keeps "Celeste", which
-the auto splitter checks for. It prints `probe: values`, and the values the paths
-hold, as JSON on one line, keyed by root and then path. Then it reads sets of
-values from its standard input, until its input ends:
+every number and flag, and into strings that are still null: every number and
+string gets a value of its own, and the harness tells the flags apart by setting
+each alone. The title keeps "Celeste", which the auto splitter checks for. It
+prints `probe: values`, and as JSON on one line, its flavour and the values the
+paths hold, keyed by root and then path. Then it reads sets of values from its
+standard input, until its input ends:
 
 - a `path=value` line per path, with the value read as the path's type: `true`
   or `false`, a whole number, or for a string, the rest of the line;

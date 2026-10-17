@@ -6,8 +6,8 @@
 //! the values the game holds:
 //!
 //! - the live check: the probe's values, then the same values with every number negated and every
-//!   flag flipped, which the probe writes for the harness. Every field has a value of its own, so
-//!   reading the wrong field, or the wrong width, shows;
+//!   flag flipped, then each flag set alone, which the probe writes for the harness. So reading the
+//!   wrong field, or the wrong width, shows in every field;
 //! - the replay: then, for each line of each trace given, the probe writes the line's values into
 //!   the game, and the harness updates the auto splitter once.
 //!
@@ -16,7 +16,8 @@
 //!   --wasm FILE         the auto splitter (default: the release build in autosplitter/).
 //!   --timeout SECONDS   how long to wait for the probe's checks, then for the auto splitter to
 //!                       report, then for each answer from the probe and each update of the auto
-//!                       splitter, and at the end, for the probe to exit (default: 120).
+//!                       splitter, and at the end, for the probe to exit, which after an error
+//!                       gets at most 5 s (default: 120).
 //!   TRACE               a trace to replay, from traces/. Without any, only the live check runs.
 //!   COMMAND             starts the probe as the game, the way players start the game. The
 //!                       harness adds --replay to it.
@@ -30,7 +31,7 @@ mod timer;
 
 use std::{
     collections::BTreeMap,
-    env, fs,
+    env, fs, mem,
     path::{Path, PathBuf},
     process::ExitCode,
     sync::mpsc::{self, RecvTimeoutError},
@@ -95,7 +96,7 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    match replay(&options) {
+    match run(&options) {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(e) => {
@@ -145,9 +146,8 @@ fn parse(args: &[String]) -> Result<Options> {
     })
 }
 
-/// Whether the auto splitter reports what the game holds: the probe's values, then after each
-/// line of each trace.
-fn replay(options: &Options) -> Result<bool> {
+/// Whether the auto splitter reports what the game holds, in the live check and the replay.
+fn run(options: &Options) -> Result<bool> {
     let wasm =
         fs::read(&options.wasm).with_context(|| format!("reading {}", options.wasm.display()))?;
     let traces = options
@@ -163,14 +163,19 @@ fn replay(options: &Options) -> Result<bool> {
     // can be the probe's, it only gets a moment.
     let wait = match checked {
         Ok(_) => options.timeout,
-        Err(_) => Duration::from_secs(5),
+        Err(_) => options.timeout.min(Duration::from_secs(5)),
     };
     let exited = probe.finish(wait);
     let ok = checked?;
-    exited?;
+    if let Err(problem) = exited {
+        return Err(probe.failure(&problem));
+    }
     Ok(ok)
 }
 
+/// The live check: once the auto splitter has found the game, it must report the probe's values,
+/// then the same values with every number negated and every flag flipped, then each flag set
+/// alone. Then the replay of each trace, one line at a time.
 fn check(
     probe: &mut Probe,
     compiled: &CompiledAutoSplitter,
@@ -204,19 +209,33 @@ fn check(
     if !problems.is_empty() {
         return failed("live check: FAILED", &problems, &module);
     }
-    // So that each flag is seen both set and clear.
-    let changes = flipped(&held);
-    let problems = replay_frame(probe, &module, &mut held, &changes)
-        .context("the live check's flipped values")?;
-    if !problems.is_empty() {
-        return failed(
-            "live check: FAILED, with the values flipped",
-            &problems,
-            &module,
-        );
+    // Negating shows a number read with the wrong sign. A flag has only two values, so the probe's
+    // can't tell them all apart, even flipped: setting each alone does, and shows each both ways.
+    let mut frames = vec![("the values flipped".to_owned(), flipped(&held)?)];
+    let flags = held
+        .iter()
+        .filter(|(_, value)| value.is_boolean())
+        .map(|(path, _)| path.clone())
+        .collect::<Vec<_>>();
+    for flag in &flags {
+        let alone = flags
+            .iter()
+            .map(|other| (other.clone(), Value::Bool(other == flag)));
+        frames.push((format!("only {flag} set"), alone.collect()));
+    }
+    for (frame, changes) in &frames {
+        let problems = replay_frame(probe, &module, &mut held, changes)
+            .with_context(|| format!("the live check, with {frame}"))?;
+        if !problems.is_empty() {
+            return failed(
+                &format!("live check: FAILED, with {frame}"),
+                &problems,
+                &module,
+            );
+        }
     }
     println!(
-        "live check: ok, the auto splitter reports the {} values the probe holds, and flipped",
+        "live check: ok, the auto splitter reports the {} values the probe holds, flipped, and each flag alone",
         read.len()
     );
 
@@ -247,6 +266,14 @@ fn replay_frame(
     held: &mut BTreeMap<String, Value>,
     changes: &BTreeMap<String, Value>,
 ) -> Result<Vec<String>> {
+    // The probe would take any value for a string: it's the rest of the line.
+    for (path, value) in changes {
+        match held.get(path) {
+            Some(old) if mem::discriminant(old) == mem::discriminant(value) => {}
+            Some(old) => bail!("{path} holds {old}, which {value} can't replace"),
+            None => bail!("the probe has no path {path}"),
+        }
+    }
     probe.write(changes)?;
     held.extend(changes.clone());
     Ok(match module.update() {
@@ -257,15 +284,22 @@ fn replay_frame(
 
 /// The values, with every number negated and every flag flipped. Strings are left out: the probe's
 /// can't be matched by chance.
-fn flipped(held: &BTreeMap<String, Value>) -> BTreeMap<String, Value> {
-    let flip = |value: &Value| match value {
-        Value::Bool(flag) => Some(Value::Bool(!flag)),
-        Value::Number(number) => Some(number.as_i64()?.checked_neg()?.into()),
-        _ => None,
-    };
-    held.iter()
-        .filter_map(|(path, value)| Some((path.clone(), flip(value)?)))
-        .collect()
+fn flipped(held: &BTreeMap<String, Value>) -> Result<BTreeMap<String, Value>> {
+    let mut flipped = BTreeMap::new();
+    for (path, value) in held {
+        let value = match value {
+            Value::String(_) => continue,
+            Value::Bool(flag) => Value::Bool(!flag),
+            Value::Number(number) => number
+                .as_i64()
+                .and_then(i64::checked_neg)
+                .with_context(|| format!("can't negate {path}'s {number}"))?
+                .into(),
+            _ => bail!("can't flip {path}'s {value}"),
+        };
+        flipped.insert(path.clone(), value);
+    }
+    Ok(flipped)
 }
 
 /// The auto splitter, on livesplit-core's timer, updated by hand. A runtime updated by hand has

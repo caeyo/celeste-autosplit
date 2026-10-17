@@ -48,10 +48,7 @@ game files. It:
 
 Then the probe writes the flavour's layout, which replaces the committed one, and
 the auto splitter is rebuilt with it. The [harness](../harness/) starts the probe
-again and attaches the auto splitter to the probe's process. The probe writes
-distinctive values into the game, and the auto splitter must report them, then
-the same values flipped, then each frame of every trace, as the probe writes the
-frames into the game.
+again, and runs the live check and the replay against it: see its README.
 
 Any failure fails the run, and no pull request is opened. The workflow also runs
 on pull requests from this repository that change the auto splitter, the

@@ -15,15 +15,16 @@ through reflection, and the harness updates the auto splitter once. Its debug
 variables must then be exactly the values the game holds:
 
 - **The live check:** first the probe's values, then the same values with every
-  number negated and every flag flipped. Every field has a value of its own,
-  spread over all its bytes, so reading the wrong field, or the wrong width,
-  shows. Flipping shows a flag that only ever reads one way.
+  number negated and every flag flipped, then each flag set alone. Every number
+  and string has a value of its own, spread over all its bytes, and setting each
+  flag alone tells the flags apart. So reading the wrong field, or the wrong
+  width, shows in every field, and so does a flag that only ever reads one way.
 - **The replay:** then each line of each [trace](../traces/) given: its changes
   to the game's values, over all the values before. A value a trace doesn't
   record keeps the one it had.
 
 The live check catches layout mistakes whatever traces there are. The replay
-adds the values only real play produces, and will check the splitting logic.
+adds the values only real play produces.
 
 So a pass rests on the game's own runtime and one comparison per update, with no
 stand-in for the game. It checks:
@@ -31,16 +32,16 @@ stand-in for the game. It checks:
 - finding `Celeste.Instance`: the signature, the store into its slot, and the
   title, which tells XNA and FNA apart;
 - every offset and pointer size `memory.rs` reads through;
-- reading .NET strings, numbers and flags: the probe's distinctive values and
-  their flipped ones, and the values real play produces, such as empty strings;
+- reading .NET strings, numbers and flags: the live check's distinctive values,
+  and the values real play produces, such as empty strings;
 - attaching to the game's process, on each OS.
 
 The auto splitter runs on livesplit-core's own `Timer`, behind the runtime's
 `Timer` trait, as in livesplit-core's own auto splitting, and both are pinned to
 one revision in `Cargo.toml`. The harness records the debug variables the auto
 splitter sets and what it logs. It updates the runtime by hand: until the auto
-splitter reports, then once for the flipped values, and once per line of each
-trace. A runtime updated by hand has no watchdog of its own, so a thread
+splitter reports, then once for each of the live check's other sets of values,
+and once per line of each trace. A runtime updated by hand has no watchdog of its own, so a thread
 interrupts any update that runs past the timeout.
 
 ## In CI
@@ -64,17 +65,21 @@ It adds `--replay` to the command. Without traces, it only runs the live check.
 It prints `ok` for the live check and for each trace, or the differences and the
 auto splitter's log, and exits with 1 if they differ. If the probe fails, stops
 answering, or doesn't exit once the harness is done, it prints the probe's log.
+A probe that doesn't exit is killed: on Linux and macOS, that's the `xvfb-run`
+or `sudo` in front of it, so a probe that hangs keeps running.
 Options:
 
 - `--wasm FILE`: the auto splitter (default: the release build in
   `autosplitter/`).
 - `--timeout SECONDS`: how long to wait for the probe's checks, then for the auto
   splitter to report, then for each answer from the probe and each update of the
-  auto splitter, and at the end, for the probe to exit (default: 120).
+  auto splitter, and at the end, for the probe to exit, which after an error
+  gets at most 5 s (default: 120).
 
 On Linux, the probe is the harness's descendant, whose memory Yama lets it read.
-On macOS, reading another process's memory needs root: run the harness with
-`sudo`, and the probe as yourself, with `sudo -u <you>` in its command.
+On macOS, reading another process's memory needs root: build the harness, run
+`sudo target/release/harness replay ...`, and put `sudo -u <you>` before the
+probe's command, so that it runs as you, as players run the game.
 
 ## What it doesn't check
 

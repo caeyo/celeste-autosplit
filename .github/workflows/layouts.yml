@@ -35,6 +35,8 @@ env:
   GAME_FILES_REPO: caeyo/celeste-autosplit-gamefiles
   GAME_FILES_TAG: gamefiles-v1
   PROBE_BUILD: tools/probe/bin/Release/net45
+  # The screen Xvfb gives FNA's window, on Linux.
+  XVFB_SCREEN: '-screen 0 1280x720x24'
 
 defaults:
   run:
@@ -151,7 +153,7 @@ jobs:
           mv Celeste.exe Celeste.exe.config real/
           cp "$GITHUB_WORKSPACE/$PROBE_BUILD/Probe.exe" Celeste.exe
           chmod +x Celeste Celeste.bin.x86_64
-          xvfb-run -a -s '-screen 0 1280x720x24' ./Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
+          xvfb-run -a -s "$XVFB_SCREEN" ./Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
       # MacOS/Celeste is a MonoKickstart that runs Resources/Celeste.exe with the game's own
       # Mono.
@@ -176,11 +178,11 @@ jobs:
           cp "$RUNNER_TEMP/layouts/$FLAVOUR.rs" layouts/
           (cd autosplitter && cargo b --release --locked)
 
-      # The harness starts the probe again, the same way, attaches the auto splitter to it,
-      # and runs the live check, then replays every trace. On Linux, the probe is then the
+      # The harness starts the probe again, as the game, attaches the auto splitter to it, and
+      # runs the live check, then replays every trace. On Linux, the probe is then the
       # harness's descendant, whose memory Yama lets it read. On macOS, reading another
-      # process's memory needs root, so the harness runs as root, and starts the probe as
-      # the normal user.
+      # process's memory needs root, so the harness runs as root, and starts the probe as the
+      # normal user, as players run the game.
       - name: Live check and replay
         timeout-minutes: 5
         run: |
@@ -190,9 +192,12 @@ jobs:
             Windows)
               "$harness" replay traces/*.jsonl -- "$game/Celeste.exe" --game real/Celeste.exe ;;
             Linux)
-              "$harness" replay traces/*.jsonl -- xvfb-run -a -s '-screen 0 1280x720x24' "$game/Celeste" --game real/Celeste.exe ;;
+              "$harness" replay traces/*.jsonl -- xvfb-run -a -s "$XVFB_SCREEN" "$game/Celeste" --game real/Celeste.exe ;;
             macOS)
               sudo "$harness" replay traces/*.jsonl -- sudo -u "$(id -un)" "$game/Celeste.app/Contents/MacOS/Celeste" --game real/Celeste.exe ;;
+            *)
+              echo "::error::No way to start the probe on $RUNNER_OS."
+              exit 1 ;;
           esac
 
       # A difference is a hand edit, or a change to the probe (its manifest or its output)
@@ -268,5 +273,5 @@ jobs:
             echo "Updated the open pull request from $BRANCH."
           else
             gh pr create --base "$BASE" --head "$BRANCH" --title "Regenerate layouts" \
-              --body "Measured by the probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code. The auto splitter, built with the regenerated layout, reported the distinctive values the probe wrote into the game, and the same values flipped, in the live check, then every trace's values as the probe replayed them."
+              --body "Measured by the probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code. The auto splitter, built with the regenerated layout, reported the distinctive values the probe wrote into the game, the same values flipped, and each flag set alone, in the live check, then every trace's values as the harness replayed them through the probe."
           fi
