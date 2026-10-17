@@ -45,10 +45,14 @@ jobs:
           key: livesplit-${{ hashFiles('component/Directory.Build.props') }}
 
       - name: Install Rust
-        uses: hecrj/setup-rust-action@v2
+        uses: dtolnay/rust-toolchain@stable
         with:
-          rust-version: stable
           targets: wasm32-unknown-unknown
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: autosplitter
 
       # Before the solution build, which copies the wasm module next to the tests.
       - name: Build wasm module
