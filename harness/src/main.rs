@@ -70,6 +70,8 @@ const REPORTED: &[(&str, &str)] = &[
     ("AutoSplitterInfo.FileStrawberries", "Strawberries"),
     ("AutoSplitterInfo.FileCassettes", "Cassettes"),
     ("AutoSplitterInfo.FileHearts", "Hearts"),
+    ("Time", "Save Time"),
+    ("DebugMode", "Save Debug Mode"),
 ];
 
 struct Options {

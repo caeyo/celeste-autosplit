@@ -77,6 +77,10 @@ fn set_debug_info(state: &memory::GameState, process: &Process) {
     if let Some(v) = state.file_active(process) {
         asr::timer::set_variable_int("File Active", v as i32);
     }
+    if let Some(Some(save)) = state.save(process) {
+        asr::timer::set_variable("Save Time", &save.time.to_string());
+        asr::timer::set_variable_int("Save Debug Mode", save.debug_mode as i32);
+    }
 }
 
 async fn main() {
@@ -87,10 +91,11 @@ async fn main() {
 
         process
             .until_closes(async {
-                let state = retry(|| memory::init(&process)).await;
+                let mut state = retry(|| memory::init(&process)).await;
                 asr::print_message("Init OK");
 
                 loop {
+                    state.update(&process);
                     set_debug_info(&state, &process);
                     next_tick().await;
                 }
