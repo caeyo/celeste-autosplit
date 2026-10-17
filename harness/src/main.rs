@@ -6,8 +6,9 @@
 //! the values the game holds:
 //!
 //! - the live check: the probe's values, then the same values with every number negated and every
-//!   flag flipped, then each flag set alone, which the probe writes for the harness. So reading the
-//!   wrong field, or the wrong width, shows in every field;
+//!   flag flipped, then each flag set alone, then each root the probe set up null and back, which
+//!   the probe writes for the harness. So reading the wrong field, or the wrong width, shows in
+//!   every field;
 //! - the replay: then, for each line of each trace given, the probe writes the line's values into
 //!   the game, and the harness updates the auto splitter once.
 //!
@@ -190,7 +191,8 @@ fn run(options: &Options) -> Result<bool> {
 
 /// The live check: once the auto splitter has found the game, it must report the probe's values,
 /// then the same values with every number negated and every flag flipped, then each flag set
-/// alone. Then the replay of each trace, one line at a time.
+/// alone, then each root the probe set up null and back. Then the replay of each trace, one line
+/// at a time.
 fn check(
     probe: &mut Probe,
     compiled: &CompiledAutoSplitter,

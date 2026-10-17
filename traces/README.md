@@ -44,14 +44,22 @@ versions the trace was recorded with:
 ```
 
 Then there's a line for each update of the game while the TAS plays, from the state
-before its first frame to the state after its last. Each holds the values the game
-sets at the start of that update, from the state the previous update left, which an
-auto splitter reads until the next. It has:
+before its first frame to the state after its last. Each holds the values an auto
+splitter reads after that update, until the next. It has:
 
 - `frame`: the update's number, from 0.
-- `roots`: the game's `AutoSplitterInfo`, every field of it, by root and path as
-  the [probe](../tools/probe/README.md#the-manifest) names them: strings, numbers
-  and booleans.
+- `roots`: by root and path as the
+  [probe](../tools/probe/README.md#the-manifest) names them, as strings, numbers,
+  booleans, or null for no string:
+  - `Celeste.Celeste::Instance`: the game's `AutoSplitterInfo`, every field of
+    it, which the game sets at the start of the update, from the state the
+    previous update left.
+  - `Celeste.SaveData::Instance`: the save's `Time`, `DebugMode` and `Version`,
+    as the update leaves them, or null while there's no save. A save that
+    appears holds all three, as the new object it is. The game copies the save's
+    time into `AutoSplitterInfo.FileTime` at the start of the next update, so
+    the save's leads it by an update, and a new file's save appears an update
+    before `AutoSplitterInfo` and Everest show it.
 - `everest`: Everest's own values, named after its struct's fields (see
   [`layouts/everest.rs`](../layouts/everest.rs)): each string pointer's string, or
   null for none, and its flags as numbers. Its header, which doesn't change, isn't
@@ -62,8 +70,8 @@ holds them all. A line without changes has only its `frame`:
 
 ```json
 {"frame":430}
-{"frame":431,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.Chapter":0,"AutoSplitterInfo.Mode":0,"AutoSplitterInfo.Level":"0","AutoSplitterInfo.TimerActive":true,"AutoSplitterInfo.ChapterStarted":true}},"everest":{"LevelSetStrPtr":"Celeste","ChapterSIDStrPtr":"Celeste/0-Intro","ChapterID":0,"ChapterMode":0,"RoomNameStrPtr":"0","ChapterFlags":2147483649}}
-{"frame":432,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.FileTime":170000}},"everest":{"FileTime":170000}}
+{"frame":431,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.Chapter":0,"AutoSplitterInfo.Mode":0,"AutoSplitterInfo.Level":"0","AutoSplitterInfo.TimerActive":true,"AutoSplitterInfo.ChapterStarted":true},"Celeste.SaveData::Instance":{"Time":170000}},"everest":{"LevelSetStrPtr":"Celeste","ChapterSIDStrPtr":"Celeste/0-Intro","ChapterID":0,"ChapterMode":0,"RoomNameStrPtr":"0","ChapterFlags":2147483649}}
+{"frame":432,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.FileTime":170000},"Celeste.SaveData::Instance":{"Time":340000}},"everest":{"FileTime":170000}}
 ```
 
 Times are in ticks of 100 ns. The game adds 17 ms, 170,000 ticks, to them each

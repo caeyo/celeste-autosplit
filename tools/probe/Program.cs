@@ -334,6 +334,8 @@ namespace Probe
         {
             // Run the class constructors first, as the game has by the time it runs the anchor:
             // the JIT may compile static accesses differently before a class is initialized.
+            // SaveData has none, so it doesn't matter that the game may not have initialized it
+            // when it first runs AutoSplitterInfo.Update.
             RuntimeHelpers.RunClassConstructor(root.Field.DeclaringType.TypeHandle);
             RuntimeHelpers.RunClassConstructor(root.Anchor.DeclaringType.TypeHandle);
             ulong slot = Memory.StaticFieldAddress(root.Field);

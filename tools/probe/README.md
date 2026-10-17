@@ -27,7 +27,12 @@ In order, it:
    the earliest reference pattern match after it must hold the static slot's
    address, and end within the window that `memory.rs` searches;
 4. constructs the game (`new Celeste()`), which sets the game's version that
-   the layout records, and finds the object that holds each path's last field;
+   the layout records, and finds the object that holds each path's last field.
+   A root the game leaves null until later, as it does `SaveData.Instance`
+   until a file starts, gets an uninitialized object of the probe's own, so
+   that the probe can write values into it. The probe's save gets the game's
+   version, as the game gives a save when it saves it, since `memory.rs`
+   checks it;
 5. prints the layout, and writes it if `--out` is given;
 6. prints `probe: ok`. With `--replay`, it then writes distinctive values into
    the game, and takes values to write: see [Replay mode](#replay-mode).
@@ -65,7 +70,9 @@ static field that the auto splitter finds through machine code:
   Each name is looked up in the previous field's type, or its nearest base
   class with that field. A path only goes through objects of concrete classes,
   and ends in a `string`, `bool`, `int` or `long`, which the probe can write for
-  the harness to check.
+  the harness to check. The paths of a root the game leaves null until later
+  are single fields of its object, since the probe's object has nothing in its
+  fields.
 
 To add a root, add it without signatures first. The probe then prints the
 anchor's code and where the field's address appears in it, and stops. Write
@@ -77,14 +84,23 @@ With `--replay`, once every check has passed, the probe writes values into the
 game, for the [harness](../../harness/). First, it writes distinctive values into
 every number and flag, and into strings that are still null: every number and
 string gets a value of its own, and the harness tells the flags apart by setting
-each alone. The title keeps "Celeste", which the auto splitter checks for. It
-prints `probe: values`, and as JSON on one line, its flavour and the values the
-paths hold, keyed by root and then path. Then it reads sets of values from its
-standard input, until its input ends:
+each alone. The title keeps "Celeste", and the save its version, which the auto
+splitter checks. It prints `probe: values`, and as JSON on one line, its
+flavour, the values the paths hold, keyed by root and then path, and the roots
+it set up:
 
-- a `path=value` line per path, with the value read as the path's type: `true`
-  or `false`, a whole number, or for a string, the rest of the line;
-- an empty line at the end of each set.
+```json
+{"flavour":"windows-xna","roots":{"Celeste.Celeste::Instance":{"Title":"Celeste",...},"Celeste.SaveData::Instance":{"Time":1157442765409226768,"DebugMode":true,"Version":"1.4.0.0"}},"setUp":["Celeste.SaveData::Instance"]}
+```
+
+Then it reads sets of lines from its standard input, until its input ends, with
+an empty line at the end of each set:
+
+- `root=null` stores null in the root's static, and `root=object` stores the
+  root's object in it again;
+- `path=value` writes a value through the path, read as the path's type: `true`
+  or `false`, a whole number, or for a string, the string in double quotes,
+  taken as it is between them, or `null`.
 
 It writes each set into the game through reflection, then prints
 `probe: written`. A path is named without its root, so the replay fails if two
