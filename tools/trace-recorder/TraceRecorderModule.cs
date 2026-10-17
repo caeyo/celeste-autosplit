@@ -1,5 +1,6 @@
 using Celeste;
 using Celeste.Mod;
+using Microsoft.Xna.Framework;
 using Monocle;
 using MonoMod.ModInterop;
 using System;
@@ -23,8 +24,10 @@ public class TraceRecorderModule : EverestModule
     // How CelesteTAS writes times: under an hour, and from an hour.
     private static readonly string[] TimeFormats = [@"m\:ss\.fff", @"h\:mm\:ss\.fff"];
 
-    // The probe's name for the root that the game's AutoSplitterInfo is read from.
+    // The probe's names for the roots: the one the game's AutoSplitterInfo is read from, and the
+    // save's.
     private const string Root = "Celeste.Celeste::Instance";
+    private const string SaveRoot = "Celeste.SaveData::Instance";
 
     // Every field of the game's AutoSplitterInfo, in the order it declares them.
     private static readonly FieldInfo[] InfoFields = typeof(AutoSplitterInfo)
@@ -38,9 +41,16 @@ public class TraceRecorderModule : EverestModule
     private int frame;
     private int updatesWithoutTas;
     private ulong lastFrameCounter;
-    // The values last recorded.
+    // The values last recorded. The save's are cleared when it becomes null, so that a save that
+    // appears is recorded whole, as the new object it is.
     private readonly Dictionary<string, object?> vanilla = new();
+    private readonly Dictionary<string, object?> save = new();
     private readonly Dictionary<string, object?> everest = new();
+    // Whether the save was last recorded as null, or null before the first line.
+    private bool? saveNull;
+    // The changes of the update that's running, until it ends: by root, and Everest's.
+    private Dictionary<string, object?>? pendingRoots;
+    private Dictionary<string, object?>? pendingEverest;
     // The file's time when the TAS's first level began, and the last recorded.
     private long? startFileTime;
     private long fileTime;
@@ -56,7 +66,11 @@ public class TraceRecorderModule : EverestModule
         return true;
     }
 
-    public override void Load() => AutoSplitter.OnUpdateInfo += Record;
+    public override void Load()
+    {
+        AutoSplitter.OnUpdateInfo += Record;
+        On.Celeste.Celeste.Update += RecordSave;
+    }
 
     // Every mod has loaded by now, so CelesteTAS has registered its API.
     public override void Initialize()
@@ -84,11 +98,14 @@ public class TraceRecorderModule : EverestModule
     public override void Unload()
     {
         AutoSplitter.OnUpdateInfo -= Record;
+        On.Celeste.Celeste.Update -= RecordSave;
         trace?.Dispose();
     }
 
     // Everest raises this at the start of each update of the game: right after the game updates
     // its AutoSplitterInfo, and Everest its own values, from the state the previous update left.
+    // They hold until the next update, so they're the line's. The save changes during the update,
+    // so RecordSave adds it at the end, and writes the line.
     private void Record(ref AutoSplitter.CoreAutoSplitterInfo info, Func<string, nint> stringWriter)
     {
         if (traceFile == null)
@@ -120,6 +137,11 @@ public class TraceRecorderModule : EverestModule
             Fail($"{Engine.FrameCounter - lastFrameCounter - 1} updates before frame {frame} weren't recorded: is the TAS fast-forwarding?");
             return;
         }
+        else if (pendingRoots != null)
+        {
+            Fail($"frame {frame - 1}'s update didn't end before the next began");
+            return;
+        }
         lastFrameCounter = Engine.FrameCounter;
 
         AutoSplitterInfo game = Celeste.Celeste.Instance.AutoSplitterInfo;
@@ -129,18 +151,62 @@ public class TraceRecorderModule : EverestModule
         }
         fileTime = game.FileTime;
 
-        var line = new Dictionary<string, object> { ["frame"] = frame++ };
+        pendingRoots = new Dictionary<string, object?>();
         Dictionary<string, object?> vanillaChanges = Changes(vanilla, InfoFields.ToDictionary(field => "AutoSplitterInfo." + field.Name, field => field.GetValue(game)));
         if (vanillaChanges.Count > 0)
         {
-            line["roots"] = new Dictionary<string, object> { [Root] = vanillaChanges };
+            pendingRoots[Root] = vanillaChanges;
         }
-        Dictionary<string, object?> everestChanges = Changes(everest, EverestValues(info));
-        if (everestChanges.Count > 0)
+        pendingEverest = Changes(everest, EverestValues(info));
+    }
+
+    // At the end of each update, the save is as an auto splitter reads it until the next update.
+    // The save that a new file starts appears in the update that starts it, which is one update
+    // before AutoSplitterInfo or Everest show it.
+    private void RecordSave(On.Celeste.Celeste.orig_Update orig, Celeste.Celeste self, GameTime gameTime)
+    {
+        orig(self, gameTime);
+        if (pendingRoots == null)
         {
-            line["everest"] = everestChanges;
+            return;
+        }
+        SaveData? data = SaveData.Instance;
+        if (data == null)
+        {
+            if (saveNull != true)
+            {
+                pendingRoots[SaveRoot] = null;
+                save.Clear();
+            }
+            saveNull = true;
+        }
+        else
+        {
+            saveNull = false;
+            Dictionary<string, object?> saveChanges = Changes(save, new Dictionary<string, object?>
+            {
+                [nameof(data.Time)] = data.Time,
+                [nameof(data.DebugMode)] = data.DebugMode,
+                [nameof(data.Version)] = data.Version,
+            });
+            if (saveChanges.Count > 0)
+            {
+                pendingRoots[SaveRoot] = saveChanges;
+            }
+        }
+
+        var line = new Dictionary<string, object> { ["frame"] = frame++ };
+        if (pendingRoots.Count > 0)
+        {
+            line["roots"] = pendingRoots;
+        }
+        if (pendingEverest!.Count > 0)
+        {
+            line["everest"] = pendingEverest;
         }
         trace!.WriteLine(JsonSerializer.Serialize(line));
+        pendingRoots = null;
+        pendingEverest = null;
     }
 
     private void Start()
@@ -203,6 +269,7 @@ public class TraceRecorderModule : EverestModule
         trace?.Dispose();
         trace = null;
         traceFile = null;
+        pendingRoots = null;
         Everest.Events.Celeste.OnShutdown += () => Environment.Exit(code);
         Engine.Instance.Exit();
     }
