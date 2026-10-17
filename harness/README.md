@@ -4,22 +4,26 @@ The live check and the replay: they check the auto splitter,
 `celeste_autosplit.wasm`, against the real game. It's a native program, outside
 the wasm build.
 
-The harness starts the [layout probe](../tools/layout-probe/) as the game, in the
-probe's replay mode. The probe constructs the real game, in the game's own
-runtime. Through .NET's own reflection, it sets every number and flag the auto
-splitter reads, and every string that's still null, and reads each one back raw,
-as the auto splitter does. Once every check has passed, it sends the harness the
-values the game holds. The probe runs as the game, so the auto splitter, which
-the harness loads, finds the probe's process by the game's name. Then:
+The harness starts the [probe](../tools/probe/) as the game, in the probe's
+replay mode. The probe constructs the real game, in the game's own runtime.
+Through .NET's own reflection, it writes distinctive values into every number
+and flag the auto splitter reads, and every string that's still null, and sends
+the harness those values. The probe runs as the game, so the auto splitter,
+which the harness loads, finds the probe's process by the game's name. From
+then on, the probe writes each set of values the harness sends into the game,
+through reflection, and the harness updates the auto splitter once. Its debug
+variables must then be exactly the values the game holds:
 
-- **The live check:** the auto splitter's debug variables must be exactly the
-  probe's values.
-- **The replay:** for each line of each [trace](../traces/) given, the harness
-  sends the probe the line's changes to the game's values. Once the probe has
-  written them into the game, through reflection, the harness updates the auto
-  splitter once. Its debug variables must be exactly the values the game holds:
-  the probe's, with every line so far over them. A value a trace doesn't record
-  keeps the one it had.
+- **The live check:** first the probe's values, then the same values with every
+  number negated and every flag flipped. Every field has a value of its own,
+  spread over all its bytes, so reading the wrong field, or the wrong width,
+  shows. Flipping shows a flag that only ever reads one way.
+- **The replay:** then each line of each [trace](../traces/) given: its changes
+  to the game's values, over all the values before. A value a trace doesn't
+  record keeps the one it had.
+
+The live check catches layout mistakes whatever traces there are. The replay
+adds the values only real play produces, and will check the splitting logic.
 
 So a pass rests on the game's own runtime and one comparison per update, with no
 stand-in for the game. It checks:
@@ -27,17 +31,17 @@ stand-in for the game. It checks:
 - finding `Celeste.Instance`: the signature, the store into its slot, and the
   title, which tells XNA and FNA apart;
 - every offset and pointer size `memory.rs` reads through;
-- reading .NET strings, numbers and flags: the probe's distinctive values, and
-  the values real play produces, such as empty strings;
+- reading .NET strings, numbers and flags: the probe's distinctive values and
+  their flipped ones, and the values real play produces, such as empty strings;
 - attaching to the game's process, on each OS.
 
 The auto splitter runs on livesplit-core's own `Timer`, behind the runtime's
 `Timer` trait, as in livesplit-core's own auto splitting, and both are pinned to
 one revision in `Cargo.toml`. The harness records the debug variables the auto
 splitter sets and what it logs. It updates the runtime by hand: until the auto
-splitter reports, then once per line of each trace. A runtime updated by hand
-has no watchdog of its own, so a thread interrupts any update that runs past the
-timeout.
+splitter reports, then once for the flipped values, and once per line of each
+trace. A runtime updated by hand has no watchdog of its own, so a thread
+interrupts any update that runs past the timeout.
 
 ## In CI
 

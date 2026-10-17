@@ -1,13 +1,15 @@
 //! The live check and the replay: the auto splitter, `celeste_autosplit.wasm`, against the real
-//! game. The harness starts a layout probe as the game, in its replay mode. The probe constructs
-//! the game in the game's own runtime, sets its values through .NET's reflection, and once every
-//! check has passed, sends the harness those values. The auto splitter runs on livesplit-core's
-//! own timer, attached to the probe's process:
+//! game. The harness starts the probe as the game, in its replay mode. The probe constructs the
+//! game in the game's own runtime, writes distinctive values into it through .NET's reflection,
+//! and sends the harness those values. The auto splitter runs on livesplit-core's own timer,
+//! attached to the probe's process, and after each update, its debug variables must be exactly
+//! the values the game holds:
 //!
-//! - the live check: it must report exactly the probe's values in its debug variables;
+//! - the live check: the probe's values, then the same values with every number negated and every
+//!   flag flipped, which the probe writes for the harness. Every field has a value of its own, so
+//!   reading the wrong field, or the wrong width, shows;
 //! - the replay: then, for each line of each trace given, the probe writes the line's values into
-//!   the game, the harness updates the auto splitter once, and it must report every value the
-//!   game holds.
+//!   the game, and the harness updates the auto splitter once.
 //!
 //! Usage: harness replay [--wasm FILE] [--timeout SECONDS] [TRACE...] -- COMMAND...
 //!
@@ -202,22 +204,27 @@ fn check(
     if !problems.is_empty() {
         return failed("live check: FAILED", &problems, &module);
     }
+    // So that each flag is seen both set and clear.
+    let changes = flipped(&held);
+    let problems = replay_frame(probe, &module, &mut held, &changes)
+        .context("the live check's flipped values")?;
+    if !problems.is_empty() {
+        return failed(
+            "live check: FAILED, with the values flipped",
+            &problems,
+            &module,
+        );
+    }
     println!(
-        "live check: ok, the auto splitter reports the {} values the probe holds",
+        "live check: ok, the auto splitter reports the {} values the probe holds, and flipped",
         read.len()
     );
 
     // The game keeps each value until the next line that changes it.
     for (trace, file) in traces.iter().zip(&options.traces) {
         for (frame, changes) in trace.iter().enumerate() {
-            probe
-                .write(changes)
+            let problems = replay_frame(probe, &module, &mut held, changes)
                 .with_context(|| format!("frame {frame} of {}", file.display()))?;
-            held.extend(changes.clone());
-            let problems = match module.update() {
-                Ok(read) => differences(&expected(&held)?, &read),
-                Err(problem) => vec![problem],
-            };
             if !problems.is_empty() {
                 let heading = format!("replay: FAILED at frame {frame} of {}", file.display());
                 return failed(&heading, &problems, &module);
@@ -230,6 +237,35 @@ fn check(
         );
     }
     Ok(true)
+}
+
+/// Has the probe write the changes into the game, which then holds them, updates the auto splitter
+/// once, and returns how what it reports differs from every value the game holds.
+fn replay_frame(
+    probe: &mut Probe,
+    module: &Module,
+    held: &mut BTreeMap<String, Value>,
+    changes: &BTreeMap<String, Value>,
+) -> Result<Vec<String>> {
+    probe.write(changes)?;
+    held.extend(changes.clone());
+    Ok(match module.update() {
+        Ok(read) => differences(&expected(held)?, &read),
+        Err(problem) => vec![problem],
+    })
+}
+
+/// The values, with every number negated and every flag flipped. Strings are left out: the probe's
+/// can't be matched by chance.
+fn flipped(held: &BTreeMap<String, Value>) -> BTreeMap<String, Value> {
+    let flip = |value: &Value| match value {
+        Value::Bool(flag) => Some(Value::Bool(!flag)),
+        Value::Number(number) => Some(number.as_i64()?.checked_neg()?.into()),
+        _ => None,
+    };
+    held.iter()
+        .filter_map(|(path, value)| Some((path.clone(), flip(value)?)))
+        .collect()
 }
 
 /// The auto splitter, on livesplit-core's timer, updated by hand. A runtime updated by hand has
@@ -305,7 +341,7 @@ fn read_trace(file: &Path) -> Result<Trace> {
     let mut lines = text.lines().enumerate();
     lines.next().context("no header")?;
     let trace = lines
-        .map(|(i, line)| frame(line, i - 1).with_context(|| format!("line {}", i + 1)))
+        .map(|(i, line)| read_frame(line, i - 1).with_context(|| format!("line {}", i + 1)))
         .collect::<Result<Trace>>()?;
     if trace.is_empty() {
         bail!("no frames");
@@ -314,7 +350,7 @@ fn read_trace(file: &Path) -> Result<Trace> {
 }
 
 /// A frame's changes to the game's values, from its line, which has to hold the frame's number.
-fn frame(line: &str, number: usize) -> Result<BTreeMap<String, Value>> {
+fn read_frame(line: &str, number: usize) -> Result<BTreeMap<String, Value>> {
     let line: serde_json::Map<String, Value> = serde_json::from_str(line)?;
     if line.get("frame") != Some(&Value::from(number)) {
         bail!("expected frame {number}");

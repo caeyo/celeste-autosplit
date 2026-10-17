@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
-namespace LayoutProbe
+namespace Probe
 {
     /// <summary>A manifest root, resolved, and what the probe found for it.</summary>
     internal sealed class Root
@@ -17,18 +17,8 @@ namespace LayoutProbe
         public Dictionary<string, Signature> Signatures;
         public FieldPath[] Paths;
 
-        /// <summary>The static field's address.</summary>
-        public ulong Slot;
-        /// <summary>The anchor's compiled code.</summary>
-        public ulong Code;
-        /// <summary>The flavour's signature.</summary>
+        /// <summary>The flavour's signature, once it has matched the anchor's code.</summary>
         public Signature Signature;
-        /// <summary>Where the signature matches in the code.</summary>
-        public int Match;
-        /// <summary>The earliest store pattern match after the signature.</summary>
-        public Pattern Store;
-        /// <summary>Where it matches in the code.</summary>
-        public int StoreMatch;
     }
 
     /// <summary>A manifest path from a root's object: an instance field per hop, and its measured offset.</summary>

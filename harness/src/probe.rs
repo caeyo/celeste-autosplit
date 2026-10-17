@@ -1,10 +1,10 @@
-//! The layout probe, started as the game in its replay mode, and the lines it exchanges with the
-//! harness. Once every check has passed, the probe prints `probe: ok`, then `probe: values` and the
-//! values its paths hold, as JSON. Then it reads sets of values, a `path=value` line per path and
-//! an empty line at the end of each set. It writes each set into the game, through the paths it
-//! measured, and answers `probe: written`, until its input ends. It prints `probe: failed` if a
-//! check or the replay fails. Its other lines, and what it prints on its standard error, are its
-//! log, which is shown if anything goes wrong with it.
+//! The probe, started as the game in its replay mode, and the lines it exchanges with the harness.
+//! Once every check has passed, the probe prints `probe: ok`. It writes distinctive values into
+//! the game, and prints `probe: values` and the values its paths hold, as JSON. Then it reads sets
+//! of values, a `path=value` line per path and an empty line at the end of each set. It writes each
+//! set into the game, through the same paths, and answers `probe: written`, until its input ends.
+//! It prints `probe: failed` if a check or the replay fails. Its other lines, and what it prints
+//! on its standard error, are its log, which is shown if anything goes wrong with it.
 
 use std::{
     collections::BTreeMap,

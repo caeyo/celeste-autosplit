@@ -49,7 +49,7 @@ auto splitter reads until the next. It has:
 
 - `frame`: the update's number, from 0.
 - `roots`: the game's `AutoSplitterInfo`, every field of it, by root and path as
-  the [layout probe](../tools/layout-probe/README.md#the-manifest) names them:
+  the [probe](../tools/probe/README.md#the-manifest) names them:
   strings, numbers and booleans.
 - `everest`: Everest's own values, named after its struct's fields (see
   [`layouts/everest.rs`](../layouts/everest.rs)): each string pointer's string, or

@@ -1,11 +1,11 @@
 name: Layouts
 
-# Measures each vanilla flavour's memory layout with the layout probe, inside the
-# flavour's own runtime next to the real game files, as layouts/<flavour>.rs. Then the
-# auto splitter is built with it, and the harness runs it against the game, which the
-# probe constructs again: the live check, then the replay of every trace. On dispatch, a
-# last job opens a pull request into the dispatched branch with the regenerated layouts.
-# On a pull request, each committed layout must be the one the probe writes.
+# Measures each vanilla flavour's memory layout with the probe, inside the flavour's own
+# runtime next to the real game files, as layouts/<flavour>.rs. Then the auto splitter is
+# built with it, and the harness runs it against the game, which the probe constructs
+# again: the live check, then the replay of every trace. On dispatch, a last job opens a
+# pull request into the dispatched branch with the regenerated layouts. On a pull request,
+# each committed layout must be the one the probe writes.
 #
 # The game files are release assets of a private repository, fetched with the
 # GAME_FILES_TOKEN secret. They never go into caches or artifacts (only the measured
@@ -20,7 +20,7 @@ on:
       - 'autosplitter/**'
       - 'layouts/**'
       - 'harness/**'
-      - 'tools/layout-probe/**'
+      - 'tools/probe/**'
       - 'traces/**'
       - '.github/workflows/layouts.yml'
 
@@ -34,7 +34,7 @@ concurrency:
 env:
   GAME_FILES_REPO: caeyo/celeste-autosplit-gamefiles
   GAME_FILES_TAG: gamefiles-v1
-  PROBE_BUILD: tools/layout-probe/bin/Release/net45
+  PROBE_BUILD: tools/probe/bin/Release/net45
 
 defaults:
   run:
@@ -71,7 +71,7 @@ jobs:
           dotnet-version: '9.0.x'
 
       - name: Build probe
-        run: dotnet build tools/layout-probe -c Release
+        run: dotnet build tools/probe -c Release
 
       - name: Install Rust
         uses: hecrj/setup-rust-action@v2
@@ -135,7 +135,7 @@ jobs:
           mkdir real
           mv Celeste.exe real/
           [ ! -f Celeste.exe.config ] || mv Celeste.exe.config real/
-          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/Probe.exe" Celeste.exe
           ./Celeste.exe --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
       # The script runs Celeste.bin.x86_64, a MonoKickstart that runs Celeste.exe with the
@@ -149,7 +149,7 @@ jobs:
         run: |
           mkdir real
           mv Celeste.exe Celeste.exe.config real/
-          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Celeste.exe
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/Probe.exe" Celeste.exe
           chmod +x Celeste Celeste.bin.x86_64
           xvfb-run -a -s '-screen 0 1280x720x24' ./Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
@@ -162,7 +162,7 @@ jobs:
         run: |
           mkdir Resources/real
           mv Resources/Celeste.exe Resources/real/
-          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/LayoutProbe.exe" Resources/Celeste.exe
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/Probe.exe" Resources/Celeste.exe
           chmod +x MacOS/Celeste
           MacOS/Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
@@ -268,5 +268,5 @@ jobs:
             echo "Updated the open pull request from $BRANCH."
           else
             gh pr create --base "$BASE" --head "$BRANCH" --title "Regenerate layouts" \
-              --body "Measured by the layout probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code, and the probe read every path back raw through the slot. The auto splitter, built with the regenerated layout, reported the values the probe held, in the live check, and every trace's values as the probe replayed them."
+              --body "Measured by the probe in [this run]($RUN_URL), on every flavour in its matrix. Each flavour's hand-written signature and store matched its anchor's compiled code. The auto splitter, built with the regenerated layout, reported the distinctive values the probe wrote into the game, and the same values flipped, in the live check, then every trace's values as the probe replayed them."
           fi

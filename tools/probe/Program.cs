@@ -10,23 +10,25 @@ using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Text;
 
-namespace LayoutProbe
+namespace Probe
 {
     /// <summary>
     /// Measures the memory layout the auto splitter reads, inside the runtime of the game flavour
     /// it runs with, and writes it as Rust, &lt;flavour&gt;.rs, for the auto splitter's memory.rs.
-    /// Manifest.cs says what to measure. It has to run in the game's own runtime, from the game's
-    /// folder: 32-bit .NET Framework on Windows, and the Mono bundled with the game on Linux and
-    /// macOS, through the game's MonoKickstart launcher (which runs the .exe named after itself).
+    /// Manifest.cs says what to measure. Then it constructs the game, which the harness reads
+    /// through the auto splitter, in replay mode. It has to run in the game's own runtime, from
+    /// the game's folder: 32-bit .NET Framework on Windows, and the Mono bundled with the game on
+    /// Linux and macOS, through the game's MonoKickstart launcher (which runs the .exe named after
+    /// itself).
     ///
     /// Options:
     ///   --out DIR         writes DIR/&lt;flavour&gt;.rs once every check has passed.
     ///   --game PATH       the game's Celeste.exe, relative to the probe's directory (default:
     ///                     Celeste.exe next to the probe). Lets the probe itself be Celeste.exe,
     ///                     so its process has the game's name.
-    ///   --replay          once every check has passed, prints the values the paths hold, then
-    ///                     writes the values it's sent into the game, until its input ends: see
-    ///                     Replay. The harness starts the probe this way.
+    ///   --replay          once every check has passed, writes distinctive values into the game
+    ///                     and prints them, then writes the values it's sent, until its input
+    ///                     ends: see Replay. The harness starts the probe this way.
     ///
     /// The game's Linux launcher script changes directory first, so pass an absolute --out path.
     /// </summary>
@@ -48,8 +50,8 @@ namespace LayoutProbe
         private static Root[] roots;
         private static long stringLength;
         private static long stringChars;
-        /// <summary>Every path's check, once live validation has passed.</summary>
-        private static List<PathCheck> held;
+        /// <summary>Every path, once the game is constructed.</summary>
+        private static List<HeldPath> held;
 
         private static int Main(string[] args)
         {
@@ -60,7 +62,7 @@ namespace LayoutProbe
             catch (Exception e)
             {
                 Console.Error.WriteLine(e.Message);
-                Console.Error.WriteLine("usage: LayoutProbe.exe [--out DIR] [--game PATH] [--replay]");
+                Console.Error.WriteLine("usage: Probe.exe [--out DIR] [--game PATH] [--replay]");
                 return 2;
             }
 
@@ -70,13 +72,12 @@ namespace LayoutProbe
                 && Step("manifest", ResolveManifest)
                 && Step("layout", MeasureLayout)
                 && roots.All(root => Step("root " + root.Name, () => FindSlot(root)))
-                && Step("live validation", ValidateLive)
+                && Step("construction", Construct)
                 && Step("output", WriteLayout);
 
             Console.WriteLine();
             Console.WriteLine(ok ? "probe: ok" : "probe: failed");
-            // Only a probe that passed replays, so that the values it starts from have been read
-            // back raw.
+            // Only a probe that passed replays, so that the game it holds is the one it measured.
             if (ok && replay && !Step("replay", Replay))
             {
                 Console.WriteLine("probe: failed");
@@ -225,7 +226,7 @@ namespace LayoutProbe
             }
             if (type.IsValueType && type != typeof(bool) && type != typeof(int) && type != typeof(long))
             {
-                throw new ProbeException(name + " ends in a " + type + ", which the probe can't check yet: add a raw read and sample values for it");
+                throw new ProbeException(name + " ends in a " + type + ", which the probe can't write yet: add sample values and parsing for it");
             }
             Console.WriteLine("  {0} : {1}", name, Names.TypeName(type));
             return new FieldPath { Name = name, Fields = fields.ToArray() };
@@ -334,19 +335,19 @@ namespace LayoutProbe
             // the JIT may compile static accesses differently before a class is initialized.
             RuntimeHelpers.RunClassConstructor(root.Field.DeclaringType.TypeHandle);
             RuntimeHelpers.RunClassConstructor(root.Anchor.DeclaringType.TypeHandle);
-            root.Slot = Memory.StaticFieldAddress(root.Field);
-            Console.WriteLine("slot: 0x{0:x}", root.Slot);
+            ulong slot = Memory.StaticFieldAddress(root.Field);
+            Console.WriteLine("slot: 0x{0:x}", slot);
 
             // Once the method is compiled, both runtimes return its code here rather than a stub
             // that jumps to it. A stub would show in the dump, and the signature wouldn't match.
             RuntimeHelpers.PrepareMethod(root.Anchor.MethodHandle);
-            root.Code = Memory.ToAddress(root.Anchor.MethodHandle.GetFunctionPointer());
+            ulong address = Memory.ToAddress(root.Anchor.MethodHandle.GetFunctionPointer());
             // Printed for debugging only: it holds addresses that change from run to run.
-            byte[] code = Memory.ReadMapped(root.Code, AnchorCodeLength);
-            Console.WriteLine("anchor code at 0x{0:x} ({1} bytes read):", root.Code, code.Length);
+            byte[] code = Memory.ReadMapped(address, AnchorCodeLength);
+            Console.WriteLine("anchor code at 0x{0:x} ({1} bytes read):", address, code.Length);
             MachineCode.HexDump(code, Console.WriteLine);
 
-            List<SlotReference> references = MachineCode.FindSlotReferences(code, root.Slot);
+            List<SlotReference> references = MachineCode.FindSlotReferences(code, slot);
             Console.WriteLine("slot's address in the code: " + (references.Count == 0 ? "nowhere" : string.Join(", ", references.Select(r => r.ToString()).ToArray())));
             // Only now, so that a new root's first run prints the code to write its signature from.
             if (!root.Signatures.TryGetValue(flavour, out root.Signature))
@@ -359,48 +360,43 @@ namespace LayoutProbe
             {
                 throw new ProbeException(matches.Length == 0 ? "the signature doesn't match the anchor's code" : "the signature matches the anchor's code more than once");
             }
-            root.Match = matches[0];
 
             // The store is the earliest match of any store pattern after the signature, and must
             // hold the slot's address.
-            int after = root.Match + root.Signature.Code.Length;
+            int after = matches[0] + root.Signature.Code.Length;
             var store = root.Signature.Store
                 .Select(p => new { Pattern = p, Match = p.Matches(code, after).DefaultIfEmpty(-1).First() })
                 .Where(s => s.Match >= 0)
                 .OrderBy(s => s.Match)
                 .FirstOrDefault()
                 ?? throw new ProbeException("no store pattern matches after the signature");
-            root.Store = store.Pattern;
-            root.StoreMatch = store.Match;
-            Console.WriteLine("store {0}: the earliest match, at +0x{1:x}, {2} bytes after the signature", root.Store, root.StoreMatch, root.StoreMatch - after);
-            ulong slot = root.Store.Slot(code, root.StoreMatch);
-            if (slot != root.Slot)
+            Console.WriteLine("store {0}: the earliest match, at +0x{1:x}, {2} bytes after the signature", store.Pattern, store.Match, store.Match - after);
+            ulong stored = store.Pattern.Slot(code, store.Match);
+            if (stored != slot)
             {
-                throw new ProbeException("the store's address is 0x" + slot.ToString("x") + ", but the slot is at 0x" + root.Slot.ToString("x"));
+                throw new ProbeException("the store's address is 0x" + stored.ToString("x") + ", but the slot is at 0x" + slot.ToString("x"));
             }
             Console.WriteLine("the store's address is the slot's");
-            int end = root.StoreMatch + root.Store.Length - after;
+            int end = store.Match + store.Pattern.Length - after;
             if (end > Manifest.StoreWindow)
             {
                 throw new ProbeException("the store ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.StoreWindow + ": widen StoreWindow, in Manifest.cs");
             }
         }
 
-        private sealed class PathCheck
+        /// <summary>A path in the constructed game, with the object that holds its last field.</summary>
+        private sealed class HeldPath
         {
             public Root Root;
             public FieldPath Path;
-            /// <summary>The object holding the path's last field.</summary>
             public object Owner;
-            public bool Writable;
-            public int Number;
         }
 
         /// <summary>
-        /// Constructs the game for real, then reads every path back raw, the way the auto splitter
-        /// does: from the slot whose address the store after the signature holds.
+        /// Constructs the game for real, as the game's Main does, and finds the object that holds
+        /// each path's last field.
         /// </summary>
-        private static void ValidateLive()
+        private static void Construct()
         {
             // Main loads the settings before constructing the game, and the constructor reads
             // Settings.Instance.Fullscreen and VSync.
@@ -426,13 +422,10 @@ namespace LayoutProbe
             gameVersion = Names.InstanceField(celeste.GetType(), "Version").GetValue(celeste).ToString();
             Console.WriteLine("game version: " + gameVersion);
 
-            // Every number and flag gets distinctive values, so that a wrong offset can't read back
-            // one that happens to match. Strings get one only while null: the title keeps
-            // "Celeste", which the auto splitter checks for. Other objects keep theirs.
-            var checks = new List<PathCheck>();
+            held = new List<HeldPath>();
             foreach (Root root in roots)
             {
-                object value = root.Field.GetValue(null) ?? throw new ProbeException(root.Name + " is still null after new Celeste(), so it can't be read back");
+                object value = root.Field.GetValue(null) ?? throw new ProbeException(root.Name + " is still null after new Celeste(), so the auto splitter would have nothing to read: set it up in the probe first");
                 foreach (FieldPath path in root.Paths)
                 {
                     object owner = value;
@@ -440,148 +433,23 @@ namespace LayoutProbe
                     {
                         owner = field.GetValue(owner) ?? throw new ProbeException(path.Name + ": " + field.Name + " is null after new Celeste()");
                     }
-                    Type type = path.Last.FieldType;
-                    object current = path.Last.GetValue(owner);
-                    bool writable = type.IsValueType || current == null;
-                    if (writable && !type.IsValueType && type != typeof(string))
-                    {
-                        throw new ProbeException(path.Name + " is null after new Celeste(), and the probe can't make a " + type + " to read back");
-                    }
-                    checks.Add(new PathCheck { Root = root, Path = path, Owner = owner, Writable = writable, Number = checks.Count + 1 });
+                    held.Add(new HeldPath { Root = root, Path = path, Owner = owner });
                 }
             }
-
-            var mismatches = new List<string>();
-            for (int pass = 1; pass <= 2; pass++)
-            {
-                Console.WriteLine("pass {0}:", pass);
-                foreach (PathCheck check in checks.Where(c => c.Writable))
-                {
-                    check.Path.Last.SetValue(check.Owner, SampleValue(check.Path.Last.FieldType, check.Number, pass));
-                }
-                // Right after a collection, the few small allocations below won't start another.
-                // Another thread's could, but a moved object only makes a comparison fail, never
-                // pass wrongly.
-                GC.Collect();
-                foreach (Root root in roots)
-                {
-                    // The slot and the object in it are checked before anything is read through
-                    // them, so a wrong address fails here instead of crashing the process.
-                    ulong slot = SlotFromCode(root);
-                    if (slot != root.Slot)
-                    {
-                        Console.WriteLine("  {0}: the store's address is 0x{1:x}, but the slot is at 0x{2:x}", root.Name, slot, root.Slot);
-                        mismatches.Add(root.Name);
-                        continue;
-                    }
-                    ulong instance = Memory.ReadPointer(slot);
-                    ulong expected = Memory.AddressOf(root.Field.GetValue(null));
-                    if (instance != expected)
-                    {
-                        Console.WriteLine("  {0}: the slot holds 0x{1:x}, but the object is at 0x{2:x}", root.Name, instance, expected);
-                        mismatches.Add(root.Name);
-                        continue;
-                    }
-                    Console.WriteLine("  {0}: the store's address is the slot, which holds the object at 0x{1:x}", root.Name, instance);
-                    foreach (PathCheck check in checks.Where(c => c.Root == root))
-                    {
-                        object value = Expected(check);
-                        object raw = ReadPath(instance, check.Path);
-                        bool same = Equals(value, raw);
-                        Console.WriteLine("  {0} = {1}{2}", check.Path.Name, Describe(value), same ? "" : ", but reads " + Describe(raw) + " raw");
-                        if (!same)
-                        {
-                            mismatches.Add(check.Path.Name);
-                        }
-                    }
-                }
-            }
-            if (mismatches.Count > 0)
-            {
-                throw new ProbeException("raw reads disagree with reflection for " + string.Join(", ", mismatches.Distinct().ToArray()));
-            }
-            Console.WriteLine("every path reads back raw");
-            held = checks;
         }
 
         /// <summary>
-        /// A distinctive value for the n-th path. The second pass negates numbers and flips flags,
-        /// so each flag is seen both set and clear. Neighbouring flags differ, so two swapped
-        /// ones would show.
+        /// A distinctive value for the n-th path, so that reading the wrong field, or the wrong
+        /// width, can't give one that happens to match. Neighbouring flags differ, so two swapped
+        /// ones would show. The harness then negates the numbers and flips the flags, so that each
+        /// flag is seen both set and clear.
         /// </summary>
-        private static object SampleValue(Type type, int n, int pass)
+        private static object SampleValue(Type type, int n)
         {
-            int sign = pass == 1 ? 1 : -1;
-            if (type == typeof(string)) return "path " + n + " pass " + pass;
-            if (type == typeof(bool)) return (n + pass) % 2 == 0;
-            if (type == typeof(int)) return sign * n * 0x01010101;
-            if (type == typeof(long)) return sign * n * 0x0101010101010101L;
-            throw new ProbeException("no sample value for " + type);
-        }
-
-        /// <summary>The path's value as reflection sees it. Objects other than strings are compared by address.</summary>
-        private static object Expected(PathCheck check)
-        {
-            Type type = check.Path.Last.FieldType;
-            object value = check.Path.Last.GetValue(check.Owner);
-            return type.IsValueType || type == typeof(string) ? value : (object)Memory.AddressOf(value);
-        }
-
-        /// <summary>The slot's address, read raw from the store in the anchor's code.</summary>
-        private static ulong SlotFromCode(Root root) =>
-            root.Store.Slot(Memory.ReadMapped(root.Code + (ulong)root.StoreMatch, root.Store.Length), 0);
-
-        /// <summary>Reads a path raw from its root's object, through the measured offsets.</summary>
-        private static object ReadPath(ulong instance, FieldPath path)
-        {
-            ulong address = instance;
-            for (int i = 0; i < path.Fields.Length - 1; i++)
-            {
-                address = Memory.ReadPointer(address + (ulong)path.Offsets[i]);
-                if (address == 0)
-                {
-                    return null;
-                }
-            }
-            address += (ulong)path.Offsets.Last();
-            Type type = path.Last.FieldType;
-            if (type == typeof(string)) return ReadString(Memory.ReadPointer(address));
-            if (type == typeof(bool)) return Memory.ReadByte(address) != 0;
-            if (type == typeof(int)) return Memory.ReadInt32(address);
-            if (type == typeof(long)) return Memory.ReadInt64(address);
-            return Memory.ReadPointer(address);
-        }
-
-        /// <summary>Reads a string raw, through the measured offsets of its length and characters.</summary>
-        private static string ReadString(ulong address)
-        {
-            if (address == 0)
-            {
-                return null;
-            }
-            int length = Memory.ReadInt32(address + (ulong)stringLength);
-            if (length < 0 || length > 1024)
-            {
-                return "(a string of length " + length + ")";
-            }
-            var chars = new char[length];
-            for (int i = 0; i < length; i++)
-            {
-                chars[i] = Memory.ReadChar(address + (ulong)stringChars + (ulong)(2 * i));
-            }
-            return new string(chars);
-        }
-
-        private static string Describe(object value)
-        {
-            switch (value)
-            {
-                case null: return "null";
-                case string s: return "\"" + s + "\"";
-                case bool b: return b ? "true" : "false";
-                case ulong address: return "the object at 0x" + address.ToString("x");
-                default: return Convert.ToString(value, CultureInfo.InvariantCulture);
-            }
+            if (type == typeof(string)) return "path " + n;
+            if (type == typeof(bool)) return n % 2 == 1;
+            if (type == typeof(int)) return n * 0x01010101;
+            return n * 0x0101010101010101L;
         }
 
         private static void WriteLayout()
@@ -598,29 +466,37 @@ namespace LayoutProbe
         }
 
         /// <summary>
-        /// Replay mode, for the harness. First prints "probe: values", and the values the paths
-        /// hold. Then writes the values it's sent into the game, through the same paths, until its
-        /// input ends. They come in sets: a path=value line per path, with the value read as the
+        /// Replay mode, for the harness. First writes distinctive values into every number and flag,
+        /// and into strings that are still null, and prints "probe: values" and the values the
+        /// paths hold. Then writes the values it's sent into the game, through the same paths, until
+        /// its input ends. They come in sets: a path=value line per path, with the value read as the
         /// path's type (a string is the rest of the line), and an empty line at the end of each
         /// set. Once a set is written, it prints "probe: written".
         /// </summary>
         private static void Replay()
         {
             // The lines only name paths, and two roots can have paths with the same name.
-            var paths = new Dictionary<string, PathCheck>();
-            foreach (PathCheck check in held.Where(c => IsValue(c.Path.Last.FieldType)))
+            var paths = new Dictionary<string, HeldPath>();
+            foreach (HeldPath path in held.Where(p => IsValue(p.Path.Last.FieldType)))
             {
-                if (paths.ContainsKey(check.Path.Name))
+                if (paths.ContainsKey(path.Path.Name))
                 {
-                    throw new ProbeException("two roots have the path " + check.Path.Name + ", which the replay can't tell apart");
+                    throw new ProbeException("two roots have the path " + path.Path.Name + ", which the replay can't tell apart");
                 }
-                paths.Add(check.Path.Name, check);
+                paths.Add(path.Path.Name, path);
+                // Every number and flag gets a distinctive value, and a string only while it's
+                // null: the title keeps "Celeste", which the auto splitter checks for.
+                FieldInfo last = path.Path.Last;
+                if (last.FieldType.IsValueType || last.GetValue(path.Owner) == null)
+                {
+                    last.SetValue(path.Owner, SampleValue(last.FieldType, paths.Count));
+                }
             }
 
             Console.WriteLine("probe: values " + ValuesJson());
             Console.Out.Flush();
             var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
-            var set = new List<KeyValuePair<PathCheck, object>>();
+            var set = new List<KeyValuePair<HeldPath, object>>();
             for (string line = input.ReadLine(); line != null; line = input.ReadLine())
             {
                 if (line.Length > 0)
@@ -628,7 +504,7 @@ namespace LayoutProbe
                     set.Add(ParseLine(line, paths));
                     continue;
                 }
-                foreach (KeyValuePair<PathCheck, object> entry in set)
+                foreach (KeyValuePair<HeldPath, object> entry in set)
                 {
                     entry.Key.Path.Last.SetValue(entry.Key.Owner, entry.Value);
                 }
@@ -639,18 +515,18 @@ namespace LayoutProbe
         }
 
         /// <summary>A path=value line, with the value read as the path's type.</summary>
-        private static KeyValuePair<PathCheck, object> ParseLine(string line, Dictionary<string, PathCheck> paths)
+        private static KeyValuePair<HeldPath, object> ParseLine(string line, Dictionary<string, HeldPath> paths)
         {
             int separator = line.IndexOf('=');
-            if (separator < 0 || !paths.TryGetValue(line.Substring(0, separator), out PathCheck check))
+            if (separator < 0 || !paths.TryGetValue(line.Substring(0, separator), out HeldPath path))
             {
                 throw new ProbeException("can't write " + line + ": expected path=value, for a path that ends in a string, bool, int or long");
             }
             string text = line.Substring(separator + 1);
-            Type type = check.Path.Last.FieldType;
+            Type type = path.Path.Last.FieldType;
             try
             {
-                return new KeyValuePair<PathCheck, object>(check, ParseValue(type, text));
+                return new KeyValuePair<HeldPath, object>(path, ParseValue(type, text));
             }
             catch (Exception e) when (e is FormatException || e is OverflowException)
             {
@@ -676,8 +552,8 @@ namespace LayoutProbe
             IEnumerable<string> rootsJson = roots.Select(root =>
                 Quote(root.Name) + ":{" +
                 string.Join(",", held
-                    .Where(c => c.Root == root && IsValue(c.Path.Last.FieldType))
-                    .Select(c => Quote(c.Path.Name) + ":" + ValueJson(c.Path.Last.GetValue(c.Owner)))
+                    .Where(p => p.Root == root && IsValue(p.Path.Last.FieldType))
+                    .Select(p => Quote(p.Path.Name) + ":" + ValueJson(p.Path.Last.GetValue(p.Owner)))
                     .ToArray()) +
                 "}");
             return "{\"flavour\":" + Quote(flavour) + ",\"roots\":{" + string.Join(",", rootsJson.ToArray()) + "}}";
@@ -706,7 +582,7 @@ namespace LayoutProbe
             var text = new StringBuilder();
             void Line(string line) => text.Append(line).Append('\n');
 
-            Line("// Generated by the layout probe, through the Layouts workflow: don't edit it by hand. See");
+            Line("// Generated by the probe, through the Layouts workflow: don't edit it by hand. See");
             Line("// layouts/README.md.");
             Line("//");
             Line("// Flavour: " + flavour);
