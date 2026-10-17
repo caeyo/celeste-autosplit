@@ -50,9 +50,6 @@ pub enum GameState {
         chapter_complete: DeepPointer<3>,
         chapter_cassette: DeepPointer<3>,
         chapter_heart: DeepPointer<3>,
-        /// The path to the save `SaveData.Instance` holds, which is null until a file starts. It
-        /// stops at the save's address, without reading through it, so no save reads as null
-        /// rather than as a failed read.
         save: DeepPointer<3>,
         save_time: DeepPointer<3>,
         save_debug_mode: DeepPointer<3>,
@@ -63,8 +60,6 @@ pub enum GameState {
 }
 
 impl GameState {
-    /// The time of the save `SaveData.Instance` holds, or `Some(None)` while it holds none. On
-    /// Everest, the module only reads Everest's own values.
     pub fn save_time(&self, process: &Process) -> Option<Option<i64>> {
         match self {
             Self::Vanilla {
@@ -79,8 +74,6 @@ impl GameState {
         }
     }
 
-    /// Whether the save `SaveData.Instance` holds is in debug mode, or `Some(None)` while it holds
-    /// none. On Everest, the module only reads Everest's own values.
     pub fn save_debug_mode(&self, process: &Process) -> Option<Option<bool>> {
         match self {
             Self::Vanilla {
@@ -377,13 +370,11 @@ struct Flavour {
     instance: Anchor,
     /// The offsets of `Engine.Title`, which holds "Celeste", from the object in the slot.
     title: [u64; 1],
-    /// `SaveData.Instance`, found from `AutoSplitterInfo.Update`.
     save_data: Anchor,
     /// The game's state, read through the slots of `Celeste.Instance` and `SaveData.Instance`.
     state: fn(Slot, Slot) -> GameState,
 }
 
-/// How to find a root's static slot, from the compiled code of its anchor method.
 struct Anchor {
     /// Hex bytes, with `??` for any byte.
     signature: &'static str,
@@ -396,7 +387,6 @@ struct Anchor {
     reference_window: u64,
 }
 
-/// A root's anchor, from its module in a layout.
 macro_rules! anchor {
     ($root:ident) => {
         Anchor {
@@ -527,10 +517,9 @@ fn find_instance(
 }
 
 impl Anchor {
-    /// The slot, from the earliest match of any reference pattern after the end of a match of the
-    /// signature, which only reads up to the end of its executable range. Earliest, not the first
-    /// pattern listed, because a pattern with a 4-byte address can also match inside one with an
-    /// 8-byte address, when the address's fourth byte happens to be the 4-byte form's opcode.
+    /// The slot, from the earliest match of any reference pattern in the code. Earliest, not the
+    /// first pattern listed, because a pattern with a 4-byte address can also match inside one with
+    /// an 8-byte address, when the address's fourth byte happens to be the 4-byte form's opcode.
     fn read_slot(
         &self,
         process: &Process,
@@ -538,6 +527,7 @@ impl Anchor {
         code: Address,
         end: u64,
     ) -> Option<Slot> {
+        // Only within the range, which is all mapped.
         let len = self.reference_window.min(end - code.value());
         let code = process.read_vec::<u8>(code, len as usize).ok()?;
         let address = (0..code.len()).find_map(|start| {
@@ -566,9 +556,6 @@ impl Flavour {
     }
 }
 
-/// Finds the static slot of `SaveData.Instance`, from the first match of the flavour's signature
-/// whose reference holds an address. Its anchor, `AutoSplitterInfo.Update`, is only compiled once
-/// the game first updates.
 fn find_save_data(process: &Process, flavour: &Flavour) -> Option<Slot> {
     let anchor = &flavour.save_data;
     scan_executable(process, |(start, size)| {
