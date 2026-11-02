@@ -25,7 +25,9 @@ In order, it:
 3. for each root, compiles the anchor method and checks the flavour's
    hand-written signature against its code: the signature must match once, and
    the earliest store pattern match after it must hold the static slot's
-   address, and end within the window that `memory.rs` searches;
+   address, and end within the window that `memory.rs` searches. The last match
+   of the field store's pattern before it must hold the field's measured offset,
+   and start within the window that `memory.rs` searches;
 4. constructs the game (`new Celeste()`), which sets the game's version that
    the layout records, and finds the object that holds each path's last field;
 5. prints the layout, and writes it if `--out` is given;
@@ -44,10 +46,19 @@ static field that the auto splitter finds through machine code:
 - **`Field`**: the static field, as `Namespace.Type::Field`.
 - **`Anchor`**: the method whose compiled code holds the field's address, as
   `Namespace.Type::Name(ParameterType, ...)`.
+- **`CodeField`**: the first field of the root's paths, whose offset `memory.rs`
+  reads from the anchor's code rather than from the layout. It comes after the
+  fields of a base class in the game's framework, and Everest replaces the FNA
+  that vanilla runs on, with a different one in different versions, so no layout
+  can hold it for every game.
 - **`Signatures`**: per flavour, how to find the field's address in the
   anchor's code. Each has:
   - a signature that matches the anchor's code once: hex bytes, with `??` for
     any byte;
+  - a pattern for the store of `CodeField` before the signature, with `SS` for
+    the field's offset, 4 bytes in a row. The last match before the signature
+    holds it, and `memory.rs` only searches the 128 bytes before each signature
+    match: `FieldStoreWindow` in `Manifest.cs`;
   - store patterns for the code that stores into the field after it, with `SS`
     for the field's address: 4 or 8 bytes in a row. The earliest match of any
     of them after the signature holds the address: earliest, because a 4-byte
@@ -76,8 +87,7 @@ With `--replay`, once every check has passed, the probe writes values into the
 game, for the [harness](../../harness/). First, it writes distinctive values into
 every number and flag, and into strings that are still null: every number and
 string gets a value of its own, and the harness tells the flags apart by setting
-each alone. The title keeps "Celeste", which the auto splitter checks for. It
-prints `probe: values`, and as JSON on one line, its flavour and the values the
+each alone. It prints `probe: values`, and as JSON on one line, its flavour and the values the
 paths hold, keyed by root and then path. Then it reads sets of values from its
 standard input, until its input ends:
 

@@ -201,6 +201,7 @@ namespace Probe
                 Field = Names.StaticField(game, entry.Field),
                 AnchorName = entry.Anchor,
                 Anchor = Names.Method(game, entry.Anchor),
+                CodeField = entry.CodeField,
                 Signatures = entry.Signatures,
             };
             CheckObjectType(root.Field.FieldType, root.Name);
@@ -383,6 +384,30 @@ namespace Probe
             {
                 throw new ProbeException("the store ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.StoreWindow + ": widen StoreWindow, in Manifest.cs");
             }
+
+            // The field's store is the last match of its pattern before the signature, and must
+            // hold the field's measured offset.
+            int fieldStore = root.Signature.FieldStore.Matches(code)
+                .Where(m => m + root.Signature.FieldStore.Length <= matches[0])
+                .DefaultIfEmpty(-1)
+                .Last();
+            if (fieldStore < 0)
+            {
+                throw new ProbeException("the store of " + root.CodeField + " doesn't match before the signature");
+            }
+            int distance = matches[0] - fieldStore;
+            Console.WriteLine("store of {0} {1}: the last match, at +0x{2:x}, {3} bytes before the signature", root.CodeField, root.Signature.FieldStore, fieldStore, distance);
+            ulong offset = root.Signature.FieldStore.Slot(code, fieldStore);
+            long measured = root.Paths.First(p => p.Fields[0].Name == root.CodeField).Offsets[0];
+            if ((long)offset != measured)
+            {
+                throw new ProbeException("the store's offset is 0x" + offset.ToString("x") + ", but " + root.CodeField + " is at 0x" + measured.ToString("x"));
+            }
+            Console.WriteLine("the store's offset is the field's");
+            if (distance > Manifest.FieldStoreWindow)
+            {
+                throw new ProbeException("the store of " + root.CodeField + " starts " + distance + " bytes before the signature, but memory.rs only searches " + Manifest.FieldStoreWindow + ": widen FieldStoreWindow, in Manifest.cs");
+            }
         }
 
         /// <summary>A path in the constructed game, with the object that holds its last field.</summary>
@@ -486,7 +511,7 @@ namespace Probe
                 }
                 paths.Add(path.Path.Name, path);
                 // Every number and flag gets a distinctive value, and a string only while it's
-                // null: the title keeps "Celeste", which the auto splitter checks for.
+                // null.
                 FieldInfo last = path.Path.Last;
                 if (last.FieldType.IsValueType || last.GetValue(path.Owner) == null)
                 {
@@ -614,6 +639,12 @@ namespace Probe
                 Line("    ];");
                 Line("    /// How many bytes after the signature are searched for the store, which ends within them.");
                 Line("    pub const STORE_WINDOW: u64 = " + Manifest.StoreWindow + ";");
+                string fieldStore = ConstantName(root.CodeField) + "_STORE";
+                Line("    /// The store of `" + root.CodeField + "`: the last match of this before the signature, with `SS` for");
+                Line("    /// the field's offset, which paths through it don't take from this layout.");
+                Line("    pub const " + fieldStore + ": &str = \"" + root.Signature.FieldStore + "\";");
+                Line("    /// How many bytes before the signature are searched for it, which starts within them.");
+                Line("    pub const " + fieldStore + "_WINDOW: u64 = " + Manifest.FieldStoreWindow + ";");
                 Line("");
                 Line("    // Each path's offsets from the object in the slot, and the name and type of each field");
                 Line("    // along it.");
