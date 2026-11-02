@@ -29,8 +29,13 @@ probe, so changes can be tried before they're merged. The pull request's own
 workflow runs wait until someone approves them, since the workflow opens it
 with `GITHUB_TOKEN`.
 
+`memory.rs` builds with one layout per OS: on Windows, `windows-xna.rs` for both
+builds of the game, which only differ in what `memory.rs` reads from the game's
+code. `windows-fna.rs` is still measured, and the FNA job's live check and replay
+show that `windows-xna.rs` reads that build correctly.
+
 Each probe job only regenerates its own flavour's file, but `memory.rs` builds
-with all four. So `memory.rs` can only use what every committed layout already
+with several. So `memory.rs` can only use what every committed layout already
 holds: add a new path to the manifest and regenerate, and only then write its
 reader. A change to what the probe writes that `memory.rs` depends on, such as
 the files' format, has to convert the committed files in the same change.
@@ -41,8 +46,9 @@ game files. It:
 1. resolves every name in the manifest, and measures each path's offsets;
 2. checks that the flavour's hand-written signature matches the root's anchor
    method once, in its compiled code, and that the earliest store pattern match
-   after it holds the slot's address, within the window the auto splitter
-   searches;
+   after it holds the slot's address, and the last match of the field store's
+   pattern before it holds the field's measured offset, each within the window
+   the auto splitter searches;
 3. constructs the game for real (`new Celeste()`), in a process named like the
    game.
 
@@ -89,12 +95,15 @@ pub mod celeste_instance {
     ];
     /// How many bytes after the signature are searched for the store, which ends within them.
     pub const STORE_WINDOW: u64 = 256;
+    /// The store of `AutoSplitterInfo`: the last match of this before the signature, with `SS` for
+    /// the field's offset, which paths through it don't take from this layout.
+    pub const AUTO_SPLITTER_INFO_STORE: &str = "8d 96 SS SS SS SS e8";
+    /// How many bytes before the signature are searched for it, which starts within them.
+    pub const AUTO_SPLITTER_INFO_STORE_WINDOW: u64 = 128;
 
     // Each path's offsets from the object in the slot, and the name and type of each field
     // along it.
 
-    /// Title: System.String
-    pub const TITLE: [u64; 1] = [0x84];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, Chapter: System.Int32
     pub const AUTO_SPLITTER_INFO_CHAPTER: [u64; 2] = [0xa0, 0x18];
 }
@@ -113,6 +122,12 @@ The comments say what each constant is. Beyond them:
   `STORE_WINDOW` is its `StoreWindow`. The store is the earliest match of any
   store pattern, because a 4-byte pattern can also match inside an 8-byte
   store.
+- `AUTO_SPLITTER_INFO_STORE` and its window are the manifest's too, for its
+  `CodeField`. `memory.rs` reads `AutoSplitterInfo`'s offset from that store, and
+  only the later offsets from a path. The field comes after those of the
+  framework's `Game` class, and Everest replaces the FNA that vanilla runs on, so
+  its offset depends on the Everest version. The layout's first offset is what
+  the game files the probe ran with hold.
 - A path's length is part of its type, and `memory.rs`'s build fails if a
   field's pointer path has no room for it. `cargo check` and clippy don't catch
   that.

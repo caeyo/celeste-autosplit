@@ -15,6 +15,14 @@ namespace Probe
         /// </summary>
         public const int StoreWindow = 256;
 
+        /// <summary>
+        /// How many bytes before each signature match memory.rs searches for the store of the
+        /// root's CodeField, which has to start within them. Few enough to stay in the anchor's
+        /// code, since the signature is near its start. The probe writes it into the layouts, for
+        /// memory.rs.
+        /// </summary>
+        public const int FieldStoreWindow = 128;
+
         // Celeste's constructor passes the game and window sizes (1920x1080, 960x540) to
         // Engine's, then stores itself in Celeste.Instance. The signatures match the size
         // arguments: pushed on Windows, in registers on Mono. Then the store:
@@ -27,12 +35,18 @@ namespace Probe
         // Once it has checked them, the probe writes them into each flavour's layout, and
         // memory.rs finds the slot from them the same way, within StoreWindow bytes of the
         // signature.
+        // Its field initializers run before that, so the store of its new AutoSplitterInfo comes
+        // before the signature, and holds the field's offset:
+        // - On Windows, the field's address goes to the write barrier: lea edx, [esi+offset]; call.
+        // - On Mono, it's computed for the write barrier: lea rax, [r15+offset].
         // These come before Roots, which uses them: static fields are set in order.
         private static readonly Signature CelesteClr32 = new Signature(
             "68 38 04 00 00 68 C0 03 00 00 68 1C 02 00 00 FF 35",
+            "8d 96 SS SS SS SS e8",
             "8d 15 SS SS SS SS e8");
         private static readonly Signature CelesteMono64 = new Signature(
             "be 80 07 00 00 ba 38 04 00 00 b9 c0 03 00 00 41 b8 1c 02 00 00",
+            "49 8d 87 SS SS SS SS",
             "b8 SS SS SS SS 4c 89 38",
             "48 b8 SS SS SS SS SS SS SS SS 4c 89 38");
 
@@ -42,6 +56,7 @@ namespace Probe
             {
                 Field = "Celeste.Celeste::Instance",
                 Anchor = "Celeste.Celeste::.ctor()",
+                CodeField = "AutoSplitterInfo",
                 Signatures =
                 {
                     ["windows-xna"] = CelesteClr32,
@@ -51,7 +66,6 @@ namespace Probe
                 },
                 Paths =
                 {
-                    "Title",
                     "AutoSplitterInfo.Chapter",
                     "AutoSplitterInfo.Mode",
                     "AutoSplitterInfo.Level",
@@ -81,6 +95,14 @@ namespace Probe
         /// Namespace.Type::Name(ParameterType, ...).
         /// </summary>
         public string Anchor;
+
+        /// <summary>
+        /// The first field of the root's paths, whose offset memory.rs reads from the anchor's code
+        /// rather than from the layout. It's declared after the fields of a base class in the
+        /// game's framework, and Everest replaces the FNA that vanilla runs on, with a different
+        /// one in different versions, so no layout can hold it for every game.
+        /// </summary>
+        public string CodeField;
 
         /// <summary>Per flavour, how to find the field's address in the anchor's code.</summary>
         public readonly Dictionary<string, Signature> Signatures = new Dictionary<string, Signature>();

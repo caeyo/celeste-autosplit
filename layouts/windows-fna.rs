@@ -25,12 +25,15 @@ pub mod celeste_instance {
     ];
     /// How many bytes after the signature are searched for the store, which ends within them.
     pub const STORE_WINDOW: u64 = 256;
+    /// The store of `AutoSplitterInfo`: the last match of this before the signature, with `SS` for
+    /// the field's offset, which paths through it don't take from this layout.
+    pub const AUTO_SPLITTER_INFO_STORE: &str = "8d 96 SS SS SS SS e8";
+    /// How many bytes before the signature are searched for it, which starts within them.
+    pub const AUTO_SPLITTER_INFO_STORE_WINDOW: u64 = 128;
 
     // Each path's offsets from the object in the slot, and the name and type of each field
     // along it.
 
-    /// Title: System.String
-    pub const TITLE: [u64; 1] = [0x84];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, Chapter: System.Int32
     pub const AUTO_SPLITTER_INFO_CHAPTER: [u64; 2] = [0xa0, 0x18];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, Mode: System.Int32
