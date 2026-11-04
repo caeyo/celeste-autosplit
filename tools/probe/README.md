@@ -50,7 +50,8 @@ static field that the auto splitter finds through machine code:
   reads from the anchor's code rather than from the layout. It comes after the
   fields of a base class in the game's framework, and Everest replaces the FNA
   that vanilla runs on, with a different one in different versions, so no layout
-  can hold it for every game.
+  can hold it for every game. The layouts hold each path's offsets after it, and
+  every path has to start with it.
 - **`Signatures`**: per flavour, how to find the field's address in the
   anchor's code. Each has:
   - a signature that matches the anchor's code once: hex bytes, with `??` for

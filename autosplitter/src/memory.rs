@@ -366,25 +366,25 @@ macro_rules! flavour {
                 ptr_size: slot.ptr_size,
                 string_len: $layout::STRING_LENGTH,
                 string_chars: $layout::STRING_CHARS,
-                chapter_time: slot.field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_TIME[1]]),
-                file_time: slot.field([info, instance::AUTO_SPLITTER_INFO_FILE_TIME[1]]),
-                level: slot.field([info, instance::AUTO_SPLITTER_INFO_LEVEL[1]]),
-                chapter: slot.field([info, instance::AUTO_SPLITTER_INFO_CHAPTER[1]]),
-                mode: slot.field([info, instance::AUTO_SPLITTER_INFO_MODE[1]]),
+                chapter_time: slot.field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_TIME[0]]),
+                file_time: slot.field([info, instance::AUTO_SPLITTER_INFO_FILE_TIME[0]]),
+                level: slot.field([info, instance::AUTO_SPLITTER_INFO_LEVEL[0]]),
+                chapter: slot.field([info, instance::AUTO_SPLITTER_INFO_CHAPTER[0]]),
+                mode: slot.field([info, instance::AUTO_SPLITTER_INFO_MODE[0]]),
                 chapter_strawberries: slot
-                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_STRAWBERRIES[1]]),
+                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_STRAWBERRIES[0]]),
                 file_strawberries: slot
-                    .field([info, instance::AUTO_SPLITTER_INFO_FILE_STRAWBERRIES[1]]),
-                file_cassettes: slot.field([info, instance::AUTO_SPLITTER_INFO_FILE_CASSETTES[1]]),
-                file_hearts: slot.field([info, instance::AUTO_SPLITTER_INFO_FILE_HEARTS[1]]),
-                timer_active: slot.field([info, instance::AUTO_SPLITTER_INFO_TIMER_ACTIVE[1]]),
+                    .field([info, instance::AUTO_SPLITTER_INFO_FILE_STRAWBERRIES[0]]),
+                file_cassettes: slot.field([info, instance::AUTO_SPLITTER_INFO_FILE_CASSETTES[0]]),
+                file_hearts: slot.field([info, instance::AUTO_SPLITTER_INFO_FILE_HEARTS[0]]),
+                timer_active: slot.field([info, instance::AUTO_SPLITTER_INFO_TIMER_ACTIVE[0]]),
                 chapter_started: slot
-                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_STARTED[1]]),
+                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_STARTED[0]]),
                 chapter_complete: slot
-                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_COMPLETE[1]]),
+                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_COMPLETE[0]]),
                 chapter_cassette: slot
-                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE[1]]),
-                chapter_heart: slot.field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_HEART[1]]),
+                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE[0]]),
+                chapter_heart: slot.field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_HEART[0]]),
             },
         }
     }};
