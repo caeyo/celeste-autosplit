@@ -7,7 +7,7 @@ namespace Probe
 {
     /// <summary>
     /// A hand-written byte pattern: hex bytes separated by spaces, with ?? for any byte, and SS
-    /// for the bytes of a static slot's address, 4 or 8 of them in a row.
+    /// for the bytes of a static slot's address or a field's offset, 4 or 8 of them in a row.
     /// </summary>
     internal sealed class Pattern
     {
@@ -51,7 +51,7 @@ namespace Probe
             }
         }
 
-        /// <summary>The slot's address in a match of the pattern.</summary>
+        /// <summary>The slot's address or the field's offset in a match of the pattern.</summary>
         public ulong Slot(byte[] code, int match) =>
             SlotWidth == 4 ? BitConverter.ToUInt32(code, match + SlotOffset) : BitConverter.ToUInt64(code, match + SlotOffset);
 
@@ -67,19 +67,23 @@ namespace Probe
     /// signature, and its SS bytes are the slot's address. Earliest, not the first pattern
     /// listed, because patterns can overlap: a 4-byte store pattern can also match inside an
     /// 8-byte store, when the address's fourth byte happens to be the 4-byte form's opcode.
+    /// The store of the root's CodeField comes before the signature: it's the last match of its
+    /// pattern there, and its SS bytes are the field's offset.
     /// </summary>
     internal sealed class Signature
     {
         public readonly Pattern Code;
+        public readonly Pattern FieldStore;
         public readonly Pattern[] Store;
 
-        public Signature(string code, params string[] store)
+        public Signature(string code, string fieldStore, params string[] store)
         {
             Code = new Pattern(code);
+            FieldStore = new Pattern(fieldStore);
             Store = store.Select(s => new Pattern(s)).ToArray();
-            if (Code.SlotWidth != 0 || Store.Length == 0 || Store.Any(s => s.SlotWidth == 0))
+            if (Code.SlotWidth != 0 || FieldStore.SlotWidth != 4 || Store.Length == 0 || Store.Any(s => s.SlotWidth == 0))
             {
-                throw new ArgumentException(code + ": the signature has no SS, and each store pattern has them");
+                throw new ArgumentException(code + ": the signature has no SS, the field's store has 4, and each store pattern has them");
             }
         }
     }

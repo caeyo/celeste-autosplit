@@ -1,7 +1,7 @@
 # probe
 
 Runs inside the game's own runtime, posing as the game. There, it measures the
-memory layout the auto splitter reads, and writes it as Rust, `<flavour>.rs`,
+memory layout the auto splitter reads, and writes it as Rust, `<runtime>.rs`,
 which the auto splitter uses. What it measures is listed in
 [`Manifest.cs`](Manifest.cs). It also constructs the real game, which, in its
 replay mode, it holds for the [harness](../../harness/) to check the auto
@@ -17,15 +17,18 @@ results. The [layouts README](../../layouts/README.md) describes the output.
 In order, it:
 
 1. detects the flavour: `windows-xna` or `windows-fna` from the game's
-   references, `linux` or `macos` from the kernel;
+   references, `linux` or `macos` from the kernel. The layout it measures is
+   named after the runtime: `clr32` on Windows, `mono64` on Linux and macOS;
 2. resolves the manifest's names in `Celeste.exe`, and measures:
    - every path's offsets, with `ldflda` on uninitialized objects, since
      `Marshal.OffsetOf` doesn't work on auto-layout classes;
    - where strings hold their length and characters;
-3. for each root, compiles the anchor method and checks the flavour's
+3. for each root, compiles the anchor method and checks the runtime's
    hand-written signature against its code: the signature must match once, and
    the earliest store pattern match after it must hold the static slot's
-   address, and end within the window that `memory.rs` searches;
+   address, and end within the window that `memory.rs` searches. The last match
+   of the field store's pattern before it must hold the field's measured offset,
+   and start within the window that `memory.rs` searches;
 4. constructs the game (`new Celeste()`), which sets the game's version that
    the layout records, and finds the object that holds each path's last field;
 5. prints the layout, and writes it if `--out` is given;
@@ -44,10 +47,19 @@ static field that the auto splitter finds through machine code:
 - **`Field`**: the static field, as `Namespace.Type::Field`.
 - **`Anchor`**: the method whose compiled code holds the field's address, as
   `Namespace.Type::Name(ParameterType, ...)`.
-- **`Signatures`**: per flavour, how to find the field's address in the
+- **`CodeField`**: the first field of the root's paths, whose offset `memory.rs`
+  reads from the anchor's code rather than from the layout. It comes after the
+  fields of a base class in the game's framework, and Everest replaces the FNA
+  that vanilla runs on, with a different one in different versions, so no layout
+  can hold it for every game. The layouts hold each path's one offset after it.
+- **`Signatures`**: per runtime, how to find the field's address in the
   anchor's code. Each has:
   - a signature that matches the anchor's code once: hex bytes, with `??` for
     any byte;
+  - a pattern for the store of `CodeField` before the signature, with `SS` for
+    the field's offset, 4 bytes in a row. The last match before the signature
+    holds it, and `memory.rs` only searches the 128 bytes before each signature
+    match: `FieldStoreWindow` in `Manifest.cs`;
   - store patterns for the code that stores into the field after it, with `SS`
     for the field's address: 4 or 8 bytes in a row. The earliest match of any
     of them after the signature holds the address: earliest, because a 4-byte
@@ -56,19 +68,19 @@ static field that the auto splitter finds through machine code:
     change length. On Linux, an address takes 4 or 8 bytes depending on where
     the heap is.
 
-  Once it has checked them, the probe writes them into each flavour's layout,
+  Once it has checked them, the probe writes them into each runtime's layout,
   and [`memory.rs`](../../autosplitter/src/memory.rs) finds the address from
   them the same way. It only searches the 256 bytes after each signature match:
   `StoreWindow` in `Manifest.cs`, which the probe writes into the layouts too.
 - **`Paths`**: instance fields to read from the root's object, joined with dots.
   Each name is looked up in the previous field's type, or its nearest base
-  class with that field. A path only goes through objects of concrete classes,
-  and ends in a `string`, `bool`, `int` or `long`, which the probe can write for
-  the harness to check.
+  class with that field. Each is a field of `CodeField`'s object, of a
+  concrete class, and ends in a `string`, `bool`, `int` or `long`, which the probe
+  can write for the harness to check.
 
 To add a root, add it without signatures first. The probe then prints the
 anchor's code and where the field's address appears in it, and stops. Write
-each flavour's signature and store patterns from that, here.
+each runtime's signature and store patterns from that, here.
 
 ## Replay mode
 
@@ -76,8 +88,7 @@ With `--replay`, once every check has passed, the probe writes values into the
 game, for the [harness](../../harness/). First, it writes distinctive values into
 every number and flag, and into strings that are still null: every number and
 string gets a value of its own, and the harness tells the flags apart by setting
-each alone. The title keeps "Celeste", which the auto splitter checks for. It
-prints `probe: values`, and as JSON on one line, its flavour and the values the
+each alone. It prints `probe: values`, and as JSON on one line, its flavour and the values the
 paths hold, keyed by root and then path. Then it reads sets of values from its
 standard input, until its input ends:
 
@@ -127,7 +138,7 @@ else.
 
 Options:
 
-- `--out DIR`: writes `DIR/<flavour>.rs`, once every check has passed.
+- `--out DIR`: writes `DIR/<runtime>.rs`, once every check has passed.
 - `--game PATH`: the game's `Celeste.exe`, relative to the probe (default:
   `Celeste.exe` next to it).
 - `--replay`: once every check has passed, takes values to write into the game,

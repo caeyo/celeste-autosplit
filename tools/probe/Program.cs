@@ -14,7 +14,7 @@ namespace Probe
 {
     /// <summary>
     /// Measures the memory layout the auto splitter reads, inside the runtime of the game flavour
-    /// it runs with, and writes it as Rust, &lt;flavour&gt;.rs, for the auto splitter's memory.rs.
+    /// it runs with, and writes it as Rust, &lt;runtime&gt;.rs, for the auto splitter's memory.rs.
     /// Manifest.cs says what to measure. It also constructs the game, which the harness reads
     /// through the auto splitter, in replay mode. It has to run in the game's own runtime, from
     /// the game's folder: 32-bit .NET Framework on Windows, and the Mono bundled with the game on
@@ -22,7 +22,7 @@ namespace Probe
     /// itself).
     ///
     /// Options:
-    ///   --out DIR         writes DIR/&lt;flavour&gt;.rs once every check has passed.
+    ///   --out DIR         writes DIR/&lt;runtime&gt;.rs once every check has passed.
     ///   --game PATH       the game's Celeste.exe, relative to the probe's directory (default:
     ///                     Celeste.exe next to the probe). Lets the probe itself be Celeste.exe,
     ///                     so its process has the game's name.
@@ -45,6 +45,8 @@ namespace Probe
 
         private static string os;
         private static string flavour;
+        /// <summary>What the flavour's layout is named after: it's the same on each of them.</summary>
+        private static string runtime;
         private static Assembly game;
         private static string gameVersion;
         private static Root[] roots;
@@ -185,6 +187,7 @@ namespace Probe
                 : references.Any(a => a.Name == "Microsoft.Xna.Framework.Game") ? "windows-xna"
                 : throw new ProbeException("the game references neither FNA nor XNA");
             Console.WriteLine("flavour: " + flavour);
+            runtime = os == "windows" ? "clr32" : "mono64";
         }
 
         private static void ResolveManifest()
@@ -201,12 +204,19 @@ namespace Probe
                 Field = Names.StaticField(game, entry.Field),
                 AnchorName = entry.Anchor,
                 Anchor = Names.Method(game, entry.Anchor),
+                CodeField = entry.CodeField,
                 Signatures = entry.Signatures,
             };
             CheckObjectType(root.Field.FieldType, root.Name);
             Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), root.AnchorName);
             root.Paths = entry.Paths.Select(p => ResolvePath(root, p)).ToArray();
             CheckUnique(root.Paths.Select(p => p.Name), " in the paths of " + root.Name);
+            // memory.rs reads a path's first offset from the code, and a layout holds its second.
+            FieldPath other = root.Paths.FirstOrDefault(p => p.Fields.Length != 2 || p.Fields[0].Name != root.CodeField);
+            if (other != null)
+            {
+                throw new ProbeException(other.Name + " isn't a field of " + root.CodeField + ": a layout holds one offset per path, after the field memory.rs reads the offset of from the code");
+            }
             return root;
         }
 
@@ -351,9 +361,9 @@ namespace Probe
             List<SlotReference> references = MachineCode.FindSlotReferences(code, slot);
             Console.WriteLine("slot's address in the code: " + (references.Count == 0 ? "nowhere" : string.Join(", ", references.Select(r => r.ToString()).ToArray())));
             // Only now, so that a new root's first run prints the code to write its signature from.
-            if (!root.Signatures.TryGetValue(flavour, out root.Signature))
+            if (!root.Signatures.TryGetValue(runtime, out root.Signature))
             {
-                throw new ProbeException(root.Name + " has no signature for " + flavour + " yet: write one from the code above, in Manifest.cs");
+                throw new ProbeException(root.Name + " has no signature for " + runtime + " yet: write one from the code above, in Manifest.cs");
             }
             int[] matches = root.Signature.Code.Matches(code).ToArray();
             Console.WriteLine("signature {0}: {1}", root.Signature.Code, matches.Length == 0 ? "no match" : "matches at " + string.Join(", ", matches.Select(m => "+0x" + m.ToString("x")).ToArray()));
@@ -382,6 +392,30 @@ namespace Probe
             if (end > Manifest.StoreWindow)
             {
                 throw new ProbeException("the store ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.StoreWindow + ": widen StoreWindow, in Manifest.cs");
+            }
+
+            // The field's store is the last match of its pattern before the signature, and must
+            // hold the field's measured offset.
+            int fieldStore = root.Signature.FieldStore.Matches(code)
+                .Where(m => m + root.Signature.FieldStore.Length <= matches[0])
+                .DefaultIfEmpty(-1)
+                .Last();
+            if (fieldStore < 0)
+            {
+                throw new ProbeException("the store of " + root.CodeField + " doesn't match before the signature");
+            }
+            int distance = matches[0] - fieldStore;
+            Console.WriteLine("store of {0} {1}: the last match, at +0x{2:x}, {3} bytes before the signature", root.CodeField, root.Signature.FieldStore, fieldStore, distance);
+            ulong offset = root.Signature.FieldStore.Slot(code, fieldStore);
+            long measured = root.Paths.First(p => p.Fields[0].Name == root.CodeField).Offsets[0];
+            if ((long)offset != measured)
+            {
+                throw new ProbeException("the store's offset is 0x" + offset.ToString("x") + ", but " + root.CodeField + " is at 0x" + measured.ToString("x"));
+            }
+            Console.WriteLine("the store's offset is the field's");
+            if (distance > Manifest.FieldStoreWindow)
+            {
+                throw new ProbeException("the store of " + root.CodeField + " starts " + distance + " bytes before the signature, but memory.rs only searches " + Manifest.FieldStoreWindow + ": widen FieldStoreWindow, in Manifest.cs");
             }
         }
 
@@ -460,7 +494,7 @@ namespace Probe
             if (outDirectory != null)
             {
                 Directory.CreateDirectory(outDirectory);
-                string file = Path.Combine(outDirectory, flavour + ".rs");
+                string file = Path.Combine(outDirectory, runtime + ".rs");
                 File.WriteAllText(file, text, new UTF8Encoding(false));
                 Console.WriteLine("written to " + file);
             }
@@ -486,7 +520,7 @@ namespace Probe
                 }
                 paths.Add(path.Path.Name, path);
                 // Every number and flag gets a distinctive value, and a string only while it's
-                // null: the title keeps "Celeste", which the auto splitter checks for.
+                // null.
                 FieldInfo last = path.Path.Last;
                 if (last.FieldType.IsValueType || last.GetValue(path.Owner) == null)
                 {
@@ -585,11 +619,8 @@ namespace Probe
             Line("// Generated by the probe, through the Layouts workflow: don't edit it by hand. See");
             Line("// layouts/README.md.");
             Line("//");
-            Line("// Flavour: " + flavour);
-            Line("// Celeste.exe: version " + gameVersion + ", module version ID " + game.ManifestModule.ModuleVersionId);
+            Line("// Celeste.exe: version " + gameVersion);
             Line("");
-            Line("/// As `asr::get_os` names it.");
-            Line("pub const OS: &str = \"" + os + "\";");
             Line("/// In bytes.");
             Line("pub const POINTER_SIZE: u64 = " + IntPtr.Size + ";");
             Line("/// Where a string holds its length, an `i32`.");
@@ -614,14 +645,20 @@ namespace Probe
                 Line("    ];");
                 Line("    /// How many bytes after the signature are searched for the store, which ends within them.");
                 Line("    pub const STORE_WINDOW: u64 = " + Manifest.StoreWindow + ";");
+                string fieldStore = ConstantName(root.CodeField) + "_STORE";
+                Line("    /// The store of `" + root.CodeField + "`: the last match of this before the signature, with `SS` for");
+                Line("    /// the field's offset, which depends on the framework the game runs on.");
+                Line("    pub const " + fieldStore + ": &str = \"" + root.Signature.FieldStore + "\";");
+                Line("    /// How many bytes before the signature are searched for it, which starts within them.");
+                Line("    pub const " + fieldStore + "_WINDOW: u64 = " + Manifest.FieldStoreWindow + ";");
                 Line("");
-                Line("    // Each path's offsets from the object in the slot, and the name and type of each field");
+                Line("    // Each path's offset after `" + root.CodeField + "`, and the name and type of each field");
                 Line("    // along it.");
                 Line("");
                 foreach (FieldPath path in root.Paths)
                 {
                     Line("    /// " + string.Join(", ", path.Fields.Select(f => f.Name + ": " + Names.TypeName(f.FieldType)).ToArray()));
-                    Line("    pub const " + ConstantName(path.Name) + ": [u64; " + path.Offsets.Length + "] = [" + string.Join(", ", path.Offsets.Select(Hex).ToArray()) + "];");
+                    Line("    pub const " + ConstantName(path.Name) + ": u64 = " + Hex(path.Offsets[1]) + ";");
                 }
                 Line("}");
             }
