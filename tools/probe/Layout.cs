@@ -13,11 +13,13 @@ namespace Probe
         /// <summary>The anchor, as the manifest names it.</summary>
         public string AnchorName;
         public MethodBase Anchor;
-        /// <summary>Per flavour, as the manifest has them.</summary>
+        /// <summary>The field memory.rs reads the offset of from the anchor's code.</summary>
+        public string CodeField;
+        /// <summary>Per runtime, as the manifest has them.</summary>
         public Dictionary<string, Signature> Signatures;
         public FieldPath[] Paths;
 
-        /// <summary>The flavour's signature, once it has matched the anchor's code.</summary>
+        /// <summary>The runtime's signature, once it has matched the anchor's code.</summary>
         public Signature Signature;
     }
 

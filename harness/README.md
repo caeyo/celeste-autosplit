@@ -30,7 +30,7 @@ So a pass rests on the game's own runtime and one comparison per update, with no
 stand-in for the game. It checks:
 
 - finding `Celeste.Instance`: the signature, the store into its slot, and the
-  title, which tells XNA and FNA apart;
+  store of `AutoSplitterInfo`, which holds that field's offset;
 - every offset and pointer size `memory.rs` reads through;
 - reading .NET strings, numbers and flags: the live check's distinctive values,
   and the values real play produces, such as empty strings;
@@ -85,6 +85,10 @@ probe's command, so that it runs as you, as players run the game.
 
 - Everest, since no probe constructs it. Its offsets rest on the transcription
   in [`layouts/everest.rs`](../layouts/everest.rs).
+- Vanilla started through an Everest install, which runs on an FNA of Everest's,
+  and in a second AppDomain of Everest's process up to `stable-1.4449.0`, the last
+  version before .NET Core. It was checked once by hand on Windows, with
+  `stable-1.4449.0` and `stable-1.6662.0`, on both builds of the game.
 - Values that neither the probe nor a trace holds, such as the smallest and
   largest numbers.
 - The rules for code the game doesn't have: a second match of the signature,
