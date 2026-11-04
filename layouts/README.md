@@ -46,10 +46,10 @@ game files. It:
 
 1. resolves every name in the manifest, and measures each path's offsets;
 2. checks that the runtime's hand-written signature matches the root's anchor
-   method once, in its compiled code, and that the earliest store pattern match
-   after it holds the slot's address, and the last match of the field store's
-   pattern before it holds the field's measured offset, each within the window
-   the auto splitter searches;
+   method once, in its compiled code, and that the earliest reference pattern
+   match after it holds the slot's address, and the last match of the field
+   store's pattern before it, if the root has one, holds the field's measured
+   offset, each within the window the auto splitter searches;
 3. constructs the game for real (`new Celeste()`), in a process named like the
    game.
 
@@ -86,13 +86,13 @@ pub const STRING_CHARS: u64 = 0x8;
 pub mod celeste_instance {
     /// Matches the code once: hex bytes, with `??` for any byte.
     pub const SIGNATURE: &str = "68 38 04 00 00 68 c0 03 00 00 68 1c 02 00 00 ff 35";
-    /// The store into the slot: the earliest match of any of these after the signature, with `SS`
+    /// A reference to the slot: the earliest match of any of these after the signature, with `SS`
     /// for the slot's address.
-    pub const STORES: &[&str] = &[
+    pub const REFERENCES: &[&str] = &[
         "8d 15 SS SS SS SS e8",
     ];
-    /// How many bytes after the signature are searched for the store, which ends within them.
-    pub const STORE_WINDOW: u64 = 256;
+    /// How many bytes after the signature are searched for the reference, which ends within them.
+    pub const REFERENCE_WINDOW: u64 = 256;
     /// The store of `AutoSplitterInfo`: the last match of this before the signature, with `SS` for
     /// the field's offset, which depends on the framework the game runs on.
     pub const AUTO_SPLITTER_INFO_STORE: &str = "8d 96 SS SS SS SS e8";
@@ -114,11 +114,12 @@ The comments say what each constant is. Beyond them:
 - Each root gets a module named after its type and field
   (`Celeste.Celeste::Instance` is `celeste_instance`), and each path a constant
   named after the path (`AutoSplitterInfo.Chapter` is
-  `AUTO_SPLITTER_INFO_CHAPTER`), with its offset after `AutoSplitterInfo`.
-- `SIGNATURE` and `STORES` are the manifest's hand-written patterns, and
-  `STORE_WINDOW` is its `StoreWindow`. The store is the earliest match of any
-  store pattern, because a 4-byte pattern can also match inside an 8-byte
-  store.
+  `AUTO_SPLITTER_INFO_CHAPTER`), with its offset after `AutoSplitterInfo`, or
+  for `SaveData.Instance`, which has no `CodeField`, from the object in the slot.
+- `SIGNATURE` and `REFERENCES` are the manifest's hand-written patterns, and
+  `REFERENCE_WINDOW` is its `ReferenceWindow`. The reference is the earliest
+  match of any reference pattern, because a pattern with a 4-byte address can
+  also match inside one with an 8-byte address.
 - `AUTO_SPLITTER_INFO_STORE` and its window are the manifest's too, for its
   `CodeField`. `memory.rs` reads `AutoSplitterInfo`'s offset from that store, so
   the layout doesn't hold it. The field comes after those of the framework's
@@ -126,9 +127,9 @@ The comments say what each constant is. Beyond them:
   depends on the Everest version.
 
 All offsets are in bytes, from the address a reference to the object holds. To read
-a path, read the root's object from the slot, and from it, at the offset read from
-the code, `AutoSplitterInfo`'s object. The path's offset leads from there to the
-value.
+a path, read the root's object from the slot, and from it, for `Celeste.Instance`,
+at the offset read from the code, `AutoSplitterInfo`'s object. The path's offset
+leads from there to the value.
 
 The anchor's machine code isn't stored: it embeds addresses that change on every
 run. The probe prints it in the run's log.
