@@ -92,8 +92,8 @@ probe's command, so that it runs as you, as players run the game.
 - Values that neither the probe nor a trace holds, such as the smallest and
   largest numbers.
 - The rules for code the game doesn't have: a second match of the signature,
-  and a 4-byte store pattern matching inside an 8-byte store. The probe checks
-  that the real store is within the window `memory.rs` searches.
+  and a 4-byte reference pattern matching inside an 8-byte one. The probe checks
+  that the real reference is within the window `memory.rs` searches.
 - Reads in the middle of the game's update: the probe writes each line whole,
   between two updates of the auto splitter.
 - Reading at the auto splitter's own tick rate, 120 Hz by default, which hosts

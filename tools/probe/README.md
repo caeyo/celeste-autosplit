@@ -25,12 +25,15 @@ In order, it:
    - where strings hold their length and characters;
 3. for each root, compiles the anchor method and checks the runtime's
    hand-written signature against its code: the signature must match once, and
-   the earliest store pattern match after it must hold the static slot's
+   the earliest reference pattern match after it must hold the static slot's
    address, and end within the window that `memory.rs` searches. The last match
-   of the field store's pattern before it must hold the field's measured offset,
-   and start within the window that `memory.rs` searches;
+   of the field store's pattern before it, if the root has one, must hold the
+   field's measured offset, and start within the window that `memory.rs` searches;
 4. constructs the game (`new Celeste()`), which sets the game's version that
-   the layout records, and finds the object that holds each path's last field;
+   the layout records, and finds the object that holds each path's last field.
+   A root the game leaves null until later, as it does `SaveData.Instance`
+   until a file starts, gets an uninitialized object of the probe's own, so
+   that the probe can write values into it;
 5. prints the layout, and writes it if `--out` is given;
 6. prints `probe: ok`. With `--replay`, it then writes distinctive values into
    the game, and takes values to write: see [Replay mode](#replay-mode).
@@ -52,35 +55,37 @@ static field that the auto splitter finds through machine code:
   fields of a base class in the game's framework, and Everest replaces the FNA
   that vanilla runs on, with a different one in different versions, so no layout
   can hold it for every game. The layouts hold each path's one offset after it.
+  Without one, each path is a single field of the root's object.
 - **`Signatures`**: per runtime, how to find the field's address in the
   anchor's code. Each has:
   - a signature that matches the anchor's code once: hex bytes, with `??` for
     any byte;
-  - a pattern for the store of `CodeField` before the signature, with `SS` for
-    the field's offset, 4 bytes in a row. The last match before the signature
-    holds it, and `memory.rs` only searches the 128 bytes before each signature
-    match: `FieldStoreWindow` in `Manifest.cs`;
-  - store patterns for the code that stores into the field after it, with `SS`
-    for the field's address: 4 or 8 bytes in a row. The earliest match of any
-    of them after the signature holds the address: earliest, because a 4-byte
-    pattern can also match inside an 8-byte store. They're searched for rather
-    than expected at a fixed distance, because the instructions in between can
-    change length. On Linux, an address takes 4 or 8 bytes depending on where
-    the heap is.
+  - for a root with a `CodeField`, a pattern for its store before the signature,
+    with `SS` for the field's offset, 4 bytes in a row. The last match before
+    the signature holds it, and `memory.rs` only searches the 128 bytes before
+    each signature match: `FieldStoreWindow` in `Manifest.cs`;
+  - reference patterns for an instruction after it that stores into the field
+    or loads from it, with `SS` for the field's address: 4 or 8 bytes in a row.
+    The earliest match of any of them after the signature holds the address:
+    earliest, because a pattern with a 4-byte address can also match inside
+    one with an 8-byte address. They're searched for rather than expected at a
+    fixed distance, because the instructions in between can change length. On
+    Linux, an address takes 4 or 8 bytes depending on where the heap is.
 
   Once it has checked them, the probe writes them into each runtime's layout,
   and [`memory.rs`](../../autosplitter/src/memory.rs) finds the address from
   them the same way. It only searches the 256 bytes after each signature match:
-  `StoreWindow` in `Manifest.cs`, which the probe writes into the layouts too.
+  `ReferenceWindow` in `Manifest.cs`, which the probe writes into the layouts
+  too.
 - **`Paths`**: instance fields to read from the root's object, joined with dots.
   Each name is looked up in the previous field's type, or its nearest base
   class with that field. Each is a field of `CodeField`'s object, of a
-  concrete class, and ends in a `string`, `bool`, `int` or `long`, which the probe
+  concrete class, or without one, of the root's object, and ends in a `string`, `bool`, `int` or `long`, which the probe
   can write for the harness to check.
 
 To add a root, add it without signatures first. The probe then prints the
 anchor's code and where the field's address appears in it, and stops. Write
-each runtime's signature and store patterns from that, here.
+each runtime's signature and reference patterns from that, here.
 
 ## Replay mode
 

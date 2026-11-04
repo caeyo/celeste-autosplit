@@ -10,10 +10,10 @@ namespace Probe
     internal static class Manifest
     {
         /// <summary>
-        /// How many bytes after each signature match memory.rs searches for the store, which has
-        /// to end within them. The probe writes it into the layouts, for memory.rs.
+        /// How many bytes after each signature match memory.rs searches for the reference to the
+        /// slot, which has to end within them. The probe writes it into the layouts, for memory.rs.
         /// </summary>
-        public const int StoreWindow = 256;
+        public const int ReferenceWindow = 256;
 
         /// <summary>
         /// How many bytes before each signature match memory.rs searches for the store of the
@@ -25,15 +25,16 @@ namespace Probe
 
         // Celeste's constructor passes the game and window sizes (1920x1080, 960x540) to
         // Engine's, then stores itself in Celeste.Instance. The signatures match the size
-        // arguments: pushed on Windows, in registers on Mono. Then the store:
+        // arguments: pushed on Windows, in registers on Mono. Then the store, which references
+        // the slot:
         // - On Windows, the slot's address goes to the GC's write barrier: lea edx, [slot]; call.
         // - On Mono, it's loaded into rax and stored through: mov eax or rax, slot; mov [rax], r15.
         //   The 4-byte form is used when the address fits, which on Linux depends on where the
         //   heap is, so both forms are listed. Where the heap is also changes the length of other
-        //   instructions between the signature and the store, so the store is searched for
+        //   instructions between the signature and the store, so the reference is searched for
         //   rather than expected at a fixed distance.
         // Once it has checked them, the probe writes them into each runtime's layout, and
-        // memory.rs finds the slot from them the same way, within StoreWindow bytes of the
+        // memory.rs finds the slot from them the same way, within ReferenceWindow bytes of the
         // signature.
         // Its field initializers run before that, so the store of its new AutoSplitterInfo comes
         // before the signature, and holds the field's offset:
@@ -49,6 +50,24 @@ namespace Probe
             "49 8d 87 SS SS SS SS",
             "b8 SS SS SS SS 4c 89 38",
             "48 b8 SS SS SS SS SS SS SS SS 4c 89 38");
+
+        // AutoSplitterInfo.Update runs from the game's first update, and reads SaveData.Instance
+        // for the file's values, first for FileTime, right after setting ChapterTime from the
+        // level's session. The signatures match setting ChapterTime, and the reference is the
+        // load from SaveData.Instance that follows:
+        // - On Windows: mov ecx, [slot]; test ecx, ecx.
+        // - On Mono: mov rax, [slot], when the address fits in 32 bits, as it does on Linux, and
+        //   otherwise, as on macOS, mov rax, slot; mov rax, [rax]. Which one depends on where
+        //   the heap is, as for Celeste.Instance, so both are listed.
+        private static readonly Signature SaveDataClr32 = new Signature(
+            "75 06 33 c9 33 d2 eb 09 8b 47 2c 8b 48 04 8b 50 08 89 4e 04 89 56 08",
+            fieldStore: null,
+            "8b 0d SS SS SS SS 85 c9");
+        private static readonly Signature SaveDataMono64 = new Signature(
+            "75 04 33 ed eb 0b 49 8b 46 58 48 8b a8 98 00 00 00 49 89 6c 24 28",
+            fieldStore: null,
+            "48 8b 04 25 SS SS SS SS",
+            "48 b8 SS SS SS SS SS SS SS SS 48 8b 00");
 
         public static readonly ManifestRoot[] Roots =
         {
@@ -80,6 +99,20 @@ namespace Probe
                     "AutoSplitterInfo.FileHearts",
                 },
             },
+            new ManifestRoot
+            {
+                Field = "Celeste.SaveData::Instance",
+                Anchor = "Celeste.AutoSplitterInfo::Update()",
+                Signatures =
+                {
+                    ["clr32"] = SaveDataClr32,
+                    ["mono64"] = SaveDataMono64,
+                },
+                Paths =
+                {
+                    "TotalDeaths",
+                },
+            },
         };
     }
 
@@ -98,7 +131,8 @@ namespace Probe
         /// The first field of the root's paths, whose offset memory.rs reads from the anchor's code
         /// rather than from the layout. It's declared after the fields of a base class in the
         /// game's framework, and Everest replaces the FNA that vanilla runs on, with a different
-        /// one in different versions, so no layout can hold it for every game.
+        /// one in different versions, so no layout can hold it for every game. Without one, each
+        /// path is a single field of the root's object.
         /// </summary>
         public string CodeField;
 

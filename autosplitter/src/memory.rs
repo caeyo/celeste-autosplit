@@ -327,11 +327,11 @@ struct Runtime {
     signature: &'static str,
     /// Where each match of the signature ends, in an executable range.
     scan: fn(&Process, (Address, u64)) -> Vec<Address>,
-    /// Patterns for the store into `Celeste.Instance` after the signature: hex bytes, with `??`
+    /// Patterns for a reference to `Celeste.Instance` after the signature: hex bytes, with `??`
     /// for any byte, and `SS` for the static slot's address, 4 or 8 of them in a row.
-    stores: &'static [&'static str],
-    /// How many bytes after the signature are searched for the store.
-    store_window: u64,
+    references: &'static [&'static str],
+    /// How many bytes after the signature are searched for the reference.
+    reference_window: u64,
     /// Pattern for the store of `AutoSplitterInfo` before the signature, with `SS` for its offset
     /// from the object in the slot.
     info_store: &'static str,
@@ -354,8 +354,8 @@ macro_rules! runtime {
                     Signature::new(instance::SIGNATURE);
                 signature_ends(&SIGNATURE, process, range)
             },
-            stores: instance::STORES,
-            store_window: instance::STORE_WINDOW,
+            references: instance::REFERENCES,
+            reference_window: instance::REFERENCE_WINDOW,
             info_store: instance::AUTO_SPLITTER_INFO_STORE,
             info_store_window: instance::AUTO_SPLITTER_INFO_STORE_WINDOW,
             state: |slot, info| GameState::Vanilla {
@@ -387,7 +387,7 @@ macro_rules! runtime {
 }
 
 /// Windows's XNA and FNA builds both run on 32-bit .NET Framework, and Linux's and macOS's on 64-bit
-/// Mono, with the same signature, stores, and fields in `AutoSplitterInfo` on each. Only the offset
+/// Mono, with the same signature, references, and fields in `AutoSplitterInfo` on each. Only the offset
 /// of `AutoSplitterInfo` differs, which is read from the code: it comes after the fields of `Game`,
 /// which `Engine` derives from, and Everest replaces the FNA that vanilla runs on.
 const RUNTIMES: &[Runtime] = &[
@@ -451,9 +451,9 @@ fn find_slot(process: &Process, runtime: &Runtime) -> Option<(Slot, u64)> {
             .into_iter()
             .find_map(|code| {
                 // Only within the range, which is all mapped.
-                let len = runtime.store_window.min(end - code.value());
+                let len = runtime.reference_window.min(end - code.value());
                 let slot = Slot {
-                    address: runtime.read_store(process, code, len)?,
+                    address: runtime.read_reference(process, code, len)?,
                     ptr_size: runtime.ptr_size,
                 };
                 let info = runtime.read_info_store(process, code, start)?;
@@ -465,15 +465,16 @@ fn find_slot(process: &Process, runtime: &Runtime) -> Option<(Slot, u64)> {
 }
 
 impl Runtime {
-    /// The slot's address, from the earliest match of any store pattern in the code. Earliest,
-    /// not the first pattern listed, because a 4-byte pattern can also match inside an 8-byte
-    /// store, when the address's fourth byte happens to be the 4-byte form's opcode.
-    fn read_store(&self, process: &Process, code: Address, len: u64) -> Option<Address> {
+    /// The slot's address, from the earliest match of any reference pattern in the code. Earliest,
+    /// not the first pattern listed, because a pattern with a 4-byte address can also match inside
+    /// one with an 8-byte address, when the address's fourth byte happens to be the 4-byte form's
+    /// opcode.
+    fn read_reference(&self, process: &Process, code: Address, len: u64) -> Option<Address> {
         let code = process.read_vec::<u8>(code, len as usize).ok()?;
         (0..code.len()).find_map(|start| {
-            self.stores
+            self.references
                 .iter()
-                .find_map(|store| match_store(store, &code[start..]))
+                .find_map(|reference| match_pattern(reference, &code[start..]))
         })
     }
 
@@ -488,7 +489,7 @@ impl Runtime {
             .ok()?;
         (0..code.len())
             .rev()
-            .find_map(|start| match_store(self.info_store, &code[start..]))
+            .find_map(|start| match_pattern(self.info_store, &code[start..]))
             .map(|offset| offset.value())
     }
 
@@ -502,12 +503,12 @@ impl Runtime {
     }
 }
 
-/// The value of the store's `SS` bytes, a slot's address or a field's offset, if the store pattern
+/// The value of the pattern's `SS` bytes, a slot's address or a field's offset, if the pattern
 /// matches at the start of the code.
-fn match_store(store: &str, code: &[u8]) -> Option<Address> {
+fn match_pattern(pattern: &str, code: &[u8]) -> Option<Address> {
     let mut value = 0;
     let mut value_bytes = 0;
-    for (i, byte) in store.split(' ').enumerate() {
+    for (i, byte) in pattern.split(' ').enumerate() {
         let actual = *code.get(i)?;
         match byte {
             "SS" => {
