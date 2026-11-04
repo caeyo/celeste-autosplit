@@ -1,7 +1,7 @@
 name: Layouts
 
 # Measures each vanilla flavour's memory layout with the probe, inside the flavour's own
-# runtime next to the real game files, as layouts/<flavour>.rs. Then the auto splitter is
+# runtime next to the real game files, as layouts/<runtime>.rs. Then the auto splitter is
 # built with it, and the harness runs it against the game, which the probe constructs
 # again: the live check, then the replay of every trace. On dispatch, a last job opens a
 # pull request into the dispatched branch with the regenerated layouts. On a pull request,
@@ -78,13 +78,17 @@ jobs:
       matrix:
         include:
           - flavour: windows-xna
+            layout: clr32
             runner: windows-latest
           - flavour: windows-fna
+            layout: clr32
             runner: windows-latest
           - flavour: linux
+            layout: mono64
             runner: ubuntu-latest
           # The game is x86_64 only: on arm64 it runs under Rosetta.
           - flavour: macos
+            layout: mono64
             runner: macos-latest
     steps:
       # The game's code runs in this job, so it doesn't keep the checkout's token. A fork's
@@ -205,13 +209,13 @@ jobs:
           MacOS/Celeste --game real/Celeste.exe --out "$RUNNER_TEMP/layouts"
 
       # The probe's layout replaces the committed one, so that the harness always tests the
-      # offsets just measured. The probe names the file after the flavour it detected, so a
+      # offsets just measured. The probe names the file after the runtime it detected, so a
       # mislabelled matrix entry fails here.
       - name: Build auto splitter with the probe's layout
         env:
-          FLAVOUR: ${{ matrix.flavour }}
+          LAYOUT: ${{ matrix.layout }}
         run: |
-          cp "$RUNNER_TEMP/layouts/$FLAVOUR.rs" layouts/
+          cp "$RUNNER_TEMP/layouts/$LAYOUT.rs" layouts/
           (cd autosplitter && cargo b --release --locked)
 
       # The harness starts the probe again, as the game, attaches the auto splitter to it, and
@@ -241,10 +245,10 @@ jobs:
       - name: Check committed layout
         if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
         env:
-          FLAVOUR: ${{ matrix.flavour }}
+          LAYOUT: ${{ matrix.layout }}
         run: |
-          git diff --exit-code -- "layouts/$FLAVOUR.rs" || {
-            echo "::error::layouts/$FLAVOUR.rs isn't what the probe writes: regenerate it with the Layouts workflow."
+          git diff --exit-code -- "layouts/$LAYOUT.rs" || {
+            echo "::error::layouts/$LAYOUT.rs isn't what the probe writes: regenerate it with the Layouts workflow."
             exit 1
           }
 
@@ -252,7 +256,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: layout-${{ matrix.flavour }}
-          path: ${{ runner.temp }}/layouts/${{ matrix.flavour }}.rs
+          path: ${{ runner.temp }}/layouts/${{ matrix.layout }}.rs
           if-no-files-found: error
           retention-days: 7
 
@@ -270,6 +274,8 @@ jobs:
       - name: Checkout Commit
         uses: actions/checkout@v7
 
+      # Flavours on the same runtime write the same file, so one replaces the other here. If
+      # they ever differ, each one's run on the pull request below fails its layout check.
       - name: Download layouts
         uses: actions/download-artifact@v8
         with:
