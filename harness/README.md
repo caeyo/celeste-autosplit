@@ -31,6 +31,7 @@ stand-in for the game. It checks:
 
 - finding `Celeste.Instance`: the signature, the store into its slot, and the
   store of `AutoSplitterInfo`, which holds that field's offset;
+- finding `SaveData.Instance`: the signature, and the load from its slot;
 - every offset and pointer size `memory.rs` reads through;
 - reading .NET strings, numbers and flags: the live check's distinctive values,
   and the values real play produces, such as empty strings;
@@ -91,6 +92,9 @@ probe's command, so that it runs as you, as players run the game.
   `stable-1.4449.0` and `stable-1.6662.0`, on both builds of the game.
 - Values that neither the probe nor a trace holds, such as the smallest and
   largest numbers.
+- `SaveData.Instance` holding null, as it does until a file starts: the probe
+  always holds a save of its own, so nothing checks that `Deaths` goes unreported
+  without one.
 - The rules for code the game doesn't have: a second match of the signature,
   and a 4-byte reference pattern matching inside an 8-byte one. The probe checks
   that the real reference is within the window `memory.rs` searches.
