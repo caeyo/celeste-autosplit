@@ -211,11 +211,12 @@ namespace Probe
             Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), root.AnchorName);
             root.Paths = entry.Paths.Select(p => ResolvePath(root, p)).ToArray();
             CheckUnique(root.Paths.Select(p => p.Name), " in the paths of " + root.Name);
-            // memory.rs reads a path's first offset from the code, and a layout holds its second.
-            FieldPath other = root.Paths.FirstOrDefault(p => p.Fields.Length != 2 || p.Fields[0].Name != root.CodeField);
+            // A layout holds one offset per path. With a CodeField, memory.rs reads a path's first
+            // offset from the code.
+            FieldPath other = root.Paths.FirstOrDefault(p => root.CodeField == null ? p.Fields.Length != 1 : p.Fields.Length != 2 || p.Fields[0].Name != root.CodeField);
             if (other != null)
             {
-                throw new ProbeException(other.Name + " isn't a field of " + root.CodeField + ": a layout holds one offset per path, after the field memory.rs reads the offset of from the code");
+                throw new ProbeException(other.Name + " isn't a field of " + (root.CodeField ?? root.Name) + ": a layout holds one offset per path");
             }
             return root;
         }
@@ -344,6 +345,8 @@ namespace Probe
         {
             // Run the class constructors first, as the game has by the time it runs the anchor:
             // the JIT may compile static accesses differently before a class is initialized.
+            // SaveData has none, so it doesn't matter that the game may not have initialized it
+            // when it first runs AutoSplitterInfo.Update.
             RuntimeHelpers.RunClassConstructor(root.Field.DeclaringType.TypeHandle);
             RuntimeHelpers.RunClassConstructor(root.Anchor.DeclaringType.TypeHandle);
             ulong slot = Memory.StaticFieldAddress(root.Field);
@@ -372,26 +375,31 @@ namespace Probe
                 throw new ProbeException(matches.Length == 0 ? "the signature doesn't match the anchor's code" : "the signature matches the anchor's code more than once");
             }
 
-            // The store is the earliest match of any store pattern after the signature, and must
-            // hold the slot's address.
+            // The reference is the earliest match of any reference pattern after the signature,
+            // and must hold the slot's address.
             int after = matches[0] + root.Signature.Code.Length;
-            var store = root.Signature.Store
+            var reference = root.Signature.References
                 .Select(p => new { Pattern = p, Match = p.Matches(code, after).DefaultIfEmpty(-1).First() })
-                .Where(s => s.Match >= 0)
-                .OrderBy(s => s.Match)
+                .Where(r => r.Match >= 0)
+                .OrderBy(r => r.Match)
                 .FirstOrDefault()
-                ?? throw new ProbeException("no store pattern matches after the signature");
-            Console.WriteLine("store {0}: the earliest match, at +0x{1:x}, {2} bytes after the signature", store.Pattern, store.Match, store.Match - after);
-            ulong stored = store.Pattern.Slot(code, store.Match);
-            if (stored != slot)
+                ?? throw new ProbeException("no reference pattern matches after the signature");
+            Console.WriteLine("reference {0}: the earliest match, at +0x{1:x}, {2} bytes after the signature", reference.Pattern, reference.Match, reference.Match - after);
+            ulong referenced = reference.Pattern.Slot(code, reference.Match);
+            if (referenced != slot)
             {
-                throw new ProbeException("the store's address is 0x" + stored.ToString("x") + ", but the slot is at 0x" + slot.ToString("x"));
+                throw new ProbeException("the reference's address is 0x" + referenced.ToString("x") + ", but the slot is at 0x" + slot.ToString("x"));
             }
-            Console.WriteLine("the store's address is the slot's");
-            int end = store.Match + store.Pattern.Length - after;
-            if (end > Manifest.StoreWindow)
+            Console.WriteLine("the reference's address is the slot's");
+            int end = reference.Match + reference.Pattern.Length - after;
+            if (end > Manifest.ReferenceWindow)
             {
-                throw new ProbeException("the store ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.StoreWindow + ": widen StoreWindow, in Manifest.cs");
+                throw new ProbeException("the reference ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.ReferenceWindow + ": widen ReferenceWindow, in Manifest.cs");
+            }
+
+            if (root.CodeField == null)
+            {
+                return;
             }
 
             // The field's store is the last match of its pattern before the signature, and must
@@ -460,7 +468,16 @@ namespace Probe
             held = new List<HeldPath>();
             foreach (Root root in roots)
             {
-                object value = root.Field.GetValue(null) ?? throw new ProbeException(root.Name + " is still null after new Celeste(), so the auto splitter would have nothing to read: set it up in the probe first");
+                object value = root.Field.GetValue(null);
+                if (value == null)
+                {
+                    // The game leaves it null until later, as it does SaveData.Instance until a
+                    // file starts, so the auto splitter needs an object of the probe's to read.
+                    value = FormatterServices.GetUninitializedObject(root.Field.FieldType);
+                    GC.SuppressFinalize(value);
+                    root.Field.SetValue(null, value);
+                    Console.WriteLine("{0} is null after new Celeste(), so the probe sets up an uninitialized {1}", root.Name, Names.TypeName(root.Field.FieldType));
+                }
                 foreach (FieldPath path in root.Paths)
                 {
                     object owner = value;
@@ -635,30 +652,33 @@ namespace Probe
                 Line("pub mod " + ConstantName(root.Field.DeclaringType.Name + "." + root.Field.Name).ToLowerInvariant() + " {");
                 Line("    /// Matches the code once: hex bytes, with `??` for any byte.");
                 Line("    pub const SIGNATURE: &str = \"" + root.Signature.Code + "\";");
-                Line("    /// The store into the slot: the earliest match of any of these after the signature, with `SS`");
+                Line("    /// A reference to the slot: the earliest match of any of these after the signature, with `SS`");
                 Line("    /// for the slot's address.");
-                Line("    pub const STORES: &[&str] = &[");
-                foreach (Pattern store in root.Signature.Store)
+                Line("    pub const REFERENCES: &[&str] = &[");
+                foreach (Pattern reference in root.Signature.References)
                 {
-                    Line("        \"" + store + "\",");
+                    Line("        \"" + reference + "\",");
                 }
                 Line("    ];");
-                Line("    /// How many bytes after the signature are searched for the store, which ends within them.");
-                Line("    pub const STORE_WINDOW: u64 = " + Manifest.StoreWindow + ";");
-                string fieldStore = ConstantName(root.CodeField) + "_STORE";
-                Line("    /// The store of `" + root.CodeField + "`: the last match of this before the signature, with `SS` for");
-                Line("    /// the field's offset, which depends on the framework the game runs on.");
-                Line("    pub const " + fieldStore + ": &str = \"" + root.Signature.FieldStore + "\";");
-                Line("    /// How many bytes before the signature are searched for it, which starts within them.");
-                Line("    pub const " + fieldStore + "_WINDOW: u64 = " + Manifest.FieldStoreWindow + ";");
+                Line("    /// How many bytes after the signature are searched for the reference, which ends within them.");
+                Line("    pub const REFERENCE_WINDOW: u64 = " + Manifest.ReferenceWindow + ";");
+                if (root.CodeField != null)
+                {
+                    string fieldStore = ConstantName(root.CodeField) + "_STORE";
+                    Line("    /// The store of `" + root.CodeField + "`: the last match of this before the signature, with `SS` for");
+                    Line("    /// the field's offset, which depends on the framework the game runs on.");
+                    Line("    pub const " + fieldStore + ": &str = \"" + root.Signature.FieldStore + "\";");
+                    Line("    /// How many bytes before the signature are searched for it, which starts within them.");
+                    Line("    pub const " + fieldStore + "_WINDOW: u64 = " + Manifest.FieldStoreWindow + ";");
+                }
                 Line("");
-                Line("    // Each path's offset after `" + root.CodeField + "`, and the name and type of each field");
+                Line("    // Each path's offset " + (root.CodeField == null ? "from the object in the slot" : "after `" + root.CodeField + "`") + ", and the name and type of each field");
                 Line("    // along it.");
                 Line("");
                 foreach (FieldPath path in root.Paths)
                 {
                     Line("    /// " + string.Join(", ", path.Fields.Select(f => f.Name + ": " + Names.TypeName(f.FieldType)).ToArray()));
-                    Line("    pub const " + ConstantName(path.Name) + ": u64 = " + Hex(path.Offsets[1]) + ";");
+                    Line("    pub const " + ConstantName(path.Name) + ": u64 = " + Hex(path.Offsets.Last()) + ";");
                 }
                 Line("}");
             }
