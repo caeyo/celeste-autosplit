@@ -21,7 +21,7 @@ mod macos;
 #[rustfmt::skip]
 #[allow(dead_code)]
 #[path = "../../layouts/windows-xna.rs"]
-mod windows_xna;
+mod windows;
 
 #[expect(
     clippy::large_enum_variant,
@@ -390,12 +390,12 @@ macro_rules! flavour {
     }};
 }
 
-/// One per OS. Windows's XNA and FNA builds both read through `windows_xna`: they have the same
+/// One per OS. Windows's XNA and FNA builds both read through `windows`: they have the same
 /// signature and stores, and the same fields in `AutoSplitterInfo`. Only the offset of
 /// `AutoSplitterInfo` differs, which is read from the code, and also differs between FNA versions,
 /// since it comes after the fields of `Game`, which `Engine` derives from, and Everest replaces the
 /// FNA that vanilla runs on.
-const FLAVOURS: &[Flavour] = &[flavour!(windows_xna), flavour!(linux), flavour!(macos)];
+const FLAVOURS: &[Flavour] = &[flavour!(windows), flavour!(linux), flavour!(macos)];
 
 const fn pointer_size(bytes: u64) -> PointerSize {
     match bytes {
