@@ -32,7 +32,7 @@ namespace Probe
         //   heap is, so both forms are listed. Where the heap is also changes the length of other
         //   instructions between the signature and the store, so the store is searched for
         //   rather than expected at a fixed distance.
-        // Once it has checked them, the probe writes them into each flavour's layout, and
+        // Once it has checked them, the probe writes them into each runtime's layout, and
         // memory.rs finds the slot from them the same way, within StoreWindow bytes of the
         // signature.
         // Its field initializers run before that, so the store of its new AutoSplitterInfo comes
@@ -59,10 +59,8 @@ namespace Probe
                 CodeField = "AutoSplitterInfo",
                 Signatures =
                 {
-                    ["windows-xna"] = CelesteClr32,
-                    ["windows-fna"] = CelesteClr32,
-                    ["linux"] = CelesteMono64,
-                    ["macos"] = CelesteMono64,
+                    ["clr32"] = CelesteClr32,
+                    ["mono64"] = CelesteMono64,
                 },
                 Paths =
                 {
@@ -104,7 +102,7 @@ namespace Probe
         /// </summary>
         public string CodeField;
 
-        /// <summary>Per flavour, how to find the field's address in the anchor's code.</summary>
+        /// <summary>Per runtime, how to find the field's address in the anchor's code.</summary>
         public readonly Dictionary<string, Signature> Signatures = new Dictionary<string, Signature>();
 
         /// <summary>

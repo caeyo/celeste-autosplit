@@ -3,7 +3,7 @@ use asr::{
     PointerSize, Process,
 };
 
-// The memory layouts, in layouts/ at the repository's root: each vanilla flavour's is generated
+// The memory layouts, in layouts/ at the repository's root: each runtime's is generated
 // by the probe, and Everest's is transcribed from its source. rustfmt leaves them as they're
 // written, and they can hold more than this reads.
 #[rustfmt::skip]
@@ -12,16 +12,12 @@ use asr::{
 mod everest;
 #[rustfmt::skip]
 #[allow(dead_code)]
-#[path = "../../layouts/linux.rs"]
-mod linux;
+#[path = "../../layouts/clr32.rs"]
+mod clr32;
 #[rustfmt::skip]
 #[allow(dead_code)]
-#[path = "../../layouts/macos.rs"]
-mod macos;
-#[rustfmt::skip]
-#[allow(dead_code)]
-#[path = "../../layouts/windows-xna.rs"]
-mod windows;
+#[path = "../../layouts/mono64.rs"]
+mod mono64;
 
 #[expect(
     clippy::large_enum_variant,
@@ -321,11 +317,11 @@ fn read_everest_string(process: &Process, ptr: u64) -> Option<String> {
     String::from_utf8(buf).ok()
 }
 
-/// A vanilla flavour of the game, from its layout: how to find `Celeste.Instance`, and how to
+/// A runtime the game runs on, from its layout: how to find `Celeste.Instance`, and how to
 /// read the game through it.
-struct Flavour {
-    /// As `asr::get_os` names it.
-    os: &'static str,
+struct Runtime {
+    /// The OSes the game runs on it on, as `asr::get_os` names them.
+    oses: &'static [&'static str],
     ptr_size: PointerSize,
     /// The signature in `Celeste`'s constructor: hex bytes, with `??` for any byte.
     signature: &'static str,
@@ -345,12 +341,12 @@ struct Flavour {
     state: fn(Slot, u64) -> GameState,
 }
 
-/// A vanilla flavour, from its layout's module.
-macro_rules! flavour {
-    ($layout:ident) => {{
+/// A runtime, from its layout's module.
+macro_rules! runtime {
+    ($layout:ident, $oses:expr) => {{
         use $layout::celeste_instance as instance;
-        Flavour {
-            os: $layout::OS,
+        Runtime {
+            oses: $oses,
             ptr_size: pointer_size($layout::POINTER_SIZE),
             signature: instance::SIGNATURE,
             scan: |process, range| {
@@ -366,36 +362,38 @@ macro_rules! flavour {
                 ptr_size: slot.ptr_size,
                 string_len: $layout::STRING_LENGTH,
                 string_chars: $layout::STRING_CHARS,
-                chapter_time: slot.field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_TIME[0]]),
-                file_time: slot.field([info, instance::AUTO_SPLITTER_INFO_FILE_TIME[0]]),
-                level: slot.field([info, instance::AUTO_SPLITTER_INFO_LEVEL[0]]),
-                chapter: slot.field([info, instance::AUTO_SPLITTER_INFO_CHAPTER[0]]),
-                mode: slot.field([info, instance::AUTO_SPLITTER_INFO_MODE[0]]),
+                chapter_time: slot.info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_TIME),
+                file_time: slot.info_field(info, instance::AUTO_SPLITTER_INFO_FILE_TIME),
+                level: slot.info_field(info, instance::AUTO_SPLITTER_INFO_LEVEL),
+                chapter: slot.info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER),
+                mode: slot.info_field(info, instance::AUTO_SPLITTER_INFO_MODE),
                 chapter_strawberries: slot
-                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_STRAWBERRIES[0]]),
+                    .info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_STRAWBERRIES),
                 file_strawberries: slot
-                    .field([info, instance::AUTO_SPLITTER_INFO_FILE_STRAWBERRIES[0]]),
-                file_cassettes: slot.field([info, instance::AUTO_SPLITTER_INFO_FILE_CASSETTES[0]]),
-                file_hearts: slot.field([info, instance::AUTO_SPLITTER_INFO_FILE_HEARTS[0]]),
-                timer_active: slot.field([info, instance::AUTO_SPLITTER_INFO_TIMER_ACTIVE[0]]),
+                    .info_field(info, instance::AUTO_SPLITTER_INFO_FILE_STRAWBERRIES),
+                file_cassettes: slot.info_field(info, instance::AUTO_SPLITTER_INFO_FILE_CASSETTES),
+                file_hearts: slot.info_field(info, instance::AUTO_SPLITTER_INFO_FILE_HEARTS),
+                timer_active: slot.info_field(info, instance::AUTO_SPLITTER_INFO_TIMER_ACTIVE),
                 chapter_started: slot
-                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_STARTED[0]]),
+                    .info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_STARTED),
                 chapter_complete: slot
-                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_COMPLETE[0]]),
+                    .info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_COMPLETE),
                 chapter_cassette: slot
-                    .field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE[0]]),
-                chapter_heart: slot.field([info, instance::AUTO_SPLITTER_INFO_CHAPTER_HEART[0]]),
+                    .info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE),
+                chapter_heart: slot.info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_HEART),
             },
         }
     }};
 }
 
-/// One per OS. Windows's XNA and FNA builds both read through `windows`: they have the same
-/// signature and stores, and the same fields in `AutoSplitterInfo`. Only the offset of
-/// `AutoSplitterInfo` differs, which is read from the code, and also differs between FNA versions,
-/// since it comes after the fields of `Game`, which `Engine` derives from, and Everest replaces the
-/// FNA that vanilla runs on.
-const FLAVOURS: &[Flavour] = &[flavour!(windows), flavour!(linux), flavour!(macos)];
+/// Windows's XNA and FNA builds both run on 32-bit .NET Framework, and Linux's and macOS's on 64-bit
+/// Mono, with the same signature, stores, and fields in `AutoSplitterInfo` on each. Only the offset
+/// of `AutoSplitterInfo` differs, which is read from the code: it comes after the fields of `Game`,
+/// which `Engine` derives from, and Everest replaces the FNA that vanilla runs on.
+const RUNTIMES: &[Runtime] = &[
+    runtime!(clr32, &["windows"]),
+    runtime!(mono64, &["linux", "macos"]),
+];
 
 const fn pointer_size(bytes: u64) -> PointerSize {
     match bytes {
@@ -430,42 +428,43 @@ struct Slot {
 }
 
 impl Slot {
-    /// A field's pointer path, from the slot through the field's offsets. The build fails unless
-    /// the `DeepPointer` has room for them all, since it would silently drop the rest.
-    /// `cargo check` and clippy don't evaluate this.
-    fn field<const N: usize, const CAP: usize>(self, offsets: [u64; N]) -> DeepPointer<CAP> {
-        const { assert!(N < CAP, "a path is too long for its DeepPointer") };
-        // The first offset, 0, reads the object's address from the slot.
-        let mut path = [0; CAP];
-        path[1..=N].copy_from_slice(&offsets);
-        DeepPointer::new(self.address, self.ptr_size, &path[..=N])
+    // The first offset of a path, 0, reads the object's address from the slot.
+
+    /// The path to the reference to `AutoSplitterInfo`, at its offset in the object in the slot.
+    fn info(self, info: u64) -> DeepPointer<2> {
+        DeepPointer::new(self.address, self.ptr_size, &[0, info])
+    }
+
+    /// The path to a field of `AutoSplitterInfo`, at its offset in that object.
+    fn info_field(self, info: u64, field: u64) -> DeepPointer<3> {
+        DeepPointer::new(self.address, self.ptr_size, &[0, info, field])
     }
 }
 
 /// Finds the static slot of `Celeste.Instance`, and the offset of `AutoSplitterInfo`. Each match of
 /// the signature is tried in turn, and is only accepted if the object in the slot holds an
 /// `AutoSplitterInfo`, as it does once the game is constructed.
-fn find_slot(process: &Process, flavour: &Flavour) -> Option<(Slot, u64)> {
+fn find_slot(process: &Process, runtime: &Runtime) -> Option<(Slot, u64)> {
     scan_executable(process, |(start, size)| {
         let end = start.value() + size;
-        (flavour.scan)(process, (start, size))
+        (runtime.scan)(process, (start, size))
             .into_iter()
             .find_map(|code| {
                 // Only within the range, which is all mapped.
-                let len = flavour.store_window.min(end - code.value());
+                let len = runtime.store_window.min(end - code.value());
                 let slot = Slot {
-                    address: flavour.read_store(process, code, len)?,
-                    ptr_size: flavour.ptr_size,
+                    address: runtime.read_store(process, code, len)?,
+                    ptr_size: runtime.ptr_size,
                 };
-                let info = flavour.read_info_store(process, code, start)?;
-                flavour
+                let info = runtime.read_info_store(process, code, start)?;
+                runtime
                     .has_info(process, slot, info)
                     .then_some((slot, info))
             })
     })
 }
 
-impl Flavour {
+impl Runtime {
     /// The slot's address, from the earliest match of any store pattern in the code. Earliest,
     /// not the first pattern listed, because a 4-byte pattern can also match inside an 8-byte
     /// store, when the address's fourth byte happens to be the 4-byte form's opcode.
@@ -494,8 +493,7 @@ impl Flavour {
     }
 
     fn has_info(&self, process: &Process, slot: Slot, info: u64) -> bool {
-        let field: DeepPointer<2> = slot.field([info]);
-        let Ok(field) = field.deref_offsets(process) else {
+        let Ok(field) = slot.info(info).deref_offsets(process) else {
             return false;
         };
         process
@@ -587,7 +585,9 @@ pub fn init(process: &Process) -> Option<GameState> {
         return Some(state);
     }
     let os = asr::get_os().ok()?;
-    let flavour = FLAVOURS.iter().find(|flavour| flavour.os == os.as_str())?;
-    let (slot, info) = find_slot(process, flavour)?;
-    Some((flavour.state)(slot, info))
+    let runtime = RUNTIMES
+        .iter()
+        .find(|runtime| runtime.oses.contains(&os.as_str()))?;
+    let (slot, info) = find_slot(process, runtime)?;
+    Some((runtime.state)(slot, info))
 }
