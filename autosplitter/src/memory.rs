@@ -42,6 +42,7 @@ pub enum GameState {
         chapter_complete: DeepPointer<3>,
         chapter_cassette: DeepPointer<3>,
         chapter_heart: DeepPointer<3>,
+        total_deaths: DeepPointer<2>,
     },
     Everest {
         info: Address,
@@ -190,6 +191,14 @@ impl GameState {
         }
     }
 
+    /// `None` while there's no save, as reading through the null `SaveData.Instance` fails.
+    pub fn total_deaths(&self, process: &Process) -> Option<i32> {
+        match self {
+            Self::Vanilla { total_deaths, .. } => total_deaths.deref(process).ok(),
+            Self::Everest { .. } => None,
+        }
+    }
+
     pub fn file_golden_strawberries(&self, process: &Process) -> Option<i32> {
         match self {
             Self::Vanilla { .. } => None,
@@ -317,48 +326,67 @@ fn read_everest_string(process: &Process, ptr: u64) -> Option<String> {
     String::from_utf8(buf).ok()
 }
 
-/// A runtime the game runs on, from its layout: how to find `Celeste.Instance`, and how to
-/// read the game through it.
+/// How to find a root's static slot, from its anchor method's compiled code.
+struct Anchor {
+    /// The signature in the method's code: hex bytes, with `??` for any byte.
+    signature: &'static str,
+    /// Where each match of the signature ends, in an executable range.
+    scan: fn(&Process, (Address, u64)) -> Vec<Address>,
+    /// Patterns for a reference to the slot after the signature: hex bytes, with `??` for any
+    /// byte, and `SS` for the static slot's address, 4 or 8 of them in a row.
+    references: &'static [&'static str],
+    /// How many bytes after the signature are searched for the reference.
+    reference_window: u64,
+}
+
+/// An anchor, from its root's module in a layout.
+macro_rules! anchor {
+    ($root:ident) => {
+        Anchor {
+            signature: $root::SIGNATURE,
+            scan: |process, range| {
+                static SIGNATURE: Signature<{ pattern_len($root::SIGNATURE) }> =
+                    Signature::new($root::SIGNATURE);
+                signature_ends(&SIGNATURE, process, range)
+            },
+            references: $root::REFERENCES,
+            reference_window: $root::REFERENCE_WINDOW,
+        }
+    };
+}
+
+/// A runtime the game runs on, from its layout: how to find `Celeste.Instance` and
+/// `SaveData.Instance`, and how to read the game through them.
 struct Runtime {
     /// The OSes the game runs on it on, as `asr::get_os` names them.
     oses: &'static [&'static str],
     ptr_size: PointerSize,
-    /// The signature in `Celeste`'s constructor: hex bytes, with `??` for any byte.
-    signature: &'static str,
-    /// Where each match of the signature ends, in an executable range.
-    scan: fn(&Process, (Address, u64)) -> Vec<Address>,
-    /// Patterns for a reference to `Celeste.Instance` after the signature: hex bytes, with `??`
-    /// for any byte, and `SS` for the static slot's address, 4 or 8 of them in a row.
-    references: &'static [&'static str],
-    /// How many bytes after the signature are searched for the reference.
-    reference_window: u64,
+    /// `Celeste.Instance`, found from `Celeste`'s constructor.
+    instance: Anchor,
     /// Pattern for the store of `AutoSplitterInfo` before the signature, with `SS` for its offset
     /// from the object in the slot.
     info_store: &'static str,
     /// How many bytes before the signature are searched for that store.
     info_store_window: u64,
-    /// The game's state, read through the static slot and `AutoSplitterInfo`'s offset.
-    state: fn(Slot, u64) -> GameState,
+    /// `SaveData.Instance`, found from `AutoSplitterInfo.Update`.
+    save_data: Anchor,
+    /// The game's state, read through the slot of `Celeste.Instance`, `AutoSplitterInfo`'s offset,
+    /// and the slot of `SaveData.Instance`.
+    state: fn(Slot, u64, Slot) -> GameState,
 }
 
 /// A runtime, from its layout's module.
 macro_rules! runtime {
     ($layout:ident, $oses:expr) => {{
-        use $layout::celeste_instance as instance;
+        use $layout::{celeste_instance as instance, save_data_instance as save_data};
         Runtime {
             oses: $oses,
             ptr_size: pointer_size($layout::POINTER_SIZE),
-            signature: instance::SIGNATURE,
-            scan: |process, range| {
-                static SIGNATURE: Signature<{ pattern_len(instance::SIGNATURE) }> =
-                    Signature::new(instance::SIGNATURE);
-                signature_ends(&SIGNATURE, process, range)
-            },
-            references: instance::REFERENCES,
-            reference_window: instance::REFERENCE_WINDOW,
+            instance: anchor!(instance),
             info_store: instance::AUTO_SPLITTER_INFO_STORE,
             info_store_window: instance::AUTO_SPLITTER_INFO_STORE_WINDOW,
-            state: |slot, info| GameState::Vanilla {
+            save_data: anchor!(save_data),
+            state: |slot, info, save| GameState::Vanilla {
                 ptr_size: slot.ptr_size,
                 string_len: $layout::STRING_LENGTH,
                 string_chars: $layout::STRING_CHARS,
@@ -381,13 +409,14 @@ macro_rules! runtime {
                 chapter_cassette: slot
                     .info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE),
                 chapter_heart: slot.info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_HEART),
+                total_deaths: save.field(save_data::TOTAL_DEATHS),
             },
         }
     }};
 }
 
 /// Windows's XNA and FNA builds both run on 32-bit .NET Framework, and Linux's and macOS's on 64-bit
-/// Mono, with the same signature, references, and fields in `AutoSplitterInfo` on each. Only the offset
+/// Mono, with the same signatures, references, and fields on each. Only the offset
 /// of `AutoSplitterInfo` differs, which is read from the code: it comes after the fields of `Game`,
 /// which `Engine` derives from, and Everest replaces the FNA that vanilla runs on.
 const RUNTIMES: &[Runtime] = &[
@@ -419,8 +448,7 @@ fn signature_ends<const N: usize>(
         .collect()
 }
 
-/// The static slot of `Celeste.Instance`, which holds a reference to the object that each field's
-/// path starts from.
+/// A root's static slot, which holds a reference to the object that each of its paths starts from.
 #[derive(Clone, Copy)]
 struct Slot {
     address: Address,
@@ -430,9 +458,9 @@ struct Slot {
 impl Slot {
     // The first offset of a path, 0, reads the object's address from the slot.
 
-    /// The path to the reference to `AutoSplitterInfo`, at its offset in the object in the slot.
-    fn info(self, info: u64) -> DeepPointer<2> {
-        DeepPointer::new(self.address, self.ptr_size, &[0, info])
+    /// The path to a field of the object in the slot, at its offset in that object.
+    fn field(self, field: u64) -> DeepPointer<2> {
+        DeepPointer::new(self.address, self.ptr_size, &[0, field])
     }
 
     /// The path to a field of `AutoSplitterInfo`, at its offset in that object.
@@ -444,18 +472,14 @@ impl Slot {
 /// Finds the static slot of `Celeste.Instance`, and the offset of `AutoSplitterInfo`. Each match of
 /// the signature is tried in turn, and is only accepted if the object in the slot holds an
 /// `AutoSplitterInfo`, as it does once the game is constructed.
-fn find_slot(process: &Process, runtime: &Runtime) -> Option<(Slot, u64)> {
+fn find_instance(process: &Process, runtime: &Runtime) -> Option<(Slot, u64)> {
+    let anchor = &runtime.instance;
     scan_executable(process, |(start, size)| {
         let end = start.value() + size;
-        (runtime.scan)(process, (start, size))
+        (anchor.scan)(process, (start, size))
             .into_iter()
             .find_map(|code| {
-                // Only within the range, which is all mapped.
-                let len = runtime.reference_window.min(end - code.value());
-                let slot = Slot {
-                    address: runtime.read_reference(process, code, len)?,
-                    ptr_size: runtime.ptr_size,
-                };
+                let slot = anchor.read_slot(process, runtime.ptr_size, code, end)?;
                 let info = runtime.read_info_store(process, code, start)?;
                 runtime
                     .has_info(process, slot, info)
@@ -464,24 +488,47 @@ fn find_slot(process: &Process, runtime: &Runtime) -> Option<(Slot, u64)> {
     })
 }
 
-impl Runtime {
-    /// The slot's address, from the earliest match of any reference pattern in the code. Earliest,
-    /// not the first pattern listed, because a pattern with a 4-byte address can also match inside
-    /// one with an 8-byte address, when the address's fourth byte happens to be the 4-byte form's
-    /// opcode.
-    fn read_reference(&self, process: &Process, code: Address, len: u64) -> Option<Address> {
+/// Finds the static slot of `SaveData.Instance`, once the game has compiled its anchor, for its
+/// first update.
+fn find_save_data(process: &Process, runtime: &Runtime) -> Option<Slot> {
+    let anchor = &runtime.save_data;
+    scan_executable(process, |(start, size)| {
+        let end = start.value() + size;
+        (anchor.scan)(process, (start, size))
+            .into_iter()
+            .find_map(|code| anchor.read_slot(process, runtime.ptr_size, code, end))
+    })
+}
+
+impl Anchor {
+    /// The slot, from the earliest match of any reference pattern after the signature, which ends
+    /// at `code`, in a range that ends at `end`. Earliest, not the first pattern listed, because
+    /// a pattern with a 4-byte address can also match inside one with an 8-byte address, when the
+    /// address's fourth byte happens to be the 4-byte form's opcode.
+    fn read_slot(
+        &self,
+        process: &Process,
+        ptr_size: PointerSize,
+        code: Address,
+        end: u64,
+    ) -> Option<Slot> {
+        // Only within the range, which is all mapped.
+        let len = self.reference_window.min(end - code.value());
         let code = process.read_vec::<u8>(code, len as usize).ok()?;
-        (0..code.len()).find_map(|start| {
+        let address = (0..code.len()).find_map(|start| {
             self.references
                 .iter()
                 .find_map(|reference| match_pattern(reference, &code[start..]))
-        })
+        })?;
+        Some(Slot { address, ptr_size })
     }
+}
 
+impl Runtime {
     /// `AutoSplitterInfo`'s offset, from the last match of its store before the signature, which
     /// ends at `code`: the nearest one, in case the search reaches the code before the constructor.
     fn read_info_store(&self, process: &Process, code: Address, range: Address) -> Option<u64> {
-        let signature = code.value() - pattern_len(self.signature) as u64;
+        let signature = code.value() - pattern_len(self.instance.signature) as u64;
         // Only within the range, which is all mapped.
         let len = self.info_store_window.min(signature - range.value());
         let code = process
@@ -494,7 +541,7 @@ impl Runtime {
     }
 
     fn has_info(&self, process: &Process, slot: Slot, info: u64) -> bool {
-        let Ok(field) = slot.info(info).deref_offsets(process) else {
+        let Ok(field) = slot.field(info).deref_offsets(process) else {
             return false;
         };
         process
@@ -589,6 +636,7 @@ pub fn init(process: &Process) -> Option<GameState> {
     let runtime = RUNTIMES
         .iter()
         .find(|runtime| runtime.oses.contains(&os.as_str()))?;
-    let (slot, info) = find_slot(process, runtime)?;
-    Some((runtime.state)(slot, info))
+    let (slot, info) = find_instance(process, runtime)?;
+    let save = find_save_data(process, runtime)?;
+    Some((runtime.state)(slot, info, save))
 }

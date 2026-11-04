@@ -77,6 +77,9 @@ fn set_debug_info(state: &memory::GameState, process: &Process) {
     if let Some(v) = state.file_active(process) {
         asr::timer::set_variable_int("File Active", v as i32);
     }
+    if let Some(deaths) = state.total_deaths(process) {
+        asr::timer::set_variable_int("Deaths", deaths);
+    }
 }
 
 async fn main() {
