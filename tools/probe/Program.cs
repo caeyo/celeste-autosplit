@@ -208,6 +208,12 @@ namespace Probe
             Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), root.AnchorName);
             root.Paths = entry.Paths.Select(p => ResolvePath(root, p)).ToArray();
             CheckUnique(root.Paths.Select(p => p.Name), " in the paths of " + root.Name);
+            // The layouts leave out each path's first offset, which memory.rs reads from the code.
+            FieldPath other = root.Paths.FirstOrDefault(p => p.Fields[0].Name != root.CodeField);
+            if (other != null)
+            {
+                throw new ProbeException(other.Name + " doesn't start with " + root.CodeField + ", the field memory.rs reads the offset of from the code");
+            }
             return root;
         }
 
@@ -641,18 +647,18 @@ namespace Probe
                 Line("    pub const STORE_WINDOW: u64 = " + Manifest.StoreWindow + ";");
                 string fieldStore = ConstantName(root.CodeField) + "_STORE";
                 Line("    /// The store of `" + root.CodeField + "`: the last match of this before the signature, with `SS` for");
-                Line("    /// the field's offset, which paths through it don't take from this layout.");
+                Line("    /// the field's offset, which depends on the framework the game runs on.");
                 Line("    pub const " + fieldStore + ": &str = \"" + root.Signature.FieldStore + "\";");
                 Line("    /// How many bytes before the signature are searched for it, which starts within them.");
                 Line("    pub const " + fieldStore + "_WINDOW: u64 = " + Manifest.FieldStoreWindow + ";");
                 Line("");
-                Line("    // Each path's offsets from the object in the slot, and the name and type of each field");
+                Line("    // Each path's offsets after `" + root.CodeField + "`, and the name and type of each field");
                 Line("    // along it.");
                 Line("");
                 foreach (FieldPath path in root.Paths)
                 {
                     Line("    /// " + string.Join(", ", path.Fields.Select(f => f.Name + ": " + Names.TypeName(f.FieldType)).ToArray()));
-                    Line("    pub const " + ConstantName(path.Name) + ": [u64; " + path.Offsets.Length + "] = [" + string.Join(", ", path.Offsets.Select(Hex).ToArray()) + "];");
+                    Line("    pub const " + ConstantName(path.Name) + ": [u64; " + (path.Offsets.Length - 1) + "] = [" + string.Join(", ", path.Offsets.Skip(1).Select(Hex).ToArray()) + "];");
                 }
                 Line("}");
             }

@@ -31,8 +31,8 @@ with `GITHUB_TOKEN`.
 
 `memory.rs` builds with one layout per OS: on Windows, `windows-xna.rs` for both
 builds of the game, which only differ in what `memory.rs` reads from the game's
-code. `windows-fna.rs` is still measured, and the FNA job's live check and replay
-show that `windows-xna.rs` reads that build correctly.
+code. `windows-fna.rs` is still measured, and only its header differs, and the FNA
+job's live check and replay show that `windows-xna.rs` reads that build correctly.
 
 Each probe job only regenerates its own flavour's file, but `memory.rs` builds
 with several. So `memory.rs` can only use what every committed layout already
@@ -96,16 +96,16 @@ pub mod celeste_instance {
     /// How many bytes after the signature are searched for the store, which ends within them.
     pub const STORE_WINDOW: u64 = 256;
     /// The store of `AutoSplitterInfo`: the last match of this before the signature, with `SS` for
-    /// the field's offset, which paths through it don't take from this layout.
+    /// the field's offset, which depends on the framework the game runs on.
     pub const AUTO_SPLITTER_INFO_STORE: &str = "8d 96 SS SS SS SS e8";
     /// How many bytes before the signature are searched for it, which starts within them.
     pub const AUTO_SPLITTER_INFO_STORE_WINDOW: u64 = 128;
 
-    // Each path's offsets from the object in the slot, and the name and type of each field
+    // Each path's offsets after `AutoSplitterInfo`, and the name and type of each field
     // along it.
 
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, Chapter: System.Int32
-    pub const AUTO_SPLITTER_INFO_CHAPTER: [u64; 2] = [0xa0, 0x18];
+    pub const AUTO_SPLITTER_INFO_CHAPTER: [u64; 1] = [0x18];
 }
 ```
 
@@ -117,24 +117,25 @@ The comments say what each constant is. Beyond them:
 - Each root gets a module named after its type and field
   (`Celeste.Celeste::Instance` is `celeste_instance`), and each path an array
   named after the path (`AutoSplitterInfo.Chapter` is
-  `AUTO_SPLITTER_INFO_CHAPTER`), with one offset per field.
+  `AUTO_SPLITTER_INFO_CHAPTER`), with one offset per field after
+  `AutoSplitterInfo`.
 - `SIGNATURE` and `STORES` are the manifest's hand-written patterns, and
   `STORE_WINDOW` is its `StoreWindow`. The store is the earliest match of any
   store pattern, because a 4-byte pattern can also match inside an 8-byte
   store.
 - `AUTO_SPLITTER_INFO_STORE` and its window are the manifest's too, for its
-  `CodeField`. `memory.rs` reads `AutoSplitterInfo`'s offset from that store, and
-  only the later offsets from a path. The field comes after those of the
-  framework's `Game` class, and Everest replaces the FNA that vanilla runs on, so
-  its offset depends on the Everest version. The layout's first offset is what
-  the game files the probe ran with hold.
+  `CodeField`. `memory.rs` reads `AutoSplitterInfo`'s offset from that store, so
+  the layout doesn't hold it. The field comes after those of the framework's
+  `Game` class, and Everest replaces the FNA that vanilla runs on, so its offset
+  depends on the Everest version.
 - A path's length is part of its type, and `memory.rs`'s build fails if a
   field's pointer path has no room for it. `cargo check` and clippy don't catch
   that.
 
 All offsets are in bytes, from the address a reference to the object holds. To read
-a path, read the root's object from the slot. Then each offset but the last leads to
-a pointer to the next object, and the last one to the value.
+a path, read the root's object from the slot, and from it, at the offset read from
+the code, `AutoSplitterInfo`'s object. Then each offset but the last leads to a
+pointer to the next object, and the last one to the value.
 
 The anchor's machine code isn't stored: it embeds addresses that change on every
 run. The probe prints it in the run's log.

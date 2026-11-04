@@ -26,40 +26,40 @@ pub mod celeste_instance {
     /// How many bytes after the signature are searched for the store, which ends within them.
     pub const STORE_WINDOW: u64 = 256;
     /// The store of `AutoSplitterInfo`: the last match of this before the signature, with `SS` for
-    /// the field's offset, which paths through it don't take from this layout.
+    /// the field's offset, which depends on the framework the game runs on.
     pub const AUTO_SPLITTER_INFO_STORE: &str = "8d 96 SS SS SS SS e8";
     /// How many bytes before the signature are searched for it, which starts within them.
     pub const AUTO_SPLITTER_INFO_STORE_WINDOW: u64 = 128;
 
-    // Each path's offsets from the object in the slot, and the name and type of each field
+    // Each path's offsets after `AutoSplitterInfo`, and the name and type of each field
     // along it.
 
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, Chapter: System.Int32
-    pub const AUTO_SPLITTER_INFO_CHAPTER: [u64; 2] = [0xac, 0x18];
+    pub const AUTO_SPLITTER_INFO_CHAPTER: [u64; 1] = [0x18];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, Mode: System.Int32
-    pub const AUTO_SPLITTER_INFO_MODE: [u64; 2] = [0xac, 0x1c];
+    pub const AUTO_SPLITTER_INFO_MODE: [u64; 1] = [0x1c];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, Level: System.String
-    pub const AUTO_SPLITTER_INFO_LEVEL: [u64; 2] = [0xac, 0x14];
+    pub const AUTO_SPLITTER_INFO_LEVEL: [u64; 1] = [0x14];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, TimerActive: System.Boolean
-    pub const AUTO_SPLITTER_INFO_TIMER_ACTIVE: [u64; 2] = [0xac, 0x30];
+    pub const AUTO_SPLITTER_INFO_TIMER_ACTIVE: [u64; 1] = [0x30];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, ChapterStarted: System.Boolean
-    pub const AUTO_SPLITTER_INFO_CHAPTER_STARTED: [u64; 2] = [0xac, 0x31];
+    pub const AUTO_SPLITTER_INFO_CHAPTER_STARTED: [u64; 1] = [0x31];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, ChapterComplete: System.Boolean
-    pub const AUTO_SPLITTER_INFO_CHAPTER_COMPLETE: [u64; 2] = [0xac, 0x32];
+    pub const AUTO_SPLITTER_INFO_CHAPTER_COMPLETE: [u64; 1] = [0x32];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, ChapterTime: System.Int64
-    pub const AUTO_SPLITTER_INFO_CHAPTER_TIME: [u64; 2] = [0xac, 0x4];
+    pub const AUTO_SPLITTER_INFO_CHAPTER_TIME: [u64; 1] = [0x4];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, ChapterStrawberries: System.Int32
-    pub const AUTO_SPLITTER_INFO_CHAPTER_STRAWBERRIES: [u64; 2] = [0xac, 0x20];
+    pub const AUTO_SPLITTER_INFO_CHAPTER_STRAWBERRIES: [u64; 1] = [0x20];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, ChapterCassette: System.Boolean
-    pub const AUTO_SPLITTER_INFO_CHAPTER_CASSETTE: [u64; 2] = [0xac, 0x33];
+    pub const AUTO_SPLITTER_INFO_CHAPTER_CASSETTE: [u64; 1] = [0x33];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, ChapterHeart: System.Boolean
-    pub const AUTO_SPLITTER_INFO_CHAPTER_HEART: [u64; 2] = [0xac, 0x34];
+    pub const AUTO_SPLITTER_INFO_CHAPTER_HEART: [u64; 1] = [0x34];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, FileTime: System.Int64
-    pub const AUTO_SPLITTER_INFO_FILE_TIME: [u64; 2] = [0xac, 0xc];
+    pub const AUTO_SPLITTER_INFO_FILE_TIME: [u64; 1] = [0xc];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, FileStrawberries: System.Int32
-    pub const AUTO_SPLITTER_INFO_FILE_STRAWBERRIES: [u64; 2] = [0xac, 0x24];
+    pub const AUTO_SPLITTER_INFO_FILE_STRAWBERRIES: [u64; 1] = [0x24];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, FileCassettes: System.Int32
-    pub const AUTO_SPLITTER_INFO_FILE_CASSETTES: [u64; 2] = [0xac, 0x28];
+    pub const AUTO_SPLITTER_INFO_FILE_CASSETTES: [u64; 1] = [0x28];
     /// AutoSplitterInfo: Celeste.AutoSplitterInfo, FileHearts: System.Int32
-    pub const AUTO_SPLITTER_INFO_FILE_HEARTS: [u64; 2] = [0xac, 0x2c];
+    pub const AUTO_SPLITTER_INFO_FILE_HEARTS: [u64; 1] = [0x2c];
 }
