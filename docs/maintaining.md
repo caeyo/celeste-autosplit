@@ -14,6 +14,81 @@ recorder and CelesteTAS write. `.gitattributes` sets both.
 - `Celeste.exe` is marked x86-only, so on Windows only a 32-bit process can load
   it. Mono ignores the flag and runs 64-bit.
 
+## Running the probe
+
+Building it requires the .NET SDK, without a .NET Framework developer pack:
+
+```sh
+dotnet build tools/probe -c Release
+```
+
+Output: `tools/probe/bin/Release/net45/Probe.exe`.
+
+It has to run in the game's own runtime, from the game's folder. The auto
+splitter finds the game by process name, so the probe runs as the game: it
+becomes `Celeste.exe`, the game's own `Celeste.exe` moves to `real/`, and it's
+started the way players start the game.
+
+| Flavour | How |
+|---|---|
+| Windows (XNA or FNA) | Move `Celeste.exe` (and `Celeste.exe.config`, if there is one) to `real/`, copy `Probe.exe` to `Celeste.exe`, and run it. It's 32-bit, like the game. XNA builds need the XNA 4.0 redistributable. |
+| Linux | Move `Celeste.exe` and `Celeste.exe.config` to `real/`, copy `Probe.exe` to `Celeste.exe`, and run the `Celeste` script. FNA needs a display for its window: Xvfb works. |
+| macOS | In `Celeste.app/Contents/Resources/`, move `Celeste.exe` to `real/` and copy `Probe.exe` to `Celeste.exe`. Then run `Celeste.app/Contents/MacOS/Celeste`. |
+
+For example, on Windows, from the game's folder:
+
+```sh
+./Celeste.exe dump
+```
+
+Started from a terminal, `host` keeps the game until you end its input, so
+another program, such as the asr debugger, can read it while you type in values.
+
+The Live check workflow prints the dump on every vanilla flavour, after the
+harness. To collect it for a branch, dispatch it:
+`gh workflow run live-check.yml --ref <branch>`.
+
+## Keeping the layouts
+
+[`vanilla.rs`](../autosplitter/src/vanilla.rs) is kept by hand from the dump's
+output. Both Windows flavours give `CLR32`'s values, and Linux and macOS give
+`MONO64`'s. The live check on all four flavours is the evidence that they're
+right.
+
+To read another value of a root the auto splitter already finds:
+
+1. Find its offset in the dump's field tables, in
+   [`tools/probe/fields/`](../tools/probe/fields/) or a Live check run's dump.
+   `0x018  AutoSplitterInfo.Chapter : System.Int32` is `Chapter`'s offset after
+   `AutoSplitterInfo`.
+2. Add a field to `Layout` in `vanilla.rs`, with its offset in both `CLR32` and
+   `MONO64`.
+3. Read it in [`memory.rs`](../autosplitter/src/memory.rs), and report it in
+   [`lib.rs`](../autosplitter/src/lib.rs).
+4. Add its root, path, kind and debug variable to `PATHS` in the
+   [harness](../harness/src/main.rs), so that the live check writes it and checks
+   what the auto splitter reports. The host can only write a string, a `bool`, an
+   `int` or a `long`.
+
+To add a root:
+
+1. Add its anchor and its static field to `Anchors` in
+   [`Game.cs`](../tools/probe/Game.cs), as `Namespace.Type::Name()` and
+   `Namespace.Type::Field`. The anchor is a method the game runs before the auto
+   splitter needs the root, whose code loads or stores the field. The host then
+   compiles it, and the dump prints the slot's address, the anchor's code, and
+   where the slot's address appears in it.
+2. From each runtime's code, write a signature that matches it once, before the
+   address, and reference patterns for the instruction that holds the address.
+   On Mono, write one for each width the address can take.
+3. Add an `Anchor` for it to `Layout`, with its patterns in both `CLR32` and
+   `MONO64`, and in `memory.rs`, a `scan!` of it in each `Runtime`, and a search
+   for its slot like `find_save_data`'s.
+4. Add its values as above, with a constant for the root in the harness. If the
+   game leaves the slot null until later, as it leaves `SaveData.Instance` until
+   a file starts, give the host an object for it, as
+   [`Host.cs`](../tools/probe/Host.cs) does for `SaveData.Instance`.
+
 ## The harness
 
 - The probe's standard error is piped into its log, like its output. On Linux and
