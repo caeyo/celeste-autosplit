@@ -17,13 +17,11 @@ struct Recorded {
 }
 
 impl HarnessTimer {
-    pub fn new(segments: usize) -> Self {
+    pub fn new() -> Self {
         let mut run = Run::new();
         run.set_game_name("Celeste");
         run.set_category_name("Harness");
-        for i in 1..=segments {
-            run.push_segment(Segment::new(format!("Segment {i}")));
-        }
+        run.push_segment(Segment::new("Segment 1"));
         let timer = Timer::new(run).expect("a run with segments");
         Self(Arc::new(Mutex::new(Recorded {
             timer,
