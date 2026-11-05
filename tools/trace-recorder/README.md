@@ -19,8 +19,8 @@ dotnet build tools/trace-recorder -c Release
 ```
 
 It builds against the reference assemblies of the Everest release that
-`TraceRecorder.csproj` pins, which the build fetches into `.deps/`. CI doesn't build
-it: it's only used to record.
+`TraceRecorder.csproj` pins, which the build fetches into `.deps/`. The CI workflow
+builds it on Linux, so that a change that breaks it shows before the next recording.
 
 ## Recording
 
