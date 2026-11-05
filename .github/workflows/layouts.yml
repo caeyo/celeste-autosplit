@@ -1,9 +1,8 @@
 name: Layouts
 
-# Measures each vanilla flavour's memory layout with the probe, inside the flavour's own
-# runtime next to the real game files. Then the harness runs the auto splitter, built with
-# the committed layouts, against the game, which the probe constructs again: the live
-# check, then the replay of every trace.
+# The harness runs the auto splitter, built with the committed layouts, against each
+# vanilla flavour's game, which the probe constructs inside the flavour's own runtime next
+# to the real game files: the live check, then the replay of every trace.
 #
 # The game files are release assets of a private repository, fetched with the
 # GAME_FILES_TOKEN secret: only the files the probe needs to construct the game, without
@@ -147,49 +146,41 @@ jobs:
 
       # The probe runs as the game, the way the auto splitter will see it: the probe
       # becomes Celeste.exe, the game's own Celeste.exe moves to real/, and it starts the
-      # way players start the game. The game's Linux script changes directory first, so
-      # the paths given to the probe are absolute. Once every check has passed, it prints
-      # "probe: ok". Otherwise it prints "probe: failed" and exits with 1.
+      # way players start the game.
 
-      - name: Probe (Windows)
+      - name: Install probe (Windows)
         if: runner.os == 'Windows'
-        timeout-minutes: 4
         working-directory: ${{ runner.temp }}/game
         run: |
           mkdir real
           mv Celeste.exe real/
           cp "$GITHUB_WORKSPACE/$PROBE_BUILD/Probe.exe" Celeste.exe
-          ./Celeste.exe --game real/Celeste.exe
 
       # The script runs Celeste.bin.x86_64, a MonoKickstart that runs Celeste.exe with the
       # game's own Mono. FNA needs a display to create its window. The runner image already
       # has Xvfb and Mesa, and the window never gets a GL context, so software rendering is
       # enough.
-      - name: Probe (Linux)
+      - name: Install probe (Linux)
         if: runner.os == 'Linux'
-        timeout-minutes: 4
         working-directory: ${{ runner.temp }}/game
         run: |
           mkdir real
           mv Celeste.exe real/
           cp "$GITHUB_WORKSPACE/$PROBE_BUILD/Probe.exe" Celeste.exe
           chmod +x Celeste Celeste.bin.x86_64
-          xvfb-run -a -s "$XVFB_SCREEN" ./Celeste --game real/Celeste.exe
 
       # MacOS/Celeste is a MonoKickstart that runs Resources/Celeste.exe with the game's own
       # Mono.
-      - name: Probe (macOS)
+      - name: Install probe (macOS)
         if: runner.os == 'macOS'
-        timeout-minutes: 4
         working-directory: ${{ runner.temp }}/game/Celeste.app/Contents
         run: |
           mkdir Resources/real
           mv Resources/Celeste.exe Resources/real/
           cp "$GITHUB_WORKSPACE/$PROBE_BUILD/Probe.exe" Resources/Celeste.exe
           chmod +x MacOS/Celeste
-          MacOS/Celeste --game real/Celeste.exe
 
-      # The harness starts the probe again, as the game, attaches the auto splitter to it, and
+      # The harness starts the probe as the game, attaches the auto splitter to it, and
       # runs the live check, then replays every trace. On Linux, the probe is then the
       # harness's descendant, whose memory Yama lets it read. On macOS, reading another
       # process's memory needs root, so the harness runs as root, and starts the probe as the
@@ -201,11 +192,28 @@ jobs:
           game="$RUNNER_TEMP/game"
           case "$RUNNER_OS" in
             Windows)
-              "$harness" traces/*.jsonl -- "$game/Celeste.exe" --game real/Celeste.exe ;;
+              "$harness" traces/*.jsonl -- "$game/Celeste.exe" host ;;
             Linux)
-              "$harness" traces/*.jsonl -- xvfb-run -a -s "$XVFB_SCREEN" "$game/Celeste" --game real/Celeste.exe ;;
+              "$harness" traces/*.jsonl -- xvfb-run -a -s "$XVFB_SCREEN" "$game/Celeste" host ;;
             macOS)
-              sudo "$harness" traces/*.jsonl -- sudo -u "$(id -un)" "$game/Celeste.app/Contents/MacOS/Celeste" --game real/Celeste.exe ;;
+              sudo "$harness" traces/*.jsonl -- sudo -u "$(id -un)" "$game/Celeste.app/Contents/MacOS/Celeste" host ;;
+            *)
+              echo "::error::No way to start the probe on $RUNNER_OS."
+              exit 1 ;;
+          esac
+
+      - name: Dump
+        if: always()
+        timeout-minutes: 4
+        run: |
+          game="$RUNNER_TEMP/game"
+          case "$RUNNER_OS" in
+            Windows)
+              "$game/Celeste.exe" dump ;;
+            Linux)
+              xvfb-run -a -s "$XVFB_SCREEN" "$game/Celeste" dump ;;
+            macOS)
+              "$game/Celeste.app/Contents/MacOS/Celeste" dump ;;
             *)
               echo "::error::No way to start the probe on $RUNNER_OS."
               exit 1 ;;
