@@ -9,6 +9,9 @@ on:
       - 'component/**'
       - 'schema/**'
       - '.github/workflows/ci.yml'
+      - 'rust-toolchain.toml'
+      - 'global.json'
+      - '!**/*.md'
   push:
     branches:
       - 'master'
@@ -19,25 +22,28 @@ on:
       - 'component/**'
       - 'schema/**'
       - '.github/workflows/ci.yml'
+      - 'rust-toolchain.toml'
+      - 'global.json'
+      - '!**/*.md'
   workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   lint:
     name: Check formatting and clippy lints
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Commit
         uses: actions/checkout@v7
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-          targets: wasm32-unknown-unknown
+        run: rustup toolchain install --profile minimal --no-self-update
 
       - name: Cache Rust build
         if: github.ref_type != 'tag'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
           workspaces: harness
 
@@ -52,7 +58,7 @@ jobs:
 
       - name: Run Clippy
         working-directory: autosplitter
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --locked -- -D warnings
 
       - name: Run Clippy on the harness
         if: github.ref_type != 'tag'
@@ -61,7 +67,7 @@ jobs:
 
   build:
     name: Build and test
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     steps:
       - name: Checkout Commit
         uses: actions/checkout@v7
@@ -69,15 +75,13 @@ jobs:
       - name: Install .NET
         uses: actions/setup-dotnet@v6
         with:
-          global-json-file: component/global.json
+          global-json-file: global.json
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+        run: rustup toolchain install --profile minimal --no-self-update
 
       - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
           workspaces: autosplitter
 

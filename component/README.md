@@ -11,7 +11,7 @@ component and supplies its own settings editor.
 
 ## Building
 
-Requires the .NET SDK (version pinned in `global.json`). No .NET Framework
+Requires the .NET SDK (version pinned in the repository's `global.json`). No .NET Framework
 developer pack or local LiveSplit install is needed. The tests also need the
 wasm module, so build it first:
 
