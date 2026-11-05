@@ -11,15 +11,14 @@ namespace Probe
     {
         /// <summary>
         /// How many bytes after each signature match memory.rs searches for the reference to the
-        /// slot, which has to end within them. The probe writes it into the layouts, for memory.rs.
+        /// slot, which has to end within them.
         /// </summary>
         public const int ReferenceWindow = 256;
 
         /// <summary>
         /// How many bytes before each signature match memory.rs searches for the store of the
         /// root's CodeField, which has to start within them. Few enough to stay in the anchor's
-        /// code, since the signature is near its start. The probe writes it into the layouts, for
-        /// memory.rs.
+        /// code, since the signature is near its start.
         /// </summary>
         public const int FieldStoreWindow = 128;
 
@@ -33,9 +32,6 @@ namespace Probe
         //   heap is, so both forms are listed. Where the heap is also changes the length of other
         //   instructions between the signature and the store, so the reference is searched for
         //   rather than expected at a fixed distance.
-        // Once it has checked them, the probe writes them into each runtime's layout, and
-        // memory.rs finds the slot from them the same way, within ReferenceWindow bytes of the
-        // signature.
         // Its field initializers run before that, so the store of its new AutoSplitterInfo comes
         // before the signature, and holds the field's offset:
         // - On Windows, the field's address goes to the write barrier: lea edx, [esi+offset]; call.
