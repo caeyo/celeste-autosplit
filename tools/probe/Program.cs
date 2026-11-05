@@ -311,7 +311,7 @@ namespace Probe
             ulong address = Memory.ToAddress(root.Anchor.MethodHandle.GetFunctionPointer());
             byte[] code = Memory.ReadMapped(address, AnchorCodeLength);
             Console.WriteLine("anchor code at 0x{0:x} ({1} bytes read):", address, code.Length);
-            MachineCode.HexDump(code, Console.WriteLine);
+            MachineCode.HexDump(code);
 
             List<SlotReference> references = MachineCode.FindSlotReferences(code, slot);
             Console.WriteLine("slot's address in the code: " + (references.Count == 0 ? "nowhere" : string.Join(", ", references.Select(r => r.ToString()).ToArray())));
@@ -532,7 +532,6 @@ namespace Probe
         {
             switch (value)
             {
-                case null: return "null";
                 case string s: return Quote(s);
                 case bool b: return b ? "true" : "false";
                 default: return Convert.ToString(value, CultureInfo.InvariantCulture);
