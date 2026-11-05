@@ -8,6 +8,10 @@
 			// Install the asr-debugger with:
 			// cargo install --locked --git https://github.com/LiveSplit/asr-debugger
             "program": "${userHome}${pathSeparator}.cargo${pathSeparator}bin${pathSeparator}asr-debugger",
+            "windows": {
+                "program": "${userHome}${pathSeparator}.cargo${pathSeparator}bin${pathSeparator}asr-debugger.exe"
+            },
+            "preLaunchTask": "Build Auto Splitter (Debug)",
             "args": [
                 "--debug",
                 "autosplitter${pathSeparator}target${pathSeparator}wasm32-unknown-unknown${pathSeparator}debug${pathSeparator}celeste_autosplit.wasm"
