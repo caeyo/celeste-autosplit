@@ -1,0 +1,104 @@
+https://github.com/caeyo/celeste-autosplit/actions/runs/42116948739 linux, macos
+string: length at 0x10, chars at 0x14
+Celeste.Celeste [Celeste] : Monocle.Engine [Celeste] : Microsoft.Xna.Framework.Game [FNA]
+  0x010  Game.<Components>k__BackingField : Microsoft.Xna.Framework.GameComponentCollection
+  0x018  Game.INTERNAL_content : Microsoft.Xna.Framework.Content.ContentManager
+  0x020  Game.<LaunchParameters>k__BackingField : Microsoft.Xna.Framework.LaunchParameters
+  0x028  Game.<Services>k__BackingField : Microsoft.Xna.Framework.GameServiceContainer
+  0x030  Game.<Window>k__BackingField : Microsoft.Xna.Framework.GameWindow
+  0x038  Game.updateableComponents : System.Collections.Generic.List<Microsoft.Xna.Framework.IUpdateable>
+  0x040  Game.currentlyUpdatingComponents : System.Collections.Generic.List<Microsoft.Xna.Framework.IUpdateable>
+  0x048  Game.drawableComponents : System.Collections.Generic.List<Microsoft.Xna.Framework.IDrawable>
+  0x050  Game.currentlyDrawingComponents : System.Collections.Generic.List<Microsoft.Xna.Framework.IDrawable>
+  0x058  Game.graphicsDeviceService : Microsoft.Xna.Framework.Graphics.IGraphicsDeviceService
+  0x060  Game.graphicsDeviceManager : Microsoft.Xna.Framework.IGraphicsDeviceManager
+  0x068  Game.currentAdapter : Microsoft.Xna.Framework.Graphics.GraphicsAdapter
+  0x070  Game.gameTime : Microsoft.Xna.Framework.GameTime
+  0x078  Game.gameTimer : System.Diagnostics.Stopwatch
+  0x080  Game.textInputControlDown : System.Boolean[]
+  0x088  Game.textInputControlRepeat : System.Int32[]
+  0x090  Game.Activated : System.EventHandler<System.EventArgs>
+  0x098  Game.Deactivated : System.EventHandler<System.EventArgs>
+  0x0a0  Game.Disposed : System.EventHandler<System.EventArgs>
+  0x0a8  Game.Exiting : System.EventHandler<System.EventArgs>
+  0x0b0  Game.INTERNAL_inactiveSleepTime : System.TimeSpan
+  0x0b8  Game.INTERNAL_isActive : System.Boolean
+  0x0b9  Game.<IsFixedTimeStep>k__BackingField : System.Boolean
+  0x0ba  Game.INTERNAL_isMouseVisible : System.Boolean
+  0x0c0  Game.INTERNAL_targetElapsedTime : System.TimeSpan
+  0x0c8  Game.RunApplication : System.Boolean
+  0x0c9  Game.hasInitialized : System.Boolean
+  0x0ca  Game.suppressDraw : System.Boolean
+  0x0cb  Game.isDisposed : System.Boolean
+  0x0d0  Game.accumulatedElapsedTime : System.TimeSpan
+  0x0d8  Game.previousTicks : System.Int64
+  0x0e0  Game.updateFrameLag : System.Int32
+  0x0e4  Game.forceElapsedTimeToZero : System.Boolean
+  0x0e5  Game.textInputSuppress : System.Boolean
+  0x0e8  Engine.Title : System.String
+  0x0f0  Engine.Version : System.Version
+  0x0f8  Engine.scene : Monocle.Scene
+  0x100  Engine.nextScene : Monocle.Scene
+  0x108  Engine.counterElapsed : System.TimeSpan
+  0x110  Engine.fpsCounter : System.Int32
+  0x118  Celeste.AutoSplitterInfo : Celeste.AutoSplitterInfo
+  0x120  Celeste.firstLoad : System.Boolean
+Celeste.AutoSplitterInfo [Celeste]
+  0x010  AutoSplitterInfo.Level : System.String
+  0x018  AutoSplitterInfo.Chapter : System.Int32
+  0x01c  AutoSplitterInfo.Mode : System.Int32
+  0x020  AutoSplitterInfo.TimerActive : System.Boolean
+  0x021  AutoSplitterInfo.ChapterStarted : System.Boolean
+  0x022  AutoSplitterInfo.ChapterComplete : System.Boolean
+  0x028  AutoSplitterInfo.ChapterTime : System.Int64
+  0x030  AutoSplitterInfo.ChapterStrawberries : System.Int32
+  0x034  AutoSplitterInfo.ChapterCassette : System.Boolean
+  0x035  AutoSplitterInfo.ChapterHeart : System.Boolean
+  0x038  AutoSplitterInfo.FileTime : System.Int64
+  0x040  AutoSplitterInfo.FileStrawberries : System.Int32
+  0x044  AutoSplitterInfo.FileCassettes : System.Int32
+  0x048  AutoSplitterInfo.FileHearts : System.Int32
+Celeste.SaveData [Celeste]
+  0x010  SaveData.Version : System.String
+  0x018  SaveData.Name : System.String
+  0x020  SaveData.TheoSisterName : System.String
+  0x028  SaveData.Flags : System.Collections.Generic.HashSet<System.String>
+  0x030  SaveData.Poem : System.Collections.Generic.List<System.String>
+  0x038  SaveData.SummitGems : System.Boolean[]
+  0x040  SaveData.CurrentSession : Celeste.Session
+  0x048  SaveData.Areas : System.Collections.Generic.List<Celeste.AreaStats>
+  0x050  SaveData.Time : System.Int64
+  0x058  SaveData.LastSave : System.DateTime
+  0x060  SaveData.CheatMode : System.Boolean
+  0x061  SaveData.AssistMode : System.Boolean
+  0x062  SaveData.VariantMode : System.Boolean
+  0x064  SaveData.Assists : Celeste.Assists
+  0x07c  SaveData.UnlockedAreas : System.Int32
+  0x080  SaveData.TotalDeaths : System.Int32
+  0x084  SaveData.TotalStrawberries : System.Int32
+  0x088  SaveData.TotalGoldenStrawberries : System.Int32
+  0x08c  SaveData.TotalJumps : System.Int32
+  0x090  SaveData.TotalWallJumps : System.Int32
+  0x094  SaveData.TotalDashes : System.Int32
+  0x098  SaveData.RevealedChapter9 : System.Boolean
+  0x09c  SaveData.LastArea : Celeste.AreaKey
+  0x0a4  SaveData.FileSlot : System.Int32
+  0x0a8  SaveData.DoNotSave : System.Boolean
+  0x0a9  SaveData.DebugMode : System.Boolean
+paths from Celeste.Celeste::Instance:
+  AutoSplitterInfo.Chapter: 0x118, 0x18
+  AutoSplitterInfo.Mode: 0x118, 0x1c
+  AutoSplitterInfo.Level: 0x118, 0x10
+  AutoSplitterInfo.TimerActive: 0x118, 0x20
+  AutoSplitterInfo.ChapterStarted: 0x118, 0x21
+  AutoSplitterInfo.ChapterComplete: 0x118, 0x22
+  AutoSplitterInfo.ChapterTime: 0x118, 0x28
+  AutoSplitterInfo.ChapterStrawberries: 0x118, 0x30
+  AutoSplitterInfo.ChapterCassette: 0x118, 0x34
+  AutoSplitterInfo.ChapterHeart: 0x118, 0x35
+  AutoSplitterInfo.FileTime: 0x118, 0x38
+  AutoSplitterInfo.FileStrawberries: 0x118, 0x40
+  AutoSplitterInfo.FileCassettes: 0x118, 0x44
+  AutoSplitterInfo.FileHearts: 0x118, 0x48
+paths from Celeste.SaveData::Instance:
+  TotalDeaths: 0x80
