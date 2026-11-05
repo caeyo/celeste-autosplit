@@ -6,7 +6,6 @@ use std::{
     env, fs, mem,
     path::{Path, PathBuf},
     process::ExitCode,
-    sync::mpsc::{self, RecvTimeoutError},
     thread,
     time::{Duration, Instant},
 };
@@ -17,8 +16,9 @@ use serde_json::Value;
 
 use crate::{probe::Probe, timer::HarnessTimer};
 
-const USAGE: &str =
-    "usage: harness replay [--wasm FILE] [--timeout SECONDS] [TRACE...] -- COMMAND...";
+const USAGE: &str = "usage: harness [TRACE...] -- COMMAND...";
+
+const TIMEOUT: Duration = Duration::from_secs(120);
 
 const HARNESS_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
@@ -45,7 +45,6 @@ const REPORTED: &[(&str, &str)] = &[
 
 struct Options {
     wasm: PathBuf,
-    timeout: Duration,
     traces: Vec<PathBuf>,
     command: Vec<String>,
 }
@@ -54,12 +53,7 @@ type Trace = Vec<BTreeMap<String, Value>>;
 
 fn main() -> ExitCode {
     let args = env::args().skip(1).collect::<Vec<_>>();
-    let options = match args.split_first() {
-        Some((command, options)) if command == "replay" => parse(options),
-        Some((command, _)) => Err(anyhow::anyhow!("unknown command {command}")),
-        None => Err(anyhow::anyhow!("no command")),
-    };
-    let options = match options {
+    let options = match parse(&args) {
         Ok(options) => options,
         Err(e) => {
             eprintln!("harness: {e:#}\n{USAGE}");
@@ -77,7 +71,7 @@ fn main() -> ExitCode {
 }
 
 fn parse(args: &[String]) -> Result<Options> {
-    let mut wasm = Path::new(HARNESS_DIR).parent().unwrap().join(
+    let wasm = Path::new(HARNESS_DIR).parent().unwrap().join(
         [
             "autosplitter",
             "target",
@@ -88,17 +82,10 @@ fn parse(args: &[String]) -> Result<Options> {
         .iter()
         .collect::<PathBuf>(),
     );
-    let mut timeout = Duration::from_secs(120);
     let mut traces = Vec::new();
     let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        let mut value = || args.next().with_context(|| format!("{arg} needs a value"));
+    for arg in args.by_ref() {
         match arg.as_str() {
-            "--wasm" => wasm = value()?.into(),
-            "--timeout" => {
-                timeout =
-                    Duration::from_secs(value()?.parse().context("--timeout takes whole seconds")?)
-            }
             "--" => break,
             _ if arg.starts_with("--") => bail!("unknown option {arg}"),
             _ => traces.push(arg.into()),
@@ -110,7 +97,6 @@ fn parse(args: &[String]) -> Result<Options> {
     }
     Ok(Options {
         wasm,
-        timeout,
         traces,
         command,
     })
@@ -126,11 +112,11 @@ fn run(options: &Options) -> Result<bool> {
         .collect::<Result<Vec<_>>>()?;
     let compiled = Runtime::new(Config::default())?.compile(&wasm)?;
 
-    let mut probe = Probe::start(&options.command, options.timeout)?;
+    let mut probe = Probe::start(&options.command)?;
     let checked = check(&mut probe, &compiled, &traces, options);
     let wait = match checked {
-        Ok(_) => options.timeout,
-        Err(_) => options.timeout.min(Duration::from_secs(5)),
+        Ok(_) => TIMEOUT,
+        Err(_) => Duration::from_secs(5),
     };
     let exited = probe.finish(wait);
     let ok = checked?;
@@ -151,9 +137,9 @@ fn check(
         "live check: {} against the {flavour} probe",
         options.wasm.display()
     );
-    let module = Module::new(compiled, options.timeout)?;
+    let module = Module::new(compiled)?;
 
-    let deadline = Instant::now() + options.timeout;
+    let deadline = Instant::now() + TIMEOUT;
     let read = loop {
         let read = match module.update() {
             Ok(read) => read,
@@ -260,55 +246,22 @@ fn flipped(held: &BTreeMap<String, Value>) -> Result<BTreeMap<String, Value>> {
 struct Module {
     auto_splitter: AutoSplitter<HarnessTimer>,
     timer: HarnessTimer,
-    deadlines: mpsc::Sender<Option<Instant>>,
-    timeout: Duration,
 }
 
 impl Module {
-    fn new(compiled: &CompiledAutoSplitter, timeout: Duration) -> Result<Self> {
-        let timer = HarnessTimer::new(1);
+    fn new(compiled: &CompiledAutoSplitter) -> Result<Self> {
+        let timer = HarnessTimer::new();
         let auto_splitter = compiled.instantiate(timer.clone(), None, None)?;
-        let interrupt = auto_splitter.interrupt_handle();
-        let (deadlines, updates) = mpsc::channel();
-        thread::spawn(move || {
-            let mut deadline: Option<Instant> = None;
-            loop {
-                let next = match deadline {
-                    Some(deadline) => {
-                        updates.recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                    }
-                    None => updates.recv().map_err(|_| RecvTimeoutError::Disconnected),
-                };
-                match next {
-                    Ok(next) => deadline = next,
-                    Err(RecvTimeoutError::Timeout) => {
-                        interrupt.interrupt();
-                        deadline = None;
-                    }
-                    Err(RecvTimeoutError::Disconnected) => return,
-                }
-            }
-        });
         Ok(Self {
             auto_splitter,
             timer,
-            deadlines,
-            timeout,
         })
     }
 
     fn update(&self) -> Result<BTreeMap<String, String>, String> {
         self.timer.clear_variables();
-        let start = Instant::now();
-        let _ = self.deadlines.send(Some(start + self.timeout));
-        let updated = self.auto_splitter.lock().update();
-        let _ = self.deadlines.send(None);
-        match updated {
+        match self.auto_splitter.lock().update() {
             Ok(()) => Ok(self.timer.variables()),
-            Err(_) if start.elapsed() >= self.timeout => Err(format!(
-                "an update ran for more than {} s",
-                self.timeout.as_secs()
-            )),
             Err(e) => Err(format!(
                 "the auto splitter failed: {:#}",
                 anyhow::Error::from(e)
@@ -365,7 +318,6 @@ fn expected(held: &BTreeMap<String, Value>) -> Result<BTreeMap<String, String>> 
             .get(path)
             .with_context(|| format!("the probe holds no {path}"))?
         {
-            Value::Null => continue,
             Value::Bool(flag) => u8::from(*flag).to_string(),
             Value::String(text) => text.clone(),
             number => number.to_string(),
