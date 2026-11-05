@@ -788,7 +788,7 @@ Not supported. The legacy component reads flat elements, which the new format do
 - **Round-trip:** wrapper serialiser, then ASR's parser, then ASR's writer, gives identical XML. The same XML parses with livesplit-core's `StoredAutoSplitterSettings`.
 - **Wasm module:** missing keys, wrong types, newer `schema_version`, empty map (does nothing), invalid and unknown triggers (behave as `manual`), `sid` ignored when `everest` is off and replacing `chapter` when on.
 - **ASR compatibility:** the real wasm module runs inside the pinned LiveSplit's ASR component, without LiveSplit's UI. A hidden form on an STA thread stands in for LiveSplit's UI thread.
-  - Checks that ASR loads the module, settings round-trip exactly through the native runtime (and a second `SetSettings` replaces them rather than merging), and `Dispose` stops the runtime.
+  - Checks that ASR loads the module and that settings round-trip exactly through the native runtime (and a second `SetSettings` replaces them rather than merging).
   - Checks that a missing wasm, a wasm ASR can't load, and a missing ASR assembly (in a separate AppDomain) each reach the error state with the settings kept.
   - Runs in CI on changes to the component or the wasm module. This catches both ASR changes when `LiveSplitVersion` is bumped and wasm changes the pinned ASR can't run.
 
