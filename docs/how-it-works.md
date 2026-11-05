@@ -61,8 +61,6 @@ absolute address: as a u32, and in 64-bit processes also as a u64.
   nothing disposes before the process exits.
 - The game's `Main` loads the settings before constructing the game, and the
   constructor reads `Settings.Instance.Fullscreen` and `VSync`.
-- Mono reports Unix on both Linux and macOS, so the probe asks the kernel: the
-  struct `uname` fills starts with the kernel's name on both.
 - A field's offset is `&obj.field - obj`, computed in one dynamic method, so that
   the GC can't move the object in between. Its IL is unverifiable, which dynamic
   methods may be in a full-trust process.

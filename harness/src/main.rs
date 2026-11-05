@@ -3,7 +3,7 @@ mod timer;
 
 use std::{
     collections::BTreeMap,
-    env, fs, mem,
+    env, fs,
     path::{Path, PathBuf},
     process::ExitCode,
     thread,
@@ -22,26 +22,55 @@ const TIMEOUT: Duration = Duration::from_secs(120);
 
 const HARNESS_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
-const REPORTED: &[(&str, &str)] = &[
-    ("AutoSplitterInfo.Chapter", "Chapter"),
-    ("AutoSplitterInfo.Mode", "Mode"),
-    ("AutoSplitterInfo.Level", "Level"),
-    ("AutoSplitterInfo.TimerActive", "Timer Active"),
-    ("AutoSplitterInfo.ChapterStarted", "Chapter Started"),
-    ("AutoSplitterInfo.ChapterComplete", "Chapter Complete"),
-    ("AutoSplitterInfo.ChapterTime", "Chapter Time"),
-    (
-        "AutoSplitterInfo.ChapterStrawberries",
-        "Chapter Strawberries",
-    ),
-    ("AutoSplitterInfo.ChapterCassette", "Chapter Cassette"),
-    ("AutoSplitterInfo.ChapterHeart", "Chapter Heart"),
-    ("AutoSplitterInfo.FileTime", "File Time"),
-    ("AutoSplitterInfo.FileStrawberries", "Strawberries"),
-    ("AutoSplitterInfo.FileCassettes", "Cassettes"),
-    ("AutoSplitterInfo.FileHearts", "Hearts"),
-    ("TotalDeaths", "Deaths"),
+const INSTANCE: &str = "Celeste.Celeste::Instance";
+const SAVE_DATA: &str = "Celeste.SaveData::Instance";
+
+#[derive(Clone, Copy, Debug)]
+enum Kind {
+    Bool,
+    Int,
+    Long,
+    String,
+}
+
+#[rustfmt::skip]
+const PATHS: &[(&str, &str, Kind, &str)] = &[
+    (INSTANCE, "AutoSplitterInfo.Chapter", Kind::Int, "Chapter"),
+    (INSTANCE, "AutoSplitterInfo.Mode", Kind::Int, "Mode"),
+    (INSTANCE, "AutoSplitterInfo.Level", Kind::String, "Level"),
+    (INSTANCE, "AutoSplitterInfo.TimerActive", Kind::Bool, "Timer Active"),
+    (INSTANCE, "AutoSplitterInfo.ChapterStarted", Kind::Bool, "Chapter Started"),
+    (INSTANCE, "AutoSplitterInfo.ChapterComplete", Kind::Bool, "Chapter Complete"),
+    (INSTANCE, "AutoSplitterInfo.ChapterTime", Kind::Long, "Chapter Time"),
+    (INSTANCE, "AutoSplitterInfo.ChapterStrawberries", Kind::Int, "Chapter Strawberries"),
+    (INSTANCE, "AutoSplitterInfo.ChapterCassette", Kind::Bool, "Chapter Cassette"),
+    (INSTANCE, "AutoSplitterInfo.ChapterHeart", Kind::Bool, "Chapter Heart"),
+    (INSTANCE, "AutoSplitterInfo.FileTime", Kind::Long, "File Time"),
+    (INSTANCE, "AutoSplitterInfo.FileStrawberries", Kind::Int, "Strawberries"),
+    (INSTANCE, "AutoSplitterInfo.FileCassettes", Kind::Int, "Cassettes"),
+    (INSTANCE, "AutoSplitterInfo.FileHearts", Kind::Int, "Hearts"),
+    (SAVE_DATA, "TotalDeaths", Kind::Int, "Deaths"),
 ];
+
+impl Kind {
+    fn sample(self, n: i64) -> Value {
+        match self {
+            Kind::Bool => Value::Bool(n % 2 == 1),
+            Kind::Int => (n * 0x0101_0101).into(),
+            Kind::Long => (n * 0x0101_0101_0101_0101).into(),
+            Kind::String => format!("path {n}").into(),
+        }
+    }
+
+    fn holds(self, value: &Value) -> bool {
+        match self {
+            Kind::Bool => value.is_boolean(),
+            Kind::Int => value.as_i64().is_some_and(|n| i32::try_from(n).is_ok()),
+            Kind::Long => value.is_i64(),
+            Kind::String => value.is_string(),
+        }
+    }
+}
 
 struct Options {
     wasm: PathBuf,
@@ -49,7 +78,9 @@ struct Options {
     command: Vec<String>,
 }
 
-type Trace = Vec<BTreeMap<String, Value>>;
+type Changes = BTreeMap<usize, Value>;
+
+type Trace = Vec<Changes>;
 
 fn main() -> ExitCode {
     let args = env::args().skip(1).collect::<Vec<_>>();
@@ -132,11 +163,16 @@ fn check(
     traces: &[Trace],
     options: &Options,
 ) -> Result<bool> {
-    let (flavour, mut held) = probe.values()?;
-    println!(
-        "live check: {} against the {flavour} probe",
-        options.wasm.display()
-    );
+    probe.ready()?;
+    println!("live check: {}", options.wasm.display());
+    let samples = PATHS
+        .iter()
+        .zip(1..)
+        .map(|(&(_, _, kind, _), n)| kind.sample(n))
+        .enumerate()
+        .collect::<Changes>();
+    probe.write(&samples)?;
+    let mut held = samples.into_values().collect::<Vec<_>>();
     let module = Module::new(compiled)?;
 
     let deadline = Instant::now() + TIMEOUT;
@@ -154,21 +190,19 @@ fn check(
         }
         thread::sleep(Duration::from_millis(10));
     };
-    let problems = differences(&expected(&held)?, &read);
+    let problems = differences(&expected(&held), &read);
     if !problems.is_empty() {
         return failed("live check: FAILED", &problems, &module);
     }
     let mut frames = vec![("the values flipped".to_owned(), flipped(&held)?)];
-    let flags = held
-        .iter()
-        .filter(|(_, value)| value.is_boolean())
-        .map(|(path, _)| path.clone())
+    let flags = (0..PATHS.len())
+        .filter(|&i| matches!(PATHS[i].2, Kind::Bool))
         .collect::<Vec<_>>();
-    for flag in &flags {
+    for &flag in &flags {
         let alone = flags
             .iter()
-            .map(|other| (other.clone(), Value::Bool(other == flag)));
-        frames.push((format!("only {flag} set"), alone.collect()));
+            .map(|&other| (other, Value::Bool(other == flag)));
+        frames.push((format!("only {} set", PATHS[flag].1), alone.collect()));
     }
     for (frame, changes) in &frames {
         let problems = replay_frame(probe, &module, &mut held, changes)
@@ -182,7 +216,7 @@ fn check(
         }
     }
     println!(
-        "live check: ok, the auto splitter reports the {} values the probe holds, flipped, and each flag alone",
+        "live check: ok, the auto splitter reports the {} values the harness wrote, flipped, and each flag alone",
         read.len()
     );
 
@@ -207,38 +241,39 @@ fn check(
 fn replay_frame(
     probe: &mut Probe,
     module: &Module,
-    held: &mut BTreeMap<String, Value>,
-    changes: &BTreeMap<String, Value>,
+    held: &mut [Value],
+    changes: &Changes,
 ) -> Result<Vec<String>> {
-    for (path, value) in changes {
-        match held.get(path) {
-            Some(old) if mem::discriminant(old) == mem::discriminant(value) => {}
-            Some(old) => bail!("{path} holds {old}, which {value} can't replace"),
-            None => bail!("the probe has no path {path}"),
+    for (&i, value) in changes {
+        let (root, path, kind, _) = PATHS[i];
+        if !kind.holds(value) {
+            bail!("{root} {path} is {kind:?}, which can't hold {value}");
         }
     }
     probe.write(changes)?;
-    held.extend(changes.clone());
+    for (&i, value) in changes {
+        held[i] = value.clone();
+    }
     Ok(match module.update() {
-        Ok(read) => differences(&expected(held)?, &read),
+        Ok(read) => differences(&expected(held), &read),
         Err(problem) => vec![problem],
     })
 }
 
-fn flipped(held: &BTreeMap<String, Value>) -> Result<BTreeMap<String, Value>> {
-    let mut flipped = BTreeMap::new();
-    for (path, value) in held {
+fn flipped(held: &[Value]) -> Result<Changes> {
+    let mut flipped = Changes::new();
+    for (i, value) in held.iter().enumerate() {
         let value = match value {
             Value::String(_) => continue,
             Value::Bool(flag) => Value::Bool(!flag),
             Value::Number(number) => number
                 .as_i64()
                 .and_then(i64::checked_neg)
-                .with_context(|| format!("can't negate {path}'s {number}"))?
+                .with_context(|| format!("can't negate {}'s {number}", PATHS[i].1))?
                 .into(),
-            _ => bail!("can't flip {path}'s {value}"),
+            _ => bail!("can't flip {}'s {value}", PATHS[i].1),
         };
-        flipped.insert(path.clone(), value);
+        flipped.insert(i, value);
     }
     Ok(flipped)
 }
@@ -283,12 +318,12 @@ fn read_trace(file: &Path) -> Result<Trace> {
     Ok(trace)
 }
 
-fn read_frame(line: &str, number: usize) -> Result<BTreeMap<String, Value>> {
+fn read_frame(line: &str, number: usize) -> Result<Changes> {
     let line: serde_json::Map<String, Value> = serde_json::from_str(line)?;
     if line.get("frame") != Some(&Value::from(number)) {
         bail!("expected frame {number}");
     }
-    let mut changes = BTreeMap::new();
+    let mut changes = Changes::new();
     for (key, value) in &line {
         match key.as_str() {
             "frame" => {}
@@ -299,32 +334,33 @@ fn read_frame(line: &str, number: usize) -> Result<BTreeMap<String, Value>> {
     Ok(changes)
 }
 
-fn by_path(roots: &Value) -> Result<BTreeMap<String, Value>> {
-    let mut values = BTreeMap::new();
-    for paths in roots.as_object().context("no roots")?.values() {
+fn by_path(roots: &Value) -> Result<Changes> {
+    let mut changes = Changes::new();
+    for (root, paths) in roots.as_object().context("no roots")? {
         for (path, value) in paths.as_object().context("a root with no paths")? {
-            if values.insert(path.clone(), value.clone()).is_some() {
-                bail!("two roots have the path {path}");
-            }
+            let i = PATHS
+                .iter()
+                .position(|&(r, p, _, _)| r == root && p == path)
+                .with_context(|| format!("{root} {path} isn't one of the harness's paths"))?;
+            changes.insert(i, value.clone());
         }
     }
-    Ok(values)
+    Ok(changes)
 }
 
-fn expected(held: &BTreeMap<String, Value>) -> Result<BTreeMap<String, String>> {
-    let mut expected = BTreeMap::new();
-    for &(path, variable) in REPORTED {
-        let text = match held
-            .get(path)
-            .with_context(|| format!("the probe holds no {path}"))?
-        {
-            Value::Bool(flag) => u8::from(*flag).to_string(),
-            Value::String(text) => text.clone(),
-            number => number.to_string(),
-        };
-        expected.insert(variable.to_owned(), text);
-    }
-    Ok(expected)
+fn expected(held: &[Value]) -> BTreeMap<String, String> {
+    PATHS
+        .iter()
+        .zip(held)
+        .map(|(&(_, _, _, variable), value)| {
+            let text = match value {
+                Value::Bool(flag) => u8::from(*flag).to_string(),
+                Value::String(text) => text.clone(),
+                number => number.to_string(),
+            };
+            (variable.to_owned(), text)
+        })
+        .collect()
 }
 
 fn differences(
