@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - 'autosplitter/**'
-      - 'layouts/**'
       - 'harness/**'
       - 'component/**'
       - 'schema/**'
@@ -18,7 +17,6 @@ on:
       - 'master'
     paths:
       - 'autosplitter/**'
-      - 'layouts/**'
       - 'harness/**'
       - 'component/**'
       - 'schema/**'
