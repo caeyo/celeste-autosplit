@@ -1,11 +1,12 @@
 # traces
 
-Traces of what the auto splitter reads from the real game, update by update, while
-CelesteTAS plays a TAS through it. Each `<name>.jsonl` is recorded from the
-`<name>.tas` next to it, by the [trace recorder](../tools/trace-recorder/). They hold
-values only, nothing from the game's files. The [harness](../harness/) replays the
-game's values in every trace, not Everest's, through the real game, on every vanilla
-flavour, in the Layouts workflow.
+Traces of the real game's `AutoSplitterInfo`, update by update, while CelesteTAS
+plays a TAS through it. That's what the auto splitter reads, but for `TotalDeaths`,
+from `SaveData.Instance`, which they don't record. Each `<name>.jsonl` is recorded
+from the `<name>.tas` next to it, by the [trace recorder](../tools/trace-recorder/).
+They hold values only, nothing from the game's files. The [harness](../harness/)
+replays every trace through the real game, on every vanilla flavour, in the Layouts
+workflow.
 
 | Trace | What it covers |
 |---|---|
