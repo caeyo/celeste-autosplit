@@ -51,11 +51,12 @@ namespace Probe
             throw new ProbeException("no instance field " + name + " in " + type.FullName + " or its base classes");
         }
 
-        public static void Prepare(FieldInfo slot, MethodBase anchor)
+        public static IntPtr Prepare(FieldInfo slot, MethodBase anchor)
         {
             RuntimeHelpers.RunClassConstructor(slot.DeclaringType.TypeHandle);
             RuntimeHelpers.RunClassConstructor(anchor.DeclaringType.TypeHandle);
             RuntimeHelpers.PrepareMethod(anchor.MethodHandle);
+            return anchor.MethodHandle.GetFunctionPointer();
         }
 
         private static string Split(string name, out string member)
