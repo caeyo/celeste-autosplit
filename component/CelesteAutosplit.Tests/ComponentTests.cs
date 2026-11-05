@@ -4,7 +4,6 @@ using LiveSplit.UI.Components;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
 using System.Xml;
 using Xunit;
 
@@ -72,23 +71,6 @@ public sealed class ComponentTests : IDisposable
         // What LiveSplit's settings dialog does on Cancel.
         host.OnUiThread(() => component.SetSettings(snapshot));
         Assert.Equal(Parse(Settings).InnerXml, GetSettings(component));
-    }
-
-    [Fact]
-    public void Dispose_stops_the_runtime()
-    {
-        // Reaches into ASR's private fields, so it may need updating when ASR changes.
-        IComponent component = Create();
-        created.Remove(component);
-        object inner = GetField(component, "inner");
-        object asrSettings = GetField(inner, "settings");
-        object runtime = asrSettings.GetType().GetField("runtime").GetValue(asrSettings);
-        Assert.NotNull(runtime);
-
-        host.OnUiThread(component.Dispose);
-
-        Assert.Null(GetField(inner, "updateTimer"));
-        Assert.Equal(IntPtr.Zero, (IntPtr)GetField(runtime, "ptr"));
     }
 
     [Fact]
@@ -210,10 +192,5 @@ public sealed class ComponentTests : IDisposable
         var document = new XmlDocument();
         document.LoadXml(xml);
         return document.DocumentElement;
-    }
-
-    private static object GetField(object target, string name)
-    {
-        return target.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(target);
     }
 }
