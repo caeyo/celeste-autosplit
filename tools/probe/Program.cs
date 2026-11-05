@@ -21,7 +21,6 @@ namespace Probe
 
         private static string os;
         private static string flavour;
-        private static string runtime;
         private static Assembly game;
         private static Root[] roots;
         private static List<HeldPath> held;
@@ -150,7 +149,6 @@ namespace Probe
                 : references.Any(a => a.Name == "Microsoft.Xna.Framework.Game") ? "windows-xna"
                 : throw new ProbeException("the game references neither FNA nor XNA");
             Console.WriteLine("flavour: " + flavour);
-            runtime = os == "windows" ? "clr32" : "mono64";
         }
 
         private static void ResolveManifest()
@@ -168,7 +166,6 @@ namespace Probe
                 AnchorName = entry.Anchor,
                 Anchor = Names.Method(game, entry.Anchor),
                 CodeField = entry.CodeField,
-                Signatures = entry.Signatures,
             };
             CheckObjectType(root.Field.FieldType, root.Name);
             Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), root.AnchorName);
@@ -309,63 +306,6 @@ namespace Probe
 
             List<SlotReference> references = MachineCode.FindSlotReferences(code, slot);
             Console.WriteLine("slot's address in the code: " + (references.Count == 0 ? "nowhere" : string.Join(", ", references.Select(r => r.ToString()).ToArray())));
-            if (!root.Signatures.TryGetValue(runtime, out root.Signature))
-            {
-                throw new ProbeException(root.Name + " has no signature for " + runtime + " yet: write one from the code above, in Manifest.cs");
-            }
-            int[] matches = root.Signature.Code.Matches(code).ToArray();
-            Console.WriteLine("signature {0}: {1}", root.Signature.Code, matches.Length == 0 ? "no match" : "matches at " + string.Join(", ", matches.Select(m => "+0x" + m.ToString("x")).ToArray()));
-            if (matches.Length != 1)
-            {
-                throw new ProbeException(matches.Length == 0 ? "the signature doesn't match the anchor's code" : "the signature matches the anchor's code more than once");
-            }
-
-            int after = matches[0] + root.Signature.Code.Length;
-            var reference = root.Signature.References
-                .Select(p => new { Pattern = p, Match = p.Matches(code, after).DefaultIfEmpty(-1).First() })
-                .Where(r => r.Match >= 0)
-                .OrderBy(r => r.Match)
-                .FirstOrDefault()
-                ?? throw new ProbeException("no reference pattern matches after the signature");
-            Console.WriteLine("reference {0}: the earliest match, at +0x{1:x}, {2} bytes after the signature", reference.Pattern, reference.Match, reference.Match - after);
-            ulong referenced = reference.Pattern.Slot(code, reference.Match);
-            if (referenced != slot)
-            {
-                throw new ProbeException("the reference's address is 0x" + referenced.ToString("x") + ", but the slot is at 0x" + slot.ToString("x"));
-            }
-            Console.WriteLine("the reference's address is the slot's");
-            int end = reference.Match + reference.Pattern.Length - after;
-            if (end > Manifest.ReferenceWindow)
-            {
-                throw new ProbeException("the reference ends " + end + " bytes after the signature, but memory.rs only searches " + Manifest.ReferenceWindow + ": widen ReferenceWindow, in Manifest.cs");
-            }
-
-            if (root.CodeField == null)
-            {
-                return;
-            }
-
-            int fieldStore = root.Signature.FieldStore.Matches(code)
-                .Where(m => m + root.Signature.FieldStore.Length <= matches[0])
-                .DefaultIfEmpty(-1)
-                .Last();
-            if (fieldStore < 0)
-            {
-                throw new ProbeException("the store of " + root.CodeField + " doesn't match before the signature");
-            }
-            int distance = matches[0] - fieldStore;
-            Console.WriteLine("store of {0} {1}: the last match, at +0x{2:x}, {3} bytes before the signature", root.CodeField, root.Signature.FieldStore, fieldStore, distance);
-            ulong offset = root.Signature.FieldStore.Slot(code, fieldStore);
-            long measured = root.Paths.First(p => p.Fields[0].Name == root.CodeField).Offsets[0];
-            if ((long)offset != measured)
-            {
-                throw new ProbeException("the store's offset is 0x" + offset.ToString("x") + ", but " + root.CodeField + " is at 0x" + measured.ToString("x"));
-            }
-            Console.WriteLine("the store's offset is the field's");
-            if (distance > Manifest.FieldStoreWindow)
-            {
-                throw new ProbeException("the store of " + root.CodeField + " starts " + distance + " bytes before the signature, but memory.rs only searches " + Manifest.FieldStoreWindow + ": widen FieldStoreWindow, in Manifest.cs");
-            }
         }
 
         private sealed class HeldPath
