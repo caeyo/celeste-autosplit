@@ -3,6 +3,8 @@ use asr::{
     PointerSize, Process,
 };
 
+use crate::vanilla::{Anchor, Layout, CLR32, MONO64};
+
 #[rustfmt::skip]
 #[allow(dead_code)]
 #[path = "../../layouts/everest.rs"]
@@ -15,6 +17,109 @@ mod clr32;
 #[allow(dead_code)]
 #[path = "../../layouts/mono64.rs"]
 mod mono64;
+
+const fn same_str(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+const fn same_strs(a: &[&str], b: &[&str]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if !same_str(a[i], b[i]) {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+macro_rules! assert_same_layout {
+    ($new:expr, $old:ident) => {
+        const _: () = assert!($new.pointer_size as u64 == $old::POINTER_SIZE);
+        const _: () = assert!($new.string_length == $old::STRING_LENGTH);
+        const _: () = assert!($new.string_chars == $old::STRING_CHARS);
+        const _: () = assert!(same_str(
+            $new.celeste_instance.signature,
+            $old::celeste_instance::SIGNATURE
+        ));
+        const _: () = assert!(same_strs(
+            $new.celeste_instance.references,
+            $old::celeste_instance::REFERENCES
+        ));
+        const _: () = assert!(
+            $new.celeste_instance.reference_window == $old::celeste_instance::REFERENCE_WINDOW
+        );
+        const _: () = assert!(same_str(
+            $new.auto_splitter_info_store,
+            $old::celeste_instance::AUTO_SPLITTER_INFO_STORE
+        ));
+        const _: () = assert!(
+            $new.auto_splitter_info_store_window
+                == $old::celeste_instance::AUTO_SPLITTER_INFO_STORE_WINDOW
+        );
+        const _: () = assert!(same_str(
+            $new.save_data_instance.signature,
+            $old::save_data_instance::SIGNATURE
+        ));
+        const _: () = assert!(same_strs(
+            $new.save_data_instance.references,
+            $old::save_data_instance::REFERENCES
+        ));
+        const _: () = assert!(
+            $new.save_data_instance.reference_window == $old::save_data_instance::REFERENCE_WINDOW
+        );
+        const _: () = assert!($new.chapter == $old::celeste_instance::AUTO_SPLITTER_INFO_CHAPTER);
+        const _: () = assert!($new.mode == $old::celeste_instance::AUTO_SPLITTER_INFO_MODE);
+        const _: () = assert!($new.level == $old::celeste_instance::AUTO_SPLITTER_INFO_LEVEL);
+        const _: () =
+            assert!($new.timer_active == $old::celeste_instance::AUTO_SPLITTER_INFO_TIMER_ACTIVE);
+        const _: () = assert!(
+            $new.chapter_started == $old::celeste_instance::AUTO_SPLITTER_INFO_CHAPTER_STARTED
+        );
+        const _: () = assert!(
+            $new.chapter_complete == $old::celeste_instance::AUTO_SPLITTER_INFO_CHAPTER_COMPLETE
+        );
+        const _: () =
+            assert!($new.chapter_time == $old::celeste_instance::AUTO_SPLITTER_INFO_CHAPTER_TIME);
+        const _: () = assert!(
+            $new.chapter_strawberries
+                == $old::celeste_instance::AUTO_SPLITTER_INFO_CHAPTER_STRAWBERRIES
+        );
+        const _: () = assert!(
+            $new.chapter_cassette == $old::celeste_instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE
+        );
+        const _: () =
+            assert!($new.chapter_heart == $old::celeste_instance::AUTO_SPLITTER_INFO_CHAPTER_HEART);
+        const _: () =
+            assert!($new.file_time == $old::celeste_instance::AUTO_SPLITTER_INFO_FILE_TIME);
+        const _: () = assert!(
+            $new.file_strawberries == $old::celeste_instance::AUTO_SPLITTER_INFO_FILE_STRAWBERRIES
+        );
+        const _: () = assert!(
+            $new.file_cassettes == $old::celeste_instance::AUTO_SPLITTER_INFO_FILE_CASSETTES
+        );
+        const _: () =
+            assert!($new.file_hearts == $old::celeste_instance::AUTO_SPLITTER_INFO_FILE_HEARTS);
+        const _: () = assert!($new.total_deaths == $old::save_data_instance::TOTAL_DEATHS);
+    };
+}
+
+assert_same_layout!(CLR32, clr32);
+assert_same_layout!(MONO64, mono64);
 
 #[expect(
     clippy::large_enum_variant,
@@ -322,89 +427,39 @@ fn read_everest_string(process: &Process, ptr: u64) -> Option<String> {
     String::from_utf8(buf).ok()
 }
 
-struct Anchor {
-    signature: &'static str,
-    scan: fn(&Process, (Address, u64)) -> Vec<Address>,
-    references: &'static [&'static str],
-    reference_window: u64,
-}
+type Scan = fn(&Process, (Address, u64)) -> Vec<Address>;
 
-macro_rules! anchor {
-    ($root:ident) => {
-        Anchor {
-            signature: $root::SIGNATURE,
-            scan: |process, range| {
-                static SIGNATURE: Signature<{ pattern_len($root::SIGNATURE) }> =
-                    Signature::new($root::SIGNATURE);
-                signature_ends(&SIGNATURE, process, range)
-            },
-            references: $root::REFERENCES,
-            reference_window: $root::REFERENCE_WINDOW,
+macro_rules! scan {
+    ($anchor:expr) => {
+        |process, range| {
+            static SIGNATURE: Signature<{ pattern_len($anchor.signature) }> =
+                Signature::new($anchor.signature);
+            signature_ends(&SIGNATURE, process, range)
         }
     };
 }
 
 struct Runtime {
     oses: &'static [&'static str],
-    ptr_size: PointerSize,
-    instance: Anchor,
-    info_store: &'static str,
-    info_store_window: u64,
-    save_data: Anchor,
-    state: fn(Slot, u64, Slot) -> GameState,
-}
-
-macro_rules! runtime {
-    ($layout:ident, $oses:expr) => {{
-        use $layout::{celeste_instance as instance, save_data_instance as save_data};
-        Runtime {
-            oses: $oses,
-            ptr_size: pointer_size($layout::POINTER_SIZE),
-            instance: anchor!(instance),
-            info_store: instance::AUTO_SPLITTER_INFO_STORE,
-            info_store_window: instance::AUTO_SPLITTER_INFO_STORE_WINDOW,
-            save_data: anchor!(save_data),
-            state: |slot, info, save| GameState::Vanilla {
-                ptr_size: slot.ptr_size,
-                string_len: $layout::STRING_LENGTH,
-                string_chars: $layout::STRING_CHARS,
-                chapter_time: slot.info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_TIME),
-                file_time: slot.info_field(info, instance::AUTO_SPLITTER_INFO_FILE_TIME),
-                level: slot.info_field(info, instance::AUTO_SPLITTER_INFO_LEVEL),
-                chapter: slot.info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER),
-                mode: slot.info_field(info, instance::AUTO_SPLITTER_INFO_MODE),
-                chapter_strawberries: slot
-                    .info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_STRAWBERRIES),
-                file_strawberries: slot
-                    .info_field(info, instance::AUTO_SPLITTER_INFO_FILE_STRAWBERRIES),
-                file_cassettes: slot.info_field(info, instance::AUTO_SPLITTER_INFO_FILE_CASSETTES),
-                file_hearts: slot.info_field(info, instance::AUTO_SPLITTER_INFO_FILE_HEARTS),
-                timer_active: slot.info_field(info, instance::AUTO_SPLITTER_INFO_TIMER_ACTIVE),
-                chapter_started: slot
-                    .info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_STARTED),
-                chapter_complete: slot
-                    .info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_COMPLETE),
-                chapter_cassette: slot
-                    .info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_CASSETTE),
-                chapter_heart: slot.info_field(info, instance::AUTO_SPLITTER_INFO_CHAPTER_HEART),
-                total_deaths: save.field(save_data::TOTAL_DEATHS),
-            },
-        }
-    }};
+    layout: &'static Layout,
+    scan_instance: Scan,
+    scan_save_data: Scan,
 }
 
 const RUNTIMES: &[Runtime] = &[
-    runtime!(clr32, &["windows"]),
-    runtime!(mono64, &["linux", "macos"]),
+    Runtime {
+        oses: &["windows"],
+        layout: &CLR32,
+        scan_instance: scan!(CLR32.celeste_instance),
+        scan_save_data: scan!(CLR32.save_data_instance),
+    },
+    Runtime {
+        oses: &["linux", "macos"],
+        layout: &MONO64,
+        scan_instance: scan!(MONO64.celeste_instance),
+        scan_save_data: scan!(MONO64.save_data_instance),
+    },
 ];
-
-const fn pointer_size(bytes: u64) -> PointerSize {
-    match bytes {
-        4 => PointerSize::Bit32,
-        8 => PointerSize::Bit64,
-        _ => panic!("pointers take 4 or 8 bytes"),
-    }
-}
 
 const fn pattern_len(signature: &str) -> usize {
     (signature.len() + 1) / 3
@@ -438,28 +493,33 @@ impl Slot {
 }
 
 fn find_instance(process: &Process, runtime: &Runtime) -> Option<(Slot, u64)> {
-    let anchor = &runtime.instance;
+    let layout = runtime.layout;
     scan_executable(process, |(start, size)| {
         let end = start.value() + size;
-        (anchor.scan)(process, (start, size))
+        (runtime.scan_instance)(process, (start, size))
             .into_iter()
             .find_map(|code| {
-                let slot = anchor.read_slot(process, runtime.ptr_size, code, end)?;
-                let info = runtime.read_info_store(process, code, start)?;
-                runtime
-                    .has_info(process, slot, info)
-                    .then_some((slot, info))
+                let slot =
+                    layout
+                        .celeste_instance
+                        .read_slot(process, layout.pointer_size, code, end)?;
+                let info = layout.read_info_store(process, code, start)?;
+                layout.has_info(process, slot, info).then_some((slot, info))
             })
     })
 }
 
 fn find_save_data(process: &Process, runtime: &Runtime) -> Option<Slot> {
-    let anchor = &runtime.save_data;
+    let layout = runtime.layout;
     scan_executable(process, |(start, size)| {
         let end = start.value() + size;
-        (anchor.scan)(process, (start, size))
+        (runtime.scan_save_data)(process, (start, size))
             .into_iter()
-            .find_map(|code| anchor.read_slot(process, runtime.ptr_size, code, end))
+            .find_map(|code| {
+                layout
+                    .save_data_instance
+                    .read_slot(process, layout.pointer_size, code, end)
+            })
     })
 }
 
@@ -482,16 +542,18 @@ impl Anchor {
     }
 }
 
-impl Runtime {
+impl Layout {
     fn read_info_store(&self, process: &Process, code: Address, range: Address) -> Option<u64> {
-        let signature = code.value() - pattern_len(self.instance.signature) as u64;
-        let len = self.info_store_window.min(signature - range.value());
+        let signature = code.value() - pattern_len(self.celeste_instance.signature) as u64;
+        let len = self
+            .auto_splitter_info_store_window
+            .min(signature - range.value());
         let code = process
             .read_vec::<u8>(Address::new(signature - len), len as usize)
             .ok()?;
         (0..code.len())
             .rev()
-            .find_map(|start| match_pattern(self.info_store, &code[start..]))
+            .find_map(|start| match_pattern(self.auto_splitter_info_store, &code[start..]))
             .map(|offset| offset.value())
     }
 
@@ -500,8 +562,31 @@ impl Runtime {
             return false;
         };
         process
-            .read_pointer(field, self.ptr_size)
+            .read_pointer(field, self.pointer_size)
             .is_ok_and(|object| !object.is_null())
+    }
+
+    fn state(&self, slot: Slot, info: u64, save: Slot) -> GameState {
+        GameState::Vanilla {
+            ptr_size: slot.ptr_size,
+            string_len: self.string_length,
+            string_chars: self.string_chars,
+            chapter_time: slot.info_field(info, self.chapter_time),
+            file_time: slot.info_field(info, self.file_time),
+            level: slot.info_field(info, self.level),
+            chapter: slot.info_field(info, self.chapter),
+            mode: slot.info_field(info, self.mode),
+            chapter_strawberries: slot.info_field(info, self.chapter_strawberries),
+            file_strawberries: slot.info_field(info, self.file_strawberries),
+            file_cassettes: slot.info_field(info, self.file_cassettes),
+            file_hearts: slot.info_field(info, self.file_hearts),
+            timer_active: slot.info_field(info, self.timer_active),
+            chapter_started: slot.info_field(info, self.chapter_started),
+            chapter_complete: slot.info_field(info, self.chapter_complete),
+            chapter_cassette: slot.info_field(info, self.chapter_cassette),
+            chapter_heart: slot.info_field(info, self.chapter_heart),
+            total_deaths: save.field(self.total_deaths),
+        }
     }
 }
 
@@ -591,5 +676,5 @@ pub fn init(process: &Process) -> Option<GameState> {
         .find(|runtime| runtime.oses.contains(&os.as_str()))?;
     let (slot, info) = find_instance(process, runtime)?;
     let save = find_save_data(process, runtime)?;
-    Some((runtime.state)(slot, info, save))
+    Some(runtime.layout.state(slot, info, save))
 }
