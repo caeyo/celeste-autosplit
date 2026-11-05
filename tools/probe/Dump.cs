@@ -77,17 +77,17 @@ namespace Probe
         {
             FieldInfo slotField = Game.StaticField(game, slotName);
             MethodBase anchor = Game.Method(game, anchorName);
-            Game.Prepare(slotField, anchor);
+            IntPtr code = Game.Prepare(slotField, anchor);
             Console.WriteLine("anchor {0}, slot {1}", anchorName, slotName);
             ulong slot = Memory.StaticFieldAddress(slotField);
             Console.WriteLine("slot: 0x{0:x}", slot);
 
-            ulong address = Memory.ToAddress(anchor.MethodHandle.GetFunctionPointer());
-            byte[] code = Memory.ReadMapped(address, AnchorCodeLength);
-            Console.WriteLine("anchor code at 0x{0:x} ({1} bytes read):", address, code.Length);
-            MachineCode.HexDump(code);
+            ulong address = Memory.ToAddress(code);
+            byte[] bytes = Memory.ReadMapped(address, AnchorCodeLength);
+            Console.WriteLine("anchor code at 0x{0:x} ({1} bytes read):", address, bytes.Length);
+            MachineCode.HexDump(bytes);
 
-            List<SlotReference> references = MachineCode.FindSlotReferences(code, slot);
+            List<SlotReference> references = MachineCode.FindSlotReferences(bytes, slot);
             Console.WriteLine("slot's address in the code: " + (references.Count == 0 ? "nowhere" : string.Join(", ", references.Select(r => r.ToString()).ToArray())));
         }
     }
