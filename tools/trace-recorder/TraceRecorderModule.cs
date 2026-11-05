@@ -13,20 +13,14 @@ using System.Text.Json;
 
 namespace TraceRecorder;
 
-// Records what an auto splitter reads while CelesteTAS plays a TAS, started with --tas FILE.
-// Given --trace FILE, it writes the trace to FILE, in the format traces/README.md describes, and
-// exits the game once the TAS has ended: with 0 if the trace is complete, or 1, logging why.
 public class TraceRecorderModule : EverestModule
 {
     private const string Tag = "TraceRecorder";
 
-    // How CelesteTAS writes times: under an hour, and from an hour.
     private static readonly string[] TimeFormats = [@"m\:ss\.fff", @"h\:mm\:ss\.fff"];
 
-    // The probe's name for the root that the game's AutoSplitterInfo is read from.
     private const string Root = "Celeste.Celeste::Instance";
 
-    // Every field of the game's AutoSplitterInfo, in the order it declares them.
     private static readonly FieldInfo[] InfoFields = typeof(AutoSplitterInfo)
         .GetFields(BindingFlags.Public | BindingFlags.Instance)
         .OrderBy(field => field.MetadataToken)
@@ -38,10 +32,8 @@ public class TraceRecorderModule : EverestModule
     private int frame;
     private int updatesWithoutTas;
     private ulong lastFrameCounter;
-    // The values last recorded.
     private readonly Dictionary<string, object?> vanilla = new();
     private readonly Dictionary<string, object?> everest = new();
-    // The file's time when the TAS's first level began, and the last recorded.
     private long? startFileTime;
     private long fileTime;
 
@@ -51,14 +43,12 @@ public class TraceRecorderModule : EverestModule
         {
             return false;
         }
-        // Without a file, Initialize fails the recording, once the game can exit.
         traceFile = args.TryDequeue(out string? file) ? Path.GetFullPath(file) : "";
         return true;
     }
 
     public override void Load() => AutoSplitter.OnUpdateInfo += Record;
 
-    // Every mod has loaded by now, so CelesteTAS has registered its API.
     public override void Initialize()
     {
         typeof(CelesteTas).ModInterop();
@@ -87,8 +77,6 @@ public class TraceRecorderModule : EverestModule
         trace?.Dispose();
     }
 
-    // Everest raises this at the start of each update of the game: right after the game updates
-    // its AutoSplitterInfo, and Everest its own values, from the state the previous update left.
     private void Record(ref AutoSplitter.CoreAutoSplitterInfo info, Func<string, nint> stringWriter)
     {
         if (traceFile == null)
@@ -101,8 +89,6 @@ public class TraceRecorderModule : EverestModule
             {
                 Finish();
             }
-            // CelesteTAS starts the TAS at the end of the title screen's first update, so if it
-            // hasn't a second later, it couldn't.
             else if (Engine.Scene is Overworld && ++updatesWithoutTas > 60)
             {
                 Fail("the TAS didn't start: CelesteTAS logs why");
@@ -113,8 +99,6 @@ public class TraceRecorderModule : EverestModule
         {
             Start();
         }
-        // The game counts its updates. CelesteTAS doesn't update the auto splitter's values while
-        // it fast-forwards, so a TAS that does would leave updates out.
         else if (Engine.FrameCounter != lastFrameCounter + 1)
         {
             Fail($"{Engine.FrameCounter - lastFrameCounter - 1} updates before frame {frame} weren't recorded: is the TAS fast-forwarding?");
@@ -156,10 +140,6 @@ public class TraceRecorderModule : EverestModule
         Logger.Info(Tag, "recording to " + traceFile);
     }
 
-    // The TAS has stopped playing, and has to have reached its end. Paused, at a breakpoint or at
-    // the end of a draft, it hasn't. Aborted, say by a failed Assert, it has stopped as if it had,
-    // but CelesteTAS only fills in the TAS file's FileTime at the end: with the time the file has
-    // gained since the TAS's first level began. So that has to be the trace's.
     private void Finish()
     {
         string? line = File.ReadLines(tasFile!).FirstOrDefault(text => text.StartsWith("FileTime:"));
@@ -195,9 +175,6 @@ public class TraceRecorderModule : EverestModule
         Exit(1);
     }
 
-    // Exits the game the way it exits itself, after this update: exiting the process from within an
-    // update can hang it. Once Everest has shut the game down, it exits the process with 0, so the
-    // recorder exits it with the code given just before.
     private void Exit(int code)
     {
         trace?.Dispose();
@@ -207,8 +184,6 @@ public class TraceRecorderModule : EverestModule
         Engine.Instance.Exit();
     }
 
-    // The values that differ from those last recorded, which they replace: all of them, the first
-    // time.
     private static Dictionary<string, object?> Changes(Dictionary<string, object?> last, Dictionary<string, object?> values)
     {
         var changes = new Dictionary<string, object?>();
@@ -223,9 +198,6 @@ public class TraceRecorderModule : EverestModule
         return changes;
     }
 
-    // The struct's header isn't recorded: it's constant, except InfoVersion, which reads 0xff while
-    // Everest updates the struct, as it does here. Its strings are UTF-8, NUL-terminated, with 0 for
-    // none.
     private static Dictionary<string, object?> EverestValues(in AutoSplitter.CoreAutoSplitterInfo info) => new()
     {
         [nameof(info.LevelSetStrPtr)] = Marshal.PtrToStringUTF8(info.LevelSetStrPtr),
@@ -245,13 +217,10 @@ public class TraceRecorderModule : EverestModule
     };
 }
 
-// The part of CelesteTAS's stable API the recorder uses, which Initialize imports.
 [ModImportName("CelesteTAS")]
 internal static class CelesteTas
 {
-    // Whether a TAS is playing, or paused.
     public static Func<bool>? IsTasActive = null;
 
-    // Whether a TAS is playing, and not paused.
     public static Func<bool>? IsTasRunning = null;
 }

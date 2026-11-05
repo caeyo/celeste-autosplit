@@ -1,10 +1,5 @@
 <Project>
 
-  <!--
-    Reference LiveSplit, pulled from its GitHub releases (see Directory.Build.targets).
-    Build against the LiveSplit version whose ASR the component is tested with,
-    and record it in the release notes.
-  -->
   <PropertyGroup>
     <LiveSplitVersion>1.8.37</LiveSplitVersion>
     <LiveSplitUrl>https://github.com/LiveSplit/LiveSplit/releases/download/$(LiveSplitVersion)/LiveSplit_$(LiveSplitVersion).zip</LiveSplitUrl>
@@ -24,7 +19,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Targeting pack, so building doesn't need the .NET Framework developer pack installed. -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
     <PackageReference Include="PolySharp" Version="1.16.0" PrivateAssets="all" />
   </ItemGroup>

@@ -7,8 +7,6 @@ using System;
 
 namespace CelesteAutosplit;
 
-// Must not use ASR types anywhere. LiveSplit swallows any exception while
-// creating factories, so an ASR failure here would silently drop the component.
 public class CelesteAutosplitFactory : IComponentFactory
 {
     public const string Name = "Celeste Autosplitter";
@@ -23,7 +21,6 @@ public class CelesteAutosplitFactory : IComponentFactory
     public string XMLURL => "https://raw.githubusercontent.com/caeyo/celeste-autosplit/master/update.xml";
     public string UpdateURL => "https://github.com/caeyo/celeste-autosplit/releases/";
 
-    // Three parts, to compare equal to the versions in update.xml.
     public Version Version
     {
         get
