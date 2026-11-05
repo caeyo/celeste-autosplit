@@ -5,8 +5,8 @@ plays a TAS through it. That's what the auto splitter reads, but for `TotalDeath
 from `SaveData.Instance`, which they don't record. Each `<name>.jsonl` is recorded
 from the `<name>.tas` next to it, by the [trace recorder](../tools/trace-recorder/).
 They hold values only, nothing from the game's files. The [harness](../harness/)
-replays every trace through the real game, on every vanilla flavour, in the Layouts
-workflow.
+replays every trace through the real game, on every vanilla flavour, in the Live
+check workflow.
 
 | Trace | What it covers |
 |---|---|
