@@ -50,12 +50,12 @@ stops it, without the auto splitter's log.
 ## In CI
 
 The [Live check workflow](../.github/workflows/live-check.yml) runs it on every
-vanilla flavour, with every trace in `traces/`, against the wasm module built
-with the committed layouts.
+vanilla flavour, with every trace in `traces/`.
 
 ## Running it
 
-Set up the probe in the game's folder, as its README describes. Then, with the
+Set up the probe in the game's folder, as
+[Maintaining](../docs/maintaining.md#running-the-probe) describes. Then, with the
 wasm module built (`cargo b --release` in `autosplitter/`, without
 `CARGO_TARGET_DIR`, since the harness reads it from `autosplitter/target/`),
 from this folder, give the traces to replay, and after `--`, the command that
@@ -83,7 +83,7 @@ probe's command, so that it runs as you, as players run the game.
 ## What it doesn't check
 
 - Everest, since no probe constructs it. Its offsets rest on the transcription
-  in [`layouts/everest.rs`](../layouts/everest.rs).
+  in [`everest.rs`](../autosplitter/src/everest.rs).
 - Vanilla started through an Everest install, which runs on an FNA of Everest's,
   and in a second AppDomain of Everest's process up to `stable-1.4449.0`, the last
   version before .NET Core. It was checked once by hand on Windows, with
@@ -94,8 +94,7 @@ probe's command, so that it runs as you, as players run the game.
   always holds a save of its own, so nothing checks that `Deaths` goes unreported
   without one.
 - The rules for code the game doesn't have: a second match of the signature,
-  and a 4-byte reference pattern matching inside an 8-byte one. The probe checks
-  that the real reference is within the window `memory.rs` searches.
+  and a 4-byte reference pattern matching inside an 8-byte one.
 - Reads in the middle of the game's update: the probe writes each line whole,
   between two updates of the auto splitter.
 - Reading at the auto splitter's own tick rate, 120 Hz by default, which hosts
