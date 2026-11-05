@@ -4,6 +4,7 @@ use asr::{
 };
 
 mod memory;
+mod vanilla;
 
 asr::async_main!(stable);
 
