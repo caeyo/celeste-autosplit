@@ -3,9 +3,6 @@ use asr::{
     PointerSize, Process,
 };
 
-// The memory layouts, in layouts/ at the repository's root: each runtime's is generated
-// by the probe, and Everest's is transcribed from its source. rustfmt leaves them as they're
-// written, and they can hold more than this reads.
 #[rustfmt::skip]
 #[allow(dead_code)]
 #[path = "../../layouts/everest.rs"]
@@ -191,7 +188,6 @@ impl GameState {
         }
     }
 
-    /// `None` while there's no save, as reading through the null `SaveData.Instance` fails.
     pub fn total_deaths(&self, process: &Process) -> Option<i32> {
         match self {
             Self::Vanilla { total_deaths, .. } => total_deaths.deref(process).ok(),
@@ -326,20 +322,13 @@ fn read_everest_string(process: &Process, ptr: u64) -> Option<String> {
     String::from_utf8(buf).ok()
 }
 
-/// How to find a root's static slot, from its anchor method's compiled code.
 struct Anchor {
-    /// The signature in the method's code: hex bytes, with `??` for any byte.
     signature: &'static str,
-    /// Where each match of the signature ends, in an executable range.
     scan: fn(&Process, (Address, u64)) -> Vec<Address>,
-    /// Patterns for a reference to the slot after the signature: hex bytes, with `??` for any
-    /// byte, and `SS` for the static slot's address, 4 or 8 of them in a row.
     references: &'static [&'static str],
-    /// How many bytes after the signature are searched for the reference.
     reference_window: u64,
 }
 
-/// An anchor, from its root's module in a layout.
 macro_rules! anchor {
     ($root:ident) => {
         Anchor {
@@ -355,27 +344,16 @@ macro_rules! anchor {
     };
 }
 
-/// A runtime the game runs on, from its layout: how to find `Celeste.Instance` and
-/// `SaveData.Instance`, and how to read the game through them.
 struct Runtime {
-    /// The OSes the game runs on it on, as `asr::get_os` names them.
     oses: &'static [&'static str],
     ptr_size: PointerSize,
-    /// `Celeste.Instance`, found from `Celeste`'s constructor.
     instance: Anchor,
-    /// Pattern for the store of `AutoSplitterInfo` before the signature, with `SS` for its offset
-    /// from the object in the slot.
     info_store: &'static str,
-    /// How many bytes before the signature are searched for that store.
     info_store_window: u64,
-    /// `SaveData.Instance`, found from `AutoSplitterInfo.Update`.
     save_data: Anchor,
-    /// The game's state, read through the slot of `Celeste.Instance`, `AutoSplitterInfo`'s offset,
-    /// and the slot of `SaveData.Instance`.
     state: fn(Slot, u64, Slot) -> GameState,
 }
 
-/// A runtime, from its layout's module.
 macro_rules! runtime {
     ($layout:ident, $oses:expr) => {{
         use $layout::{celeste_instance as instance, save_data_instance as save_data};
@@ -415,10 +393,6 @@ macro_rules! runtime {
     }};
 }
 
-/// Windows's XNA and FNA builds both run on 32-bit .NET Framework, and Linux's and macOS's on 64-bit
-/// Mono, with the same signatures, references, and fields on each. Only the offset
-/// of `AutoSplitterInfo` differs, which is read from the code: it comes after the fields of `Game`,
-/// which `Engine` derives from, and Everest replaces the FNA that vanilla runs on.
 const RUNTIMES: &[Runtime] = &[
     runtime!(clr32, &["windows"]),
     runtime!(mono64, &["linux", "macos"]),
@@ -432,7 +406,6 @@ const fn pointer_size(bytes: u64) -> PointerSize {
     }
 }
 
-/// How many bytes a signature has: two hex digits each, separated by spaces.
 const fn pattern_len(signature: &str) -> usize {
     (signature.len() + 1) / 3
 }
@@ -448,7 +421,6 @@ fn signature_ends<const N: usize>(
         .collect()
 }
 
-/// A root's static slot, which holds a reference to the object that each of its paths starts from.
 #[derive(Clone, Copy)]
 struct Slot {
     address: Address,
@@ -456,22 +428,15 @@ struct Slot {
 }
 
 impl Slot {
-    // The first offset of a path, 0, reads the object's address from the slot.
-
-    /// The path to a field of the object in the slot, at its offset in that object.
     fn field(self, field: u64) -> DeepPointer<2> {
         DeepPointer::new(self.address, self.ptr_size, &[0, field])
     }
 
-    /// The path to a field of `AutoSplitterInfo`, at its offset in that object.
     fn info_field(self, info: u64, field: u64) -> DeepPointer<3> {
         DeepPointer::new(self.address, self.ptr_size, &[0, info, field])
     }
 }
 
-/// Finds the static slot of `Celeste.Instance`, and the offset of `AutoSplitterInfo`. Each match of
-/// the signature is tried in turn, and is only accepted if the object in the slot holds an
-/// `AutoSplitterInfo`, as it does once the game is constructed.
 fn find_instance(process: &Process, runtime: &Runtime) -> Option<(Slot, u64)> {
     let anchor = &runtime.instance;
     scan_executable(process, |(start, size)| {
@@ -488,8 +453,6 @@ fn find_instance(process: &Process, runtime: &Runtime) -> Option<(Slot, u64)> {
     })
 }
 
-/// Finds the static slot of `SaveData.Instance`, once the game has compiled its anchor, for its
-/// first update.
 fn find_save_data(process: &Process, runtime: &Runtime) -> Option<Slot> {
     let anchor = &runtime.save_data;
     scan_executable(process, |(start, size)| {
@@ -501,10 +464,6 @@ fn find_save_data(process: &Process, runtime: &Runtime) -> Option<Slot> {
 }
 
 impl Anchor {
-    /// The slot, from the earliest match of any reference pattern after the signature, which ends
-    /// at `code`, in a range that ends at `end`. Earliest, not the first pattern listed, because
-    /// a pattern with a 4-byte address can also match inside one with an 8-byte address, when the
-    /// address's fourth byte happens to be the 4-byte form's opcode.
     fn read_slot(
         &self,
         process: &Process,
@@ -512,7 +471,6 @@ impl Anchor {
         code: Address,
         end: u64,
     ) -> Option<Slot> {
-        // Only within the range, which is all mapped.
         let len = self.reference_window.min(end - code.value());
         let code = process.read_vec::<u8>(code, len as usize).ok()?;
         let address = (0..code.len()).find_map(|start| {
@@ -525,11 +483,8 @@ impl Anchor {
 }
 
 impl Runtime {
-    /// `AutoSplitterInfo`'s offset, from the last match of its store before the signature, which
-    /// ends at `code`: the nearest one, in case the search reaches the code before the constructor.
     fn read_info_store(&self, process: &Process, code: Address, range: Address) -> Option<u64> {
         let signature = code.value() - pattern_len(self.instance.signature) as u64;
-        // Only within the range, which is all mapped.
         let len = self.info_store_window.min(signature - range.value());
         let code = process
             .read_vec::<u8>(Address::new(signature - len), len as usize)
@@ -550,8 +505,6 @@ impl Runtime {
     }
 }
 
-/// The value of the pattern's `SS` bytes, a slot's address or a field's offset, if the pattern
-/// matches at the start of the code.
 fn match_pattern(pattern: &str, code: &[u8]) -> Option<Address> {
     let mut value = 0;
     let mut value_bytes = 0;

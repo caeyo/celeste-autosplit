@@ -1,12 +1,3 @@
-//! The probe, started as the game in its replay mode, and the lines it exchanges with the harness.
-//! Once every check has passed, the probe prints `probe: ok`. It writes distinctive values into
-//! the game, and prints `probe: values` and, as JSON, its flavour and the values its paths hold,
-//! keyed by root and then path. Then it reads sets
-//! of values, a `path=value` line per path and an empty line at the end of each set. It writes each
-//! set into the game, through the same paths, and answers `probe: written`, until its input ends.
-//! It prints `probe: failed` if a check or the replay fails. Its other lines, and what it prints
-//! on its standard error, are its log, which is shown if anything goes wrong with it.
-
 use std::{
     collections::BTreeMap,
     io::{BufRead, BufReader, Read, Write},
@@ -23,21 +14,13 @@ use crate::by_path;
 
 pub struct Probe {
     child: Child,
-    /// Closed to end the replay.
     input: Option<ChildStdin>,
-    /// Each line it prints, as it prints it.
     lines: Receiver<String>,
-    /// The lines it has printed so far, other than its answers.
     log: Vec<String>,
-    /// How long it has for each answer.
     timeout: Duration,
 }
 
 impl Probe {
-    /// Starts the probe with the command, which the harness adds `--replay` to. On Linux and macOS,
-    /// the command runs the probe through `xvfb-run` or `sudo`, so killing it leaves a probe that
-    /// hangs running, until CI ends the job. Its standard error goes into its log too, so that what
-    /// it leaves running doesn't hold the harness's own output open.
     pub fn start(command: &[String], timeout: Duration) -> Result<Self> {
         let mut child = Command::new(&command[0])
             .args(&command[1..])
@@ -59,8 +42,6 @@ impl Probe {
         })
     }
 
-    /// Waits for the probe to pass its checks, then returns its flavour and the values its paths
-    /// hold, by path.
     pub fn values(&mut self) -> Result<(String, BTreeMap<String, Value>)> {
         self.expect("ok")?;
         let answer = self.answer()?;
@@ -77,14 +58,12 @@ impl Probe {
         Ok((flavour.to_owned(), held))
     }
 
-    /// Has the probe write the values into the game, by path, and waits until it has.
     pub fn write(&mut self, values: &BTreeMap<String, Value>) -> Result<()> {
         let mut set = String::new();
         for (path, value) in values {
             let text = match value {
                 Value::Bool(flag) => flag.to_string(),
                 Value::Number(number) => number.to_string(),
-                // A string ends with its line.
                 Value::String(text) if !text.contains(['\r', '\n']) => text.clone(),
                 _ => bail!("can't send the probe {value} for {path}"),
             };
@@ -93,14 +72,11 @@ impl Probe {
         set.push('\n');
         let input = self.input.as_mut().context("the probe's input is closed")?;
         if let Err(e) = input.write_all(set.as_bytes()).and_then(|()| input.flush()) {
-            // Most likely it has exited, and what it printed last says why.
             return Err(self.failure(&format!("writing to the probe failed: {e}")));
         }
         self.expect("written")
     }
 
-    /// Ends the probe's input, which ends its replay, and waits for it to exit, for at most as long
-    /// as given, before killing it. Returns what went wrong, without the probe's log.
     pub fn finish(&mut self, wait: Duration) -> Result<(), String> {
         self.input = None;
         let deadline = Instant::now() + wait;
@@ -123,7 +99,6 @@ impl Probe {
         Ok(())
     }
 
-    /// Waits for the answer given.
     fn expect(&mut self, expected: &str) -> Result<()> {
         let answer = self.answer()?;
         if answer != expected {
@@ -134,8 +109,6 @@ impl Probe {
         Ok(())
     }
 
-    /// The probe's next answer: the rest of its next line that starts with `probe: `. Its failure,
-    /// its exit or its silence fails.
     fn answer(&mut self) -> Result<String> {
         let deadline = Instant::now() + self.timeout;
         loop {
@@ -161,9 +134,7 @@ impl Probe {
         }
     }
 
-    /// The problem, followed by the probe's log.
     pub fn failure(&mut self, problem: &str) -> Error {
-        // Including what it prints last, such as why it fails, if it does, for up to a second.
         let deadline = Instant::now() + Duration::from_secs(1);
         while let Ok(line) = self
             .lines
@@ -178,12 +149,10 @@ impl Probe {
     }
 }
 
-/// Sends each line of the stream as it's printed, until it ends.
 fn forward(stream: impl Read + Send + 'static, lines: Sender<String>) {
     thread::spawn(move || {
         let mut stream = BufReader::new(stream);
         let mut line = Vec::new();
-        // Its log isn't always UTF-8: on Windows, paths are in the console's code page.
         while stream
             .read_until(b'\n', &mut line)
             .is_ok_and(|read| read > 0)

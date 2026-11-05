@@ -11,29 +11,20 @@ using System.Xml;
 
 namespace CelesteAutosplit;
 
-// Runs celeste_autosplit.wasm through LiveSplit's ASR component, which does all
-// the auto splitting.
 public class CelesteAutosplitComponent : LogicComponent
 {
     public const string WasmFileName = "celeste_autosplit.wasm";
 
-    // Typed as LogicComponent so that only CreateInner and HasRuntime touch ASR
-    // types. Null when ASR can't run in this process, the wasm is missing, or ASR
-    // failed to load it.
     private readonly LogicComponent inner;
     private readonly string status;
     private Control settingsControl;
 
-    // Without an inner component, the last settings LiveSplit gave us, handed
-    // back unchanged so that saving the splits doesn't wipe them.
     private XmlNode heldSettings;
 
     public override string ComponentName => CelesteAutosplitFactory.Name;
 
     public CelesteAutosplitComponent(LiveSplitState state)
     {
-        // ASR's 32-bit native library is a stub: it hands out a runtime that never
-        // runs the module and drops all settings, so ASR can't be used at all.
         if (!Environment.Is64BitProcess)
         {
             status = "This autosplitter requires 64-bit Windows. If you need a 32-bit version, download the legacy LiveSplit.Celeste component and add it to your layout.";
@@ -80,7 +71,6 @@ public class CelesteAutosplitComponent : LogicComponent
                 Log.Info($"[{ComponentName}] Running {wasmPath}");
                 break;
             case false:
-                // Without a runtime ASR keeps no settings, so hold them ourselves.
                 inner.Dispose();
                 inner = null;
                 status = $"The Auto Splitting Runtime failed to load the wasm module:\n{wasmPath}\n\nThe cause is in LiveSplit's debug output (Sysinternals DebugView).";
@@ -92,17 +82,12 @@ public class CelesteAutosplitComponent : LogicComponent
         }
     }
 
-    // The same constructor ASRFactory.Create(state, script) uses. Kept out of line
-    // so that a missing or changed ASR assembly throws inside the constructor's
-    // try block rather than when the constructor itself is compiled.
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static LogicComponent CreateInner(LiveSplitState state, string wasmPath)
     {
         return new ASRComponent(state, wasmPath);
     }
 
-    // ASRComponent's constructor logs and swallows runtime load failures, leaving
-    // ComponentSettings.runtime null. This is the only way to detect them.
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static bool HasRuntime(LogicComponent inner)
     {
@@ -138,8 +123,6 @@ public class CelesteAutosplitComponent : LogicComponent
         }
     }
 
-    // Placeholder until the settings editor exists. Must not be null, or
-    // LiveSplit disables the Settings button.
     public override Control GetSettingsControl(LayoutMode mode)
     {
         return settingsControl ??= new Label
