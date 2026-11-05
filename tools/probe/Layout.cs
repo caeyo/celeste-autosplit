@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
@@ -15,12 +14,7 @@ namespace Probe
         public MethodBase Anchor;
         /// <summary>The field memory.rs reads the offset of from the anchor's code, if any.</summary>
         public string CodeField;
-        /// <summary>Per runtime, as the manifest has them.</summary>
-        public Dictionary<string, Signature> Signatures;
         public FieldPath[] Paths;
-
-        /// <summary>The runtime's signature, once it has matched the anchor's code.</summary>
-        public Signature Signature;
     }
 
     /// <summary>A manifest path from a root's object: an instance field per hop, and its measured offset.</summary>
