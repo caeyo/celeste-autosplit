@@ -338,7 +338,7 @@ fn read_frame(line: &str, number: usize) -> Result<BTreeMap<String, Value>> {
     let mut changes = BTreeMap::new();
     for (key, value) in &line {
         match key.as_str() {
-            "frame" | "everest" => {}
+            "frame" => {}
             "roots" => changes = by_path(value)?,
             _ => bail!("unexpected {key}"),
         }

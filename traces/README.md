@@ -71,18 +71,14 @@ auto splitter reads until the next. It has:
 - `roots`: the game's `AutoSplitterInfo`, every field of it, by root and path as
   the [probe](../tools/probe/README.md#the-manifest) names them: strings, numbers
   and booleans.
-- `everest`: Everest's own values, named after its struct's fields (see
-  [`layouts/everest.rs`](../layouts/everest.rs)): each string pointer's string, or
-  null for none, and its flags as numbers. Its header, which doesn't change, isn't
-  recorded.
 
 Each line only holds the values that changed since the previous line, and the first
 holds them all. A line without changes has only its `frame`:
 
 ```json
 {"frame":430}
-{"frame":431,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.Chapter":0,"AutoSplitterInfo.Mode":0,"AutoSplitterInfo.Level":"0","AutoSplitterInfo.TimerActive":true,"AutoSplitterInfo.ChapterStarted":true}},"everest":{"LevelSetStrPtr":"Celeste","ChapterSIDStrPtr":"Celeste/0-Intro","ChapterID":0,"ChapterMode":0,"RoomNameStrPtr":"0","ChapterFlags":2147483649}}
-{"frame":432,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.FileTime":170000}},"everest":{"FileTime":170000}}
+{"frame":431,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.Chapter":0,"AutoSplitterInfo.Mode":0,"AutoSplitterInfo.Level":"0","AutoSplitterInfo.TimerActive":true,"AutoSplitterInfo.ChapterStarted":true}}}
+{"frame":432,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.FileTime":170000}}}
 ```
 
 Times are in ticks of 100 ns. The game adds 17 ms, 170,000 ticks, to them each

@@ -1,13 +1,13 @@
 # trace-recorder
 
-Records [traces](../../traces/): what the auto splitter reads from the real game,
-update by update, while CelesteTAS plays a TAS. It's an Everest code mod, and
-`record.sh`, which records traces with it in an install of the game of its own.
+Records [traces](../../traces/): the real game's `AutoSplitterInfo`, update by
+update, while CelesteTAS plays a TAS. It's an Everest code mod, and `record.sh`,
+which records traces with it in an install of the game of its own.
 
-Each update, right after the game updates its `AutoSplitterInfo`, Everest updates
-its own values and raises `AutoSplitter.OnUpdateInfo`, from its patch of
-`AutoSplitterInfo.Update`. The recorder writes both into the trace then, for every
-update while the TAS plays. The traces' README describes their
+Each update, right after the game updates its `AutoSplitterInfo`, Everest raises
+`AutoSplitter.OnUpdateInfo`, from its patch of `AutoSplitterInfo.Update`. The
+recorder writes the game's values into the trace then, for every update while the
+TAS plays. The traces' README describes their
 [format](../../traces/README.md#format).
 
 ## Building
