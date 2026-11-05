@@ -1,4 +1,5 @@
-https://github.com/caeyo/celeste-autosplit/actions/runs/42116948739 windows-xna
+https://github.com/caeyo/celeste-autosplit/actions/runs/42128231690 windows-xna
+pointer size: 4
 string: length at 0x4, chars at 0x8
 Celeste.Celeste [Celeste] : Monocle.Engine [Celeste] : Microsoft.Xna.Framework.Game [Microsoft.Xna.Framework.Game]
   0x004  Game.graphicsDeviceManager : Microsoft.Xna.Framework.IGraphicsDeviceManager
@@ -88,20 +89,58 @@ Celeste.SaveData [Celeste]
   0x054  SaveData.LastSave : System.DateTime
   0x05c  SaveData.Assists : Celeste.Assists
   0x074  SaveData.LastArea : Celeste.AreaKey
-paths from Celeste.Celeste::Instance:
-  AutoSplitterInfo.Chapter: 0xac, 0x18
-  AutoSplitterInfo.Mode: 0xac, 0x1c
-  AutoSplitterInfo.Level: 0xac, 0x14
-  AutoSplitterInfo.TimerActive: 0xac, 0x30
-  AutoSplitterInfo.ChapterStarted: 0xac, 0x31
-  AutoSplitterInfo.ChapterComplete: 0xac, 0x32
-  AutoSplitterInfo.ChapterTime: 0xac, 0x4
-  AutoSplitterInfo.ChapterStrawberries: 0xac, 0x20
-  AutoSplitterInfo.ChapterCassette: 0xac, 0x33
-  AutoSplitterInfo.ChapterHeart: 0xac, 0x34
-  AutoSplitterInfo.FileTime: 0xac, 0xc
-  AutoSplitterInfo.FileStrawberries: 0xac, 0x24
-  AutoSplitterInfo.FileCassettes: 0xac, 0x28
-  AutoSplitterInfo.FileHearts: 0xac, 0x2c
-paths from Celeste.SaveData::Instance:
-  TotalDeaths: 0x30
+Celeste.Session [Celeste]
+  0x004  Session.Time : System.Int64
+  0x00c  Session.Audio : Celeste.AudioState
+  0x010  Session.Flags : System.Collections.Generic.HashSet<System.String>
+  0x014  Session.LevelFlags : System.Collections.Generic.HashSet<System.String>
+  0x018  Session.Strawberries : System.Collections.Generic.HashSet<Celeste.EntityID>
+  0x01c  Session.DoNotLoad : System.Collections.Generic.HashSet<Celeste.EntityID>
+  0x020  Session.Keys : System.Collections.Generic.HashSet<Celeste.EntityID>
+  0x024  Session.Counters : System.Collections.Generic.List<Celeste.Session+Counter>
+  0x028  Session.SummitGems : System.Boolean[]
+  0x02c  Session.OldStats : Celeste.AreaStats
+  0x030  Session.FurthestSeenLevel : System.String
+  0x034  Session.Level : System.String
+  0x038  Session.StartCheckpoint : System.String
+  0x03c  Session.ColorGrade : System.String
+  0x040  Session.Deaths : System.Int32
+  0x044  Session.Dashes : System.Int32
+  0x048  Session.DashesAtLevelStart : System.Int32
+  0x04c  Session.DeathsInCurrentLevel : System.Int32
+  0x050  Session.LightingAlphaAdd : System.Single
+  0x054  Session.BloomBaseAdd : System.Single
+  0x058  Session.DarkRoomAlpha : System.Single
+  0x05c  Session.CoreMode : Celeste.Session+CoreModes
+  0x060  Session.UnlockedCSide : System.Boolean
+  0x061  Session.BeatBestTime : System.Boolean
+  0x062  Session.StartedFromBeginning : System.Boolean
+  0x063  Session.InArea : System.Boolean
+  0x064  Session.FirstLevel : System.Boolean
+  0x065  Session.Cassette : System.Boolean
+  0x066  Session.HeartGem : System.Boolean
+  0x067  Session.Dreaming : System.Boolean
+  0x068  Session.GrabbedGolden : System.Boolean
+  0x069  Session.HitCheckpoint : System.Boolean
+  0x06a  Session.JustStarted : System.Boolean
+  0x06c  Session.Area : Celeste.AreaKey
+  0x074  Session.RespawnPoint : System.Nullable<Microsoft.Xna.Framework.Vector2>
+  0x080  Session.Inventory : Celeste.PlayerInventory
+Celeste.AreaStats [Celeste]
+  0x004  AreaStats.Modes : Celeste.AreaModeStats[]
+  0x008  AreaStats.ID : System.Int32
+  0x00c  AreaStats.Cassette : System.Boolean
+Celeste.AreaModeStats [Celeste]
+  0x004  AreaModeStats.TimePlayed : System.Int64
+  0x00c  AreaModeStats.BestTime : System.Int64
+  0x014  AreaModeStats.BestFullClearTime : System.Int64
+  0x01c  AreaModeStats.Strawberries : System.Collections.Generic.HashSet<Celeste.EntityID>
+  0x020  AreaModeStats.Checkpoints : System.Collections.Generic.HashSet<System.String>
+  0x024  AreaModeStats.TotalStrawberries : System.Int32
+  0x028  AreaModeStats.Deaths : System.Int32
+  0x02c  AreaModeStats.BestDashes : System.Int32
+  0x030  AreaModeStats.BestDeaths : System.Int32
+  0x034  AreaModeStats.Completed : System.Boolean
+  0x035  AreaModeStats.SingleRunCompleted : System.Boolean
+  0x036  AreaModeStats.FullClear : System.Boolean
+  0x037  AreaModeStats.HeartGem : System.Boolean
