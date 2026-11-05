@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <AssemblyName>celeste-autosplit</AssemblyName>
-    <RootNamespace>CelesteAutosplit</RootNamespace>
 
     <Version>0.1.0</Version>
 
@@ -17,10 +16,6 @@
 
   <ItemGroup>
     <EmbeddedResource Include="$(SchemaPath)" LogicalName="CelesteAutosplit.settings-schema.json" Link="settings-schema.json" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <InternalsVisibleTo Include="CelesteAutosplit.Tests" />
   </ItemGroup>
 
 </Project>
