@@ -12,9 +12,14 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
 
+  live-check:
+    uses: ./.github/workflows/live-check.yml
+    secrets:
+      GAME_FILES_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
+
   release:
     name: Publish release
-    needs: ci
+    needs: [ci, live-check]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

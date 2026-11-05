@@ -5,9 +5,10 @@ commands: `host` holds the real game for the [harness](../../harness/) to check
 the auto splitter against, and `dump` prints what collecting a layout by hand
 needs. Both load the game from `real/Celeste.exe` beside the probe.
 
-The [`layouts.yml`](../../.github/workflows/layouts.yml) workflow installs it as
-the game on every vanilla flavour. The harness starts its host for the live
-check and the replay of every trace, then the workflow runs its dump.
+The [`live-check.yml`](../../.github/workflows/live-check.yml) workflow
+installs it as the game on every vanilla flavour. The harness starts its host
+for the live check and the replay of every trace, then the workflow runs its
+dump.
 
 `dump` prints:
 

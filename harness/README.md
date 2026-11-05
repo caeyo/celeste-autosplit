@@ -49,9 +49,9 @@ stops it, without the auto splitter's log.
 
 ## In CI
 
-The [Layouts workflow](../.github/workflows/layouts.yml) runs it on every
-vanilla flavour, with every trace in `traces/`, once the probe has measured the
-layout and the auto splitter has been rebuilt with it.
+The [Live check workflow](../.github/workflows/live-check.yml) runs it on every
+vanilla flavour, with every trace in `traces/`, against the wasm module built
+with the committed layouts.
 
 ## Running it
 
