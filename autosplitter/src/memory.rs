@@ -1,4 +1,4 @@
-use core::iter;
+use core::{iter, slice};
 
 use asr::{
     deep_pointer::DeepPointer, future::retry, signature::Signature, Address, MemoryRangeFlags,
@@ -7,7 +7,7 @@ use asr::{
 
 use crate::{
     everest,
-    vanilla::{Anchor, Layout, Pattern, CLR32, MONO64, REFERENCE_WINDOW},
+    vanilla::{Layout, Pattern, CLR32, MONO64, WINDOW},
 };
 
 pub struct Values {
@@ -241,55 +241,63 @@ fn signature_ends<const N: usize>(
 
 fn find_instance(process: &Process, runtime: &Runtime) -> Option<(Address, u64)> {
     let layout = runtime.layout;
-    scan_executable(process, |(start, size)| {
-        let end = start.value() + size;
-        (runtime.scan_instance)(process, (start, size))
+    let signature_len = pattern_len(layout.celeste_instance.signature) as u64;
+    let references = layout.celeste_instance.references;
+    let store = slice::from_ref(&layout.auto_splitter_info_store);
+    scan_executable(process, |region| {
+        (runtime.scan_instance)(process, region)
             .into_iter()
             .find_map(|code| {
-                let slot = layout.celeste_instance.read_slot(process, code, end)?;
-                let info = layout.read_info_store(process, code, start)?;
+                let slot = search(process, region, code, Side::After, references)?;
+                let signature = Address::new(code.value() - signature_len);
+                let info = search(process, region, signature, Side::Before, store)?.value();
                 layout.has_info(process, slot, info).then_some((slot, info))
             })
     })
 }
 
 fn find_save_data(process: &Process, runtime: &Runtime) -> Option<Address> {
-    let layout = runtime.layout;
-    scan_executable(process, |(start, size)| {
-        let end = start.value() + size;
-        (runtime.scan_save_data)(process, (start, size))
+    let references = runtime.layout.save_data_instance.references;
+    scan_executable(process, |region| {
+        (runtime.scan_save_data)(process, region)
             .into_iter()
-            .find_map(|code| layout.save_data_instance.read_slot(process, code, end))
+            .find_map(|code| search(process, region, code, Side::After, references))
     })
 }
 
-impl Anchor {
-    fn read_slot(&self, process: &Process, code: Address, end: u64) -> Option<Address> {
-        let len = REFERENCE_WINDOW.min(end - code.value());
-        let code = process.read_vec::<u8>(code, len as usize).ok()?;
-        (0..code.len()).find_map(|start| {
-            self.references
-                .iter()
-                .find_map(|reference| match_pattern(reference, &code[start..]))
-        })
+#[derive(Clone, Copy)]
+enum Side {
+    After,
+    Before,
+}
+
+fn search(
+    process: &Process,
+    (region, size): (Address, u64),
+    edge: Address,
+    side: Side,
+    patterns: &[Pattern],
+) -> Option<Address> {
+    let (start, len) = match side {
+        Side::After => (edge, WINDOW.min(region.value() + size - edge.value())),
+        Side::Before => {
+            let len = WINDOW.min(edge.value() - region.value());
+            (Address::new(edge.value() - len), len)
+        }
+    };
+    let code = process.read_vec::<u8>(start, len as usize).ok()?;
+    let found = |at: usize| {
+        patterns
+            .iter()
+            .find_map(|pattern| match_pattern(pattern, &code[at..]))
+    };
+    match side {
+        Side::After => (0..code.len()).find_map(found),
+        Side::Before => (0..code.len()).rev().find_map(found),
     }
 }
 
 impl Layout {
-    fn read_info_store(&self, process: &Process, code: Address, range: Address) -> Option<u64> {
-        let signature = code.value() - pattern_len(self.celeste_instance.signature) as u64;
-        let len = self
-            .auto_splitter_info_store_window
-            .min(signature - range.value());
-        let code = process
-            .read_vec::<u8>(Address::new(signature - len), len as usize)
-            .ok()?;
-        (0..code.len())
-            .rev()
-            .find_map(|start| match_pattern(&self.auto_splitter_info_store, &code[start..]))
-            .map(|offset| offset.value())
-    }
-
     fn field(&self, slot: Address, field: u64) -> DeepPointer<2> {
         DeepPointer::new(slot, self.pointer_size, &[0, field])
     }
