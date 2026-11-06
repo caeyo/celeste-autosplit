@@ -40,8 +40,9 @@ To read another value of a root:
    `Option` if it can be missing; and to `set_debug_info` in
    [`lib.rs`](../autosplitter/src/lib.rs).
 3. Add its root, path, kind and debug variable to `PATHS` in the
-   [harness](../harness/src/main.rs). The host can write a string, a `bool`, an
-   `int` or a `long`.
+   [harness](../harness/src/main.rs), or `None` for a value published only
+   through another, as `Time` is through `Starting New File`, which `expected`
+   then works out. The host can write a string, a `bool`, an `int` or a `long`.
 
 To add a root:
 
@@ -59,9 +60,8 @@ To add a root:
    `MONO64`: from the dump, the end of its last field, rounded up to 4 and plus
    4 on `CLR32`, and rounded up to 8 on `MONO64`. A wrong size shows in the live
    check as the root's values missing.
-5. Add its values as above. If the game leaves the slot null until later, give
-   the host an object for it, as [`Host.cs`](../tools/probe/Host.cs) does for
-   `SaveData.Instance`.
+5. Add its values as above. The host gives a root holding null an object of its
+   own when a value is first written to it.
 
 ## Bumping versions
 
