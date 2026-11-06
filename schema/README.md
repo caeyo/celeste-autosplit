@@ -52,7 +52,7 @@ Types use the settings map's own names, plus one for triggers:
 | `description` | no | Help text. |
 | `default` | no | Used when the field is missing. Fields without one are filters that match anything when missing. |
 | `values` | no | The allowed values, as in `settings`. |
-| `values_from` | no | The allowed values come from `chapters`: `"chapters"` (chapter IDs) or `"checkpoints"` (checkpoint numbers of the trigger's chapter). |
+| `values_from` | no | The allowed values come from `chapters`: `"chapters"` (chapter IDs; the module also takes modded IDs above them) or `"checkpoints"` (checkpoint numbers of the trigger's chapter). |
 | `no_chapter` | no | On `chapter`: the value and label for "not in a chapter". Editors offer it only for triggers with `allow_no_chapter`. |
 | `everest` | no | `true`: Everest-only. Counts only when `cfg.everest` is on; otherwise editors hide it but keep it. |
 | `replaces` | no | When this field is present and counts, it stands in for the named field, including where that field is required. |

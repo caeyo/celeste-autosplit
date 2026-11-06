@@ -151,10 +151,7 @@ fn parse_trigger(value: &Value, everest: bool) -> Result<Trigger, String> {
         let invalid = || format!("has an invalid {}, {value:?}", field.name());
         match field {
             Field::Chapter => {
-                let valid = |&id: &i64| {
-                    CHAPTERS.iter().any(|chapter| chapter.id == id)
-                        || (kind.allow_no_chapter() && id == NO_CHAPTER)
-                };
+                let valid = |&id: &i64| id >= 0 || (kind.allow_no_chapter() && id == NO_CHAPTER);
                 trigger.chapter = Some(value.get_i64().filter(valid).ok_or_else(invalid)?);
             }
             Field::Side => {
