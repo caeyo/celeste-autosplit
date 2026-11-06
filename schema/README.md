@@ -1,29 +1,17 @@
 # schema
 
-`settings-schema.json` is the hand-written, single source of truth for the
-`cfg` settings layout. The editors render from it, and the wasm module
-generates its settings types and checkpoint rooms from it, so field lists and
-room tables are never maintained by hand in three places.
-
-How each project consumes it:
-
-| Project | How |
-|---|---|
-| `component/` | Embedded resource `CelesteAutosplit.settings-schema.json` (see `CelesteAutosplit.csproj`). |
-| `site/` | Copied next to `index.html` at deploy time and by `site/serve.mjs`. |
-| `autosplitter/` | Not wired up yet. Planned: read by a `build.rs` at build time, so no JSON parser ends up in the wasm. |
-
-When changing it, additive changes don't bump `schema_version`. These are a
-new optional key with a default, a new trigger kind, or a new optional field.
-Renames, removals and changes of meaning do bump it.
+`settings-schema.json` describes the planned settings: the `cfg` keys, the
+trigger kinds and their fields, the presets, and the vanilla chapters with their
+checkpoints. It's written by hand. Nothing reads it yet: the component embeds it
+as the resource `CelesteAutosplit.settings-schema.json`, and the website's
+deploy and `site/serve.mjs` copy it next to `index.html`, but neither uses it.
+The [plan](../docs/plan.md#settings) says what will read it, and what the
+settings mean.
 
 ## Format
 
-Plain JSON with own vocabulary (not JSON Schema). Anything that has an
-order is an array, because migration writes keys in this order and editors
-list things in it.
-
-### Top level
+Plain JSON with its own vocabulary, not JSON Schema. Anything with an order is an
+array: migration writes keys in that order, and editors list things in it.
 
 | Key | Type | Meaning |
 |---|---|---|
@@ -33,8 +21,6 @@ list things in it.
 | `triggers` | array | The trigger kinds, in the order editors list them. |
 | `presets` | array | Editor presets. |
 | `chapters` | array | Vanilla chapters, with their checkpoints. |
-
-### Types
 
 Types use the settings map's own names, plus one for triggers:
 
@@ -49,25 +35,23 @@ Types use the settings map's own names, plus one for triggers:
 | Key | Required | Meaning |
 |---|---|---|
 | `key` | yes | The key inside `cfg`. |
-| `type` | yes | See Types. |
+| `type` | yes | See the types above. |
 | `items` | for `list` | Item type. |
 | `default` | yes | Used when the key is missing. |
 | `label` | yes | Display name. |
 | `description` | no | Help text. |
-| `values` | no | Allowed values (below). Anything else is invalid. |
-| `host` | no | `"livesplit"`: only the LiveSplit (Windows) wrapper applies it. The wasm module ignores it, and the website labels it "LiveSplit (Windows) only". |
-
-`values` entries are `{ "value", "label", "description"? }`.
+| `values` | no | The allowed values, each `{ "value", "label", "description"? }`. Anything else is invalid. |
+| `host` | no | `"livesplit"`: only the LiveSplit component applies it. |
 
 ### `fields{}`
 
 | Key | Required | Meaning |
 |---|---|---|
-| `type` | yes | See Types. |
+| `type` | yes | See the types above. |
 | `label` | yes | Display name. |
 | `description` | no | Help text. |
 | `default` | no | Used when the field is missing. Fields without one are filters that match anything when missing. |
-| `values` | no | Allowed values, as in `settings`. |
+| `values` | no | The allowed values, as in `settings`. |
 | `values_from` | no | The allowed values come from `chapters`: `"chapters"` (chapter IDs) or `"checkpoints"` (checkpoint numbers of the trigger's chapter). |
 | `no_chapter` | no | On `chapter`: the value and label for "not in a chapter". Editors offer it only for triggers with `allow_no_chapter`. |
 | `everest` | no | `true`: Everest-only. Counts only when `cfg.everest` is on; otherwise editors hide it but keep it. |
@@ -82,7 +66,7 @@ Types use the settings map's own names, plus one for triggers:
 | `label` | yes | Display name. |
 | `required` | yes | Field names the trigger must have. |
 | `optional` | yes | Field names the trigger may have. |
-| `offer` | yes | Where editors offer it: any of `"start"` and `"splits"`. Every kind is still valid in both places. An empty list means editors never offer it (for example `unknown`, which only migration produces). |
+| `offer` | yes | Where editors offer it: any of `"start"` and `"splits"`. Every kind is still valid in both places. An empty list means editors never offer it, as for `unknown`, which only migration makes. |
 | `allow_no_chapter` | no | `true`: `chapter` may also be the `no_chapter` value. |
 
 ### `presets[]`
@@ -94,9 +78,6 @@ Types use the settings map's own names, plus one for triggers:
 | `settings` | Top-level `cfg` values the preset sets. |
 | `trigger_fields` | Field values the preset sets on every trigger of a kind, by kind. |
 
-Presets are never stored. Editors show the preset whose values all match, or
-"Custom" if none does.
-
 ### `chapters[]`
 
 | Key | Meaning |
@@ -106,9 +87,6 @@ Presets are never stored. Editors show the preset whose values all match, or
 | `sides` | Side values the chapter has (`0` = A, `1` = B, `2` = C). |
 | `checkpoints` | In order, so checkpoint `n` is entry `n - 1`. |
 
-Each checkpoint has:
-- `names`: indexed by side. A missing entry means the side has no named
-  checkpoint there.
-- `rooms`: indexed by side. `rooms[side]` is the room that fires the
-  `checkpoint` trigger on that side. A missing entry means it never fires on
-  that side.
+Each checkpoint has `names` and `rooms`, both indexed by side. `rooms[side]` is
+the room that fires the `checkpoint` trigger on that side. A missing entry means
+the side has no named checkpoint there, or that the trigger never fires on it.

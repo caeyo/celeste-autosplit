@@ -1,199 +1,265 @@
 # How it works
 
+The auto splitter is a wasm module that attaches to Celeste, reads its memory
+each tick, and publishes what it reads as debug variables. It has no splitting
+logic yet: that, and its settings, are in the [plan](plan.md).
+
+## Terms
+
+| Term | Meaning |
+|---|---|
+| Flavour | One of the four builds of vanilla Celeste 1.4.0.0: Windows XNA, Windows FNA, Linux and macOS. CI calls them `windows-xna`, `windows-fna`, `linux` and `macos`. |
+| Runtime | The .NET runtime the game runs in. `CLR32`, 32-bit .NET Framework, runs both Windows flavours. `MONO64`, the 64-bit Mono bundled with the game, runs Linux and macOS. `Runtime` in [`memory.rs`](../autosplitter/src/memory.rs) pairs each with its OSes. |
+| Auto splitting runtime | What runs the wasm module in a host: LiveSplit's ASR component, or livesplit-core's `livesplit-auto-splitting` crate. Never shortened to "runtime" here. |
+| Host | A program that runs the wasm module: LiveSplit, apps built on livesplit-core, the asr-debugger, and the harness. |
+| Framework | The library the game is built on: XNA, or a version of FNA. Everest brings its own FNA. |
+| Root | A static field the auto splitter reads through: `Celeste.Instance` or `SaveData.Instance`. The probe, the harness and the traces write it `Namespace.Type::Field`, as in `Celeste.Celeste::Instance`. |
+| Slot | Where a root is stored: the address that holds the reference to its object. |
+| Path | Instance field names from a root's object, joined with dots, as in `AutoSplitterInfo.Chapter`. |
+| Offset | The distance in bytes from the address a reference to an object holds to one of its fields. |
+| Layout | What the auto splitter needs to read vanilla on one runtime: `CLR32` or `MONO64` in [`vanilla.rs`](../autosplitter/src/vanilla.rs). |
+| Anchor | A method whose compiled code holds a root's slot address: `Celeste`'s constructor for `Celeste.Instance`, and `AutoSplitterInfo.Update` for `SaveData.Instance`. |
+| Signature | Hex bytes, with `??` for any byte, that match an anchor's code once. |
+| Pattern | The bytes before a value in code, the value's width, 4 or 8 bytes, least significant first, and the bytes after it, with `None` for any byte. |
+| Reference pattern | A pattern for the instruction after the signature that holds the slot's address. |
+| Store pattern | A pattern for the instruction before `Celeste.Instance`'s signature that stores the game's new `AutoSplitterInfo`, and holds that field's offset. |
+| Window | How far from the signature a pattern is searched, the whole match inside: `REFERENCE_WINDOW`, 256 bytes after it, and `auto_splitter_info_store_window`, 128 bytes before it. |
+| Everest's struct | `CoreAutoSplitterInfo`, which Everest writes into memory of its own each update, for auto splitters. |
+| Debug variable | A value as the auto splitter publishes it: a custom variable such as `Chapter`, named in [`lib.rs`](../autosplitter/src/lib.rs). |
+| Tick | One update of the auto splitter by its host: 120 a second by default. |
+| Update | One update of the game, a frame: 60 a second. |
+| Probe | [`tools/probe/`](../tools/probe/), which poses as the game in its own runtime. |
+| Live check, replay | The harness's two checks, [below](#what-the-tests-prove). |
+| Trace | A recording of the game's values, update by update, while a TAS plays: see [traces](../traces/README.md). |
+
 ## Attaching
 
 The auto splitter attaches to the first process named `Celeste.bin.x86_64`,
-`Celeste.bin.x86`, `Celeste.exe` or `Celeste`, then searches its memory for what
-it reads. A search scans the process's memory, and LiveSplit runs the auto
-splitter on its UI thread, so after a failed search the auto splitter waits a
-second before the next, and logs each kind of failure once. After 10 failed
-searches, it detaches and attaches again:
+`Celeste.bin.x86`, `Celeste.exe` or `Celeste`, and looks for Everest's struct,
+then for vanilla's roots. A search scans the process's memory, and LiveSplit runs
+the auto splitter on its UI thread, so after a failed search it waits a second,
+and logs each kind of failure once. asr's `sleep` needs WASI, which the module
+isn't built for, so a second is 120 ticks. After 10 failed searches, it detaches
+and attaches again: on Linux, vanilla starts through a bash script named
+`Celeste`, which runs `Celeste.bin.x86_64`, and if the host's process list is
+refreshed between the two, the auto splitter attaches to the script. `Celeste`
+stays in the list because under Everest on Linux, it's the game itself.
 
-- On Linux, vanilla starts through a bash script named `Celeste`, which runs
-  `Celeste.bin.x86_64` as its child. If the host's process list is refreshed
-  between the two, the auto splitter attaches to the script, and only attaching
-  again reaches the game.
-- Under Everest on Linux, the game itself runs as `Celeste`, so the name stays
-  in the list.
+## Vanilla
 
-asr's `sleep` and `timeout` need WASI, which the module isn't built for, so a
-second is 120 ticks, the runtime's default tick rate, which hosts follow.
+The game's own classes lay out the same on every flavour of a runtime, so there's
+one layout per runtime, picked by the OS. It holds where a .NET string keeps its
+length, an `i32`, and its UTF-16 characters, an anchor for each root, the store
+pattern, and each value's offset: after `AutoSplitterInfo`, or for
+`TotalDeaths`, from the object in `SaveData.Instance`'s slot.
 
-## The layouts
+### Finding `Celeste.Instance`
 
-[`vanilla.rs`](../autosplitter/src/vanilla.rs) holds what the auto splitter
-reads on each runtime the game runs on: `CLR32`, 32-bit .NET Framework, for
-Windows's XNA and FNA builds, and `MONO64`, 64-bit Mono, for Linux's and
-macOS's. The game's own classes lay out the same on every flavour of a runtime.
-Each holds:
-
-- the pointer size, and where a string holds its length, an `i32`, and its
-  UTF-16 characters;
-- for `Celeste.Instance` and `SaveData.Instance`, the anchor whose compiled code
-  holds the static slot's address: a signature that matches the code once, and
-  reference patterns for an instruction after it that holds the address;
-- the pattern for the store of `AutoSplitterInfo` before `Celeste.Instance`'s
-  signature, and how many bytes before the signature are searched for it, which
-  starts within them;
-- each value's offset: after `AutoSplitterInfo`, or for `TotalDeaths`, from the
-  object in `SaveData.Instance`'s slot.
-
-A signature is hex bytes, with `??` for any byte, which asr parses when the auto
-splitter compiles. A pattern is the bytes before the value it holds, the value's
-width, 4 or 8 bytes, least significant first, and the bytes after it, with
-`None` for any byte. The reference is the earliest match of any reference
-pattern after the signature: earliest, because a pattern with a 4-byte address
-can also match inside one with an 8-byte address. Every anchor's reference ends
-within `REFERENCE_WINDOW`, 256 bytes, after its signature.
-
-To read a value, the auto splitter reads the root's object from its slot, and
-for `Celeste.Instance`, `AutoSplitterInfo`'s object from it, at the offset the
-store holds. The value's offset leads from there. All offsets are in bytes, from
-the address a reference to the object holds.
-
-Each tick, the auto splitter reads every value, and reports them only if every
-read succeeds. The exceptions are `Level`, which goes unreported when there's no
-string, and `TotalDeaths`, which goes unreported until a file starts.
-
-`AutoSplitterInfo`'s own offset is read from the code because it comes after the
-fields of the framework's `Game` class, and Everest replaces the FNA that vanilla
-runs on, with a different one in different versions, so no layout could hold it
-for every game.
-
-## Finding `Celeste.Instance`
-
+The auto splitter searches every executable memory region for the signature.
 `Celeste`'s constructor passes the game and window sizes, 1920x1080 and 960x540,
 to `Engine`'s constructor, then stores itself in `Celeste.Instance`. The
-signatures match the size arguments: pushed on Windows, in registers on Mono.
+signatures match the sizes: pushed on Windows, in registers on Mono.
 
-The reference patterns match the store into the slot that follows:
+For each match, the slot's address comes from the earliest match of any
+reference pattern in the window after it: earliest, because a pattern with a
+4-byte address can also match inside one with an 8-byte address. They match the
+store into the slot:
 
-- Windows: the slot's address goes to the GC's write barrier: `lea edx, [slot]; call`.
-- Mono: the address is loaded into `rax` and stored through: `mov eax, slot` or
-  `mov rax, slot`, then `mov [rax], r15`. The 4-byte form is used when the address
-  fits, which depends on where the heap is, so both forms are listed. Where the
-  heap is also changes the length of other instructions between the signature and
-  the store, so the reference is searched for, not expected at a fixed distance.
+- Windows: `lea edx, [slot]; call`, the address for the GC's write barrier.
+- Mono: `mov eax, slot` or `mov rax, slot`, then `mov [rax], r15`. Which width
+  depends on where the heap is, and so does the length of other instructions in
+  between, so the reference is searched for, not expected at a fixed distance.
 
 `Celeste`'s field initializers run before `Engine`'s constructor, so the store of
 its new `AutoSplitterInfo` comes before the signature, and holds the field's
-offset:
+offset: `lea edx, [esi+offset]; call` on Windows, `lea rax, [r15+offset]` on
+Mono. It's the last match in the window, the nearest, since the window can reach
+code before the constructor. The match is accepted once the slot holds the game
+and its `AutoSplitterInfo` isn't null, so until then, the search fails.
 
-- Windows: the field's address goes to the write barrier: `lea edx, [esi+offset]; call`.
-- Mono: it's computed for the write barrier: `lea rax, [r15+offset]`.
+The offset is read from the code because it comes after the fields of the
+framework's `Game` class: 0xa0 on the FNA 21.3.5 that the game ships with, 0xb0
+on Everest 1.4449's FNA 21.7, 0xac on current Everest's FNA 24.1 and on XNA, and
+0x118 on Mono.
 
-The store is the last match before the signature, the nearest one, because the
-search can reach code before the constructor.
+### Finding `SaveData.Instance`
 
-## Finding `SaveData.Instance`
-
-`AutoSplitterInfo.Update` runs from the game's first update. It reads
-`SaveData.Instance` for the file's values, first `FileTime`, right after setting
-`ChapterTime` from the level's session. The signatures match setting
-`ChapterTime`, and the reference is the load from `SaveData.Instance` that
-follows:
-
-- Windows: `mov ecx, [slot]; test ecx, ecx`.
-- Mono: `mov rax, [slot]` when the address fits in 32 bits, as on Linux, and
-  otherwise, as on macOS, `mov rax, slot; mov rax, [rax]`. Which one depends on
-  where the heap is, so both are listed.
-
-## Static addresses in code
+`AutoSplitterInfo.Update` runs from the game's first update. Right after setting
+`ChapterTime` from the level's session, it loads `SaveData.Instance` for
+`FileTime`. The signatures match setting `ChapterTime`, and the reference
+patterns the load: `mov ecx, [slot]; test ecx, ecx` on Windows, and on Mono,
+`mov rax, [slot]` when the address fits in 32 bits, as on Linux, or else, as on
+macOS, `mov rax, slot; mov rax, [rax]`.
 
 On these runtimes, code never addresses a static relative to the instruction:
 x86 has no RIP-relative addressing, and Mono's JIT writes a static's address into
-the instruction. So the dump only searches the anchor's code for the slot's
-absolute address: as a u32, and in 64-bit processes also as a u64.
+the instruction. So a reference always holds the slot's absolute address.
 
-## The probe
+### Each tick
 
-[`tools/probe/`](../tools/probe/) is one executable, installed as the game's
-`Celeste.exe`, that runs inside the game's own runtime and loads the game from
-`real/Celeste.exe` beside it. It takes one of two commands.
+The auto splitter follows each value's pointer path: the root's object from the
+slot, then for `Celeste.Instance`, the `AutoSplitterInfo` at the offset the store
+held, then the value at its offset. It reads every value, and publishes them
+only if every read succeeds. A flag is a byte, true when not 0. The exceptions:
 
-`dump` prints what keeping the layouts by hand needs:
-
-1. the pointer size, and where strings hold their length and characters;
-2. every instance field's offset, name and type, for `Celeste` and its base
-   classes, `AutoSplitterInfo`, `SaveData`, `Session`, `AreaStats` and
-   `AreaModeStats`, measured on uninitialized objects;
-3. for each anchor in `Game.cs`'s `Anchors`, compiled as the host compiles it:
-   the static slot's address, the anchor's machine code, and each offset in the
-   code where the slot's address appears, with its width.
-
-[`tools/probe/fields/`](../tools/probe/fields/) keeps the dump's field tables
-from a Live check run, without the machine code: one file for each Windows
-flavour, and one for Linux and macOS, whose tables are identical.
-
-`host` holds the real game for the [harness](../harness/):
-
-1. it runs the class constructors and compiles each anchor;
-2. it constructs the game (`new Celeste()`). `SaveData.Instance`, which the game
-   leaves null until a file starts, gets an uninitialized object of the probe's
-   own, so that the host can write values into it;
-3. it prints `probe: ready`, then reads sets of values from its standard input
-   until its input ends. Each set is a `root path=value` line per value, then an
-   empty line. The root is a static field, as `Namespace.Type::Field`, and the
-   path is instance field names from the root's object, joined with dots, each
-   looked up in the object's class or its nearest base class with that field. The
-   value is read as the last field's type: `true` or `false`, a whole number, or
-   for a string, the rest of the line. The host writes each line into the game
-   through reflection, and prints `probe: written` after each set.
-
-On a failure, either command prints why, then `probe: failed`, and exits with 1,
-or with 2 for a bad command.
-
-- The anchor's length isn't available, so the dump reads 768 bytes of its code,
-  stopping early at an unmapped page. That covers `Celeste`'s constructor on every
-  flavour: 0xb6 bytes on Windows, 0x15a on Linux and 0x1e9 on macOS.
-- Both commands run the class constructors before compiling an anchor, as the
-  game has by the time it runs it: the JIT may compile static accesses
-  differently before a class is initialized. `SaveData` has none, so it doesn't matter that the game
-  may not have initialized it when it first runs `AutoSplitterInfo.Update`.
-- Each anchor is compiled with `RuntimeHelpers.PrepareMethod`, and its code is
-  taken from `GetFunctionPointer`, which then returns the code, not a stub that
-  jumps to it, on both runtimes. The host has to compile the anchors because the
-  game only runs `AutoSplitterInfo.Update` from its first update, which the host
-  never runs. On Mono, `PrepareMethod` alone isn't enough: unless the host also
-  calls `GetFunctionPointer`, the auto splitter never finds `SaveData.Instance`.
-- `GC.SuppressFinalize` keeps the game's finalizers from running on the
-  uninitialized objects the probe makes, and on the game it constructs, which
-  nothing disposes before the process exits.
-- The game's `Main` loads the settings before constructing the game, and the
-  constructor reads `Settings.Instance.Fullscreen` and `VSync`.
-- A field's offset is `&obj.field - obj`, taken with `ldflda` in one dynamic
-  method, so that the GC can't move the object in between: `Marshal.OffsetOf`
-  doesn't work on auto-layout classes. Its IL is unverifiable, which dynamic
-  methods may be in a full-trust process.
-- Reading an unmapped page crashes the process rather than throwing, so reads stop
-  at the first one. `msync` fails with `ENOMEM` on unmapped pages on both Linux and
-  macOS, which `mincore` doesn't on macOS. `MS_ASYNC` is 1 on both, and does
-  nothing to anonymous memory.
+- `Level` goes unpublished when there's no string, or it's over 512 characters.
+- `Deaths`, `SaveData.TotalDeaths`, goes unpublished until a file starts, since
+  the game leaves `SaveData.Instance` null until then.
 
 ## Everest
 
-[`everest.rs`](../autosplitter/src/everest.rs) is Everest's `CoreAutoSplitterInfo`,
-as a `#[repr(C)]` struct with the same fields in the same order, transcribed by
-hand from
+[`everest.rs`](../autosplitter/src/everest.rs) is Everest's struct as a
+`#[repr(C)]` struct, transcribed by hand from
 [`AutoSplitter.cs`](https://github.com/EverestAPI/Everest/blob/47d6a61fa918c17b8085b93b61ee59a7465968f8/Celeste.Mod.mm/Mod/Everest/AutoSplitter.cs)
-at commit `47d6a61`, in Everest `stable-1.6623.0`, where each field's type is. The
-compiler checks the struct's size and each field's offset against Everest's
-explicit ones. To update it, transcribe the struct again at a newer commit, and
-update the link.
+at commit `47d6a61`, in Everest `stable-1.6623.0`. The compiler checks its size
+and each field's offset against Everest's explicit ones.
 
-- Everest puts the struct at the start of a memory mapping of its own, and the
-  auto splitter finds it by checking the start of each memory region for its
-  magic bytes. It accepts the struct only if its `InfoVersion` is 3, the version
-  transcribed, and otherwise logs the version once and keeps looking.
-- Everest runs on 64-bit .NET, so a pointer takes 8 bytes. The struct takes 0x70
-  bytes, its last field padded to a pointer's alignment.
+- Everest puts the struct at the start of a memory mapping of its own, so the
+  auto splitter checks the start of each memory region for its magic bytes. It
+  accepts only `InfoVersion` 3, the version transcribed, and otherwise logs the
+  version once and keeps looking.
+- Everest runs on 64-bit .NET: pointers take 8 bytes, and the struct 0x70, its
+  last field padded to a pointer's alignment.
 - Each tick, the auto splitter copies the struct in one read, then reads the
-  strings it points to.
-- A string is a pointer to NUL-terminated UTF-8, with its length in bytes in the
-  `u16` before it, or 0 for no string. Each update writes its strings to the
-  other of two pools, so a copy's strings last until the update after next.
+  strings it points to: NUL-terminated UTF-8, with the length in bytes in the
+  `u16` before it, or a null pointer for no string. Each update writes its
+  strings to the other of two pools, so a copy's strings last until the update
+  after next.
 - Each update, Everest sets `InfoVersion` to 0xff, writes every field, raises
-  `AutoSplitter.OnUpdateInfo`, and sets `InfoVersion` back to 3. A tick whose
-  copy holds 0xff, or that reads 0xff right after copying, reports nothing, so
-  the last values stay. When attaching, a struct holding 0xff is skipped without
-  a log.
+  `AutoSplitter.OnUpdateInfo`, and sets it back to 3. A tick whose copy holds
+  0xff, or that reads 0xff right after copying, publishes nothing, so the last
+  values stay. When attaching, a struct holding 0xff is skipped without a log.
+- It has values vanilla doesn't, such as `Starting New File` and `Chapter SID`,
+  and no `Deaths`.
+
+Started with `--vanilla`, Everest runs the vanilla game on its own FNA, without
+the struct, so the auto splitter reads it as vanilla. Before .NET Core, Everest
+does so in a second AppDomain of its own process, which works the same.
+
+## The probe
+
+[`tools/probe/`](../tools/probe/) is installed as the game's `Celeste.exe`, runs
+in the game's own runtime, and loads the game from `real/Celeste.exe`.
+
+- `dump` prints the pointer size and where strings hold their length and
+  characters; every instance field's offset, name and type, for `Celeste` and its
+  base classes, `AutoSplitterInfo`, `SaveData`, `Session`, `AreaStats` and
+  `AreaModeStats`, measured on uninitialized objects; and for each anchor in
+  `Game.cs`'s `Anchors`, compiled as `host` compiles it, the slot's address, the
+  anchor's machine code, and each offset in it where the slot's address appears,
+  4 or 8 bytes wide. [`tools/probe/fields/`](../tools/probe/fields/) keeps the
+  field tables from a Live check run: one per Windows flavour, and one for Linux
+  and macOS, which are identical.
+- `host` runs the class constructors, compiles each anchor, and constructs the
+  game. `SaveData.Instance`, null until a file starts, gets an uninitialized
+  object of the probe's own. Then it prints `probe: ready`, and reads sets of
+  values until its input ends: a `root path=value` line per value, then an empty
+  line. Each field of the path is looked up in the object's class or its nearest
+  base class with it, and the value is parsed as the last field's type: `true` or
+  `false`, a whole number, or for a string, the rest of the line. The host writes
+  each line through reflection, and prints `probe: written` after each set.
+- On a failure, either prints why, then `probe: failed`, and exits with 1, or
+  with 2 for a bad command.
+
+Why it's built as it is:
+
+- An anchor's length isn't available, so the dump reads 768 bytes of its code,
+  stopping at an unmapped page. That covers `Celeste`'s constructor everywhere:
+  0xb6 bytes on Windows, 0x15a on Linux and 0x1e9 on macOS.
+- The JIT may compile static accesses differently before a class is
+  initialized, so both commands run the class constructors first, as the game
+  has by then. `SaveData` has none.
+- `RuntimeHelpers.PrepareMethod` compiles an anchor, and `GetFunctionPointer`
+  then returns its code, not a stub, on both runtimes. The host has to compile
+  them, because the game only runs `AutoSplitterInfo.Update` from its first
+  update, which the host never runs. On Mono, without `GetFunctionPointer`, the
+  auto splitter never finds `SaveData.Instance`.
+- `GC.SuppressFinalize` keeps finalizers from running on the probe's
+  uninitialized objects, and on the game, which nothing disposes.
+- The game's constructor reads `Settings.Instance`, which `Main` loads first, so
+  the host makes one.
+- A field's offset is `&obj.field - obj`, taken with `ldflda` in one dynamic
+  method, so that the GC can't move the object in between. `Marshal.OffsetOf`
+  doesn't work on auto-layout classes.
+- Reading an unmapped page crashes the process, so reads stop at the first. On
+  Linux and macOS, `msync` fails with `ENOMEM` on one, which `mincore` doesn't on
+  macOS, and `MS_ASYNC`, the 1 it's given, does nothing to anonymous memory.
+
+## What the tests prove
+
+The [harness](../harness/) starts the probe with `host`, so the probe's process
+has the game's name, and the auto splitter, which the harness runs, attaches to
+it. `PATHS` in the harness lists every value the auto splitter reads on vanilla:
+its root, path, type and debug variable. The harness sends the probe a set of
+values, the probe writes them into the game, and the harness updates the auto
+splitter once. The debug variables must then be exactly the values the game
+holds, none missing and none extra.
+
+- **The live check** sends a distinctive value for every path, then the same
+  with every number negated and every flag flipped, then each flag set alone.
+  Every number and string has a value of its own, spread over all its bytes, so
+  reading the wrong field, or the wrong width, shows in every field. Two swapped
+  flags would agree when flipped together, so each is also set alone.
+- **The replay** then sends each line of each trace: its changes, over all the
+  values before. A path that isn't in `PATHS` fails.
+
+The live check catches layout mistakes whatever traces there are, and the replay
+adds the values only real play produces, such as empty strings. On all four
+flavours, a pass shows that the signatures, references and store are found, that
+every offset and pointer size is right, that .NET strings, numbers and flags read
+right, and that attaching works on each OS. It rests on the game's own runtime
+and one comparison per update, with no stand-in for the game. The auto splitter
+runs on livesplit-core's own `Timer`, pinned with the auto splitting runtime to
+one revision in `harness/Cargo.toml`.
+
+The [component's tests](livesplit-notes.md#the-components-tests) prove that
+LiveSplit's ASR loads the wasm module and keeps its settings.
+
+### What they don't prove
+
+- Everest: no probe constructs it, and CI doesn't run it. Its offsets rest on
+  the transcription, and nothing checks the 0xff marker.
+- Vanilla on Everest's FNA, with `--vanilla`: checked once by hand on Windows,
+  with Everest `stable-1.4449.0` and `stable-1.6662.0`.
+- Values neither check writes, such as the smallest and largest numbers. The
+  traces don't record `TotalDeaths`: only the live check writes it.
+- `SaveData.Instance` holding null: the probe always holds a save, so nothing
+  checks that `Deaths` goes unpublished without one.
+- Code the game doesn't have: a second match of a signature, or a 4-byte
+  reference pattern matching inside an 8-byte one.
+- Reads during the game's update, or during a garbage collection: the probe's
+  game never runs, and each set is written whole between two ticks.
+- Reading at the tick rate: the harness ticks once per line of a trace, once
+  per update of the game.
+- Detaching and attaching again after 10 failed searches.
+
+## Known gaps
+
+- **Garbage during garbage collection.** Reads can return garbage for up to
+  about 0.24 s. It has been seen as a false `Chapter Started` and a false
+  `Chapter Complete`, and as `Deaths` reading 3, 0, 3 for one tick. Nothing
+  checks for it, by choice, so splitting logic will have to cope with it,
+  especially triggers on a rising edge. The hand check of 2026-11-05 saw it in
+  5 of 7 runs, each time for one tick. About 0.86 s after Save and Quit,
+  `Deaths` read 0 in three runs, and in one run every value of
+  `AutoSplitterInfo` read garbage, with `Timer Active`, `Chapter Started` and
+  `Chapter Complete` at 1. In another, during boot, the address read as
+  `AutoSplitterInfo` held a string: three counts decoded as the UTF-16 text
+  "Loadin".
+- **No new-file signal on vanilla.** Only Everest's struct has `Starting New
+  File`. `SaveData.Instance` is read only for `Deaths` so far: splitting will
+  need a source.
+- **No splitting.** Nothing starts, splits or resets, and nothing reads settings.
+  The component has no settings editor or migration, the website is a stub, and
+  nothing reads the schema.
+
+## Supported versions
+
+- **Vanilla Celeste 1.4.0.0** on all four flavours, checked in CI.
+- **The latest Everest**, through its struct for modded play, and as vanilla
+  with `--vanilla`.
+- **Everest 1.4449**, the last stable before Everest moved to .NET Core, only
+  with `--vanilla`, checked once by hand. Modded play on it isn't supported,
+  because only Everest on .NET Core has the struct.
+- **LiveSplit** on 64-bit Windows, through the component, built against
+  LiveSplit 1.8.37. Hosts built on livesplit-core load the wasm module alone.
