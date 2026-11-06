@@ -5,8 +5,8 @@ and `Time`, update by update, while CelesteTAS plays a TAS through it: what the
 auto splitter reads. Each `<name>.jsonl` is recorded from the
 `<name>.tas` next to it. They hold values only, nothing from the game's files.
 The harness replays every trace through the real game, on every vanilla
-flavour, in the Live check. To record one, see
-[Maintaining](../docs/maintaining.md#recording-a-trace).
+flavour, in the Live check, and then its [scenarios](#scenarios). To record one,
+see [Maintaining](../docs/maintaining.md#recording-a-trace).
 
 | Trace | What it covers |
 |---|---|
@@ -113,3 +113,43 @@ update that its timers run.
 A trace has more lines than its TAS has input frames. CelesteTAS doesn't count the
 updates in which the game is loading or saving, but the game still updates, and so
 does what the auto splitter reads.
+
+## Scenarios
+
+A scenario, `<trace>.<scenario>.json` next to its trace, holds a settings map and
+the timer events the auto splitter must give with it while the trace is
+replayed, as [How it works](../docs/how-it-works.md#what-the-tests-prove)
+describes. Its events are written by hand from reading the trace, never from the
+auto splitter's output.
+
+```json
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "new_file" },
+      "splits": [{ "kind": "chapter_complete", "chapter": 0 }]
+    }
+  },
+  "events": [
+    { "frame": 265, "event": "start", "game_time": 0 },
+    { "frame": 1942, "event": "split", "game_time": 256870000 }
+  ]
+}
+```
+
+- `settings` is the whole settings map: objects are maps, arrays lists, numbers
+  `i64`, or `f64` if they don't fit, and `null` isn't allowed.
+- `events` lists every start, split and reset, in order, with the frame of the
+  trace it happens in, and the game time in ticks of 100 ns, as the trace's times
+  are, or `null` for none. Frame 0 also holds what happens while the auto
+  splitter attaches. The timer has one segment, so a split ends the run.
+
+| Scenario | Checks |
+|---|---|
+| `prologue.chapter-complete` | `new_file` starts in frame 265, where the save appears, at a file time of 0, and `chapter_complete` in chapter 0 splits in frame 1942, where `ChapterComplete` rises, at that frame's `FileTime`. |
+| `prologue.chapter-exit` | The same with `timing: "chapter_exit"`, which splits in frame 1974, where `ChapterComplete` falls. |
+| `prologue.empty` | An empty `cfg` neither starts nor splits. |
+| `prologue.invalid` | A split with a value not allowed, `timing: "chapter_end"`, is manual, and `start` still applies. |
+| `prologue.unknown` | An `unknown` split is manual, and `start` still applies. |
+| `prologue.newer` | `prologue.chapter-complete`'s settings with `schema_version` 2 neither start nor split. |

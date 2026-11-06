@@ -1,12 +1,12 @@
 # schema
 
-`settings-schema.json` describes the planned settings: the `cfg` keys, the
-trigger kinds and their fields, the presets, and the vanilla chapters with their
-checkpoints. It's written by hand. Nothing reads it yet: the component embeds it
-as the resource `CelesteAutosplit.settings-schema.json`, and the website's
-deploy and `site/serve.mjs` copy it next to `index.html`, but neither uses it.
-The [plan](../docs/plan.md#settings) says what will read it, and what the
-settings mean.
+`settings-schema.json` describes the settings: the `cfg` keys, the trigger kinds
+and their fields, the presets, and the vanilla chapters with their checkpoints.
+It's written by hand. The wasm module's build reads it, as
+[How it works](../docs/how-it-works.md#settings) describes, with what the
+settings mean. The component embeds it as the resource
+`CelesteAutosplit.settings-schema.json`, and the website's deploy and
+`site/serve.mjs` copy it next to `index.html`, but neither uses it yet.
 
 ## Format
 
