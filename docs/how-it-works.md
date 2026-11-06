@@ -241,10 +241,11 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
   checks for it, by choice, so splitting logic will have to cope with it,
   especially triggers on a rising edge. The hand check of 2026-11-05 saw it in
   5 of 7 runs, each time for one tick. About 0.86 s after Save and Quit,
-  `Deaths` read 0 in three runs, and in one run every value of Everest's struct
-  read garbage, with `Timer Active`, `Chapter Started` and `Chapter Complete`
-  at 1. In another, during boot, the address read as Everest's struct held the
-  string "Loading".
+  `Deaths` read 0 in three runs, and in one run every value of
+  `AutoSplitterInfo` read garbage, with `Timer Active`, `Chapter Started` and
+  `Chapter Complete` at 1. In another, during boot, the address read as
+  `AutoSplitterInfo` held a string: three counts decoded as the UTF-16 text
+  "Loadin".
 - **No new-file signal on vanilla.** Only Everest's struct has `Starting New
   File`. `SaveData.Instance` is read only for `Deaths` so far: splitting will
   need a source.
