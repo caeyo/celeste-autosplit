@@ -52,8 +52,11 @@ impl Settings {
                     ));
                     return settings;
                 }
-                _ => asr::print_message(&format!(
-                    "schema_version {version:?} isn't valid, so it's read as {SCHEMA_VERSION}"
+                Some(older) => asr::print_message(&format!(
+                    "schema_version {older} is older than {SCHEMA_VERSION}, so it's read as {SCHEMA_VERSION}"
+                )),
+                None => asr::print_message(&format!(
+                    "schema_version {version:?} isn't a number, so it's read as {SCHEMA_VERSION}"
                 )),
             }
         }
