@@ -30,10 +30,8 @@ Each holds:
 - the pointer size, and where a string holds its length, an `i32`, and its
   UTF-16 characters;
 - for `Celeste.Instance` and `SaveData.Instance`, the anchor whose compiled code
-  holds the static slot's address: a signature that matches the code once,
-  reference patterns for an instruction after it that holds the address, and how
-  many bytes after the signature are searched for the reference, which ends
-  within them;
+  holds the static slot's address: a signature that matches the code once, and
+  reference patterns for an instruction after it that holds the address;
 - the pattern for the store of `AutoSplitterInfo` before `Celeste.Instance`'s
   signature, and how many bytes before the signature are searched for it, which
   starts within them;
@@ -45,7 +43,8 @@ splitter compiles. A pattern is the bytes before the value it holds, the value's
 width, 4 or 8 bytes, least significant first, and the bytes after it, with
 `None` for any byte. The reference is the earliest match of any reference
 pattern after the signature: earliest, because a pattern with a 4-byte address
-can also match inside one with an 8-byte address.
+can also match inside one with an 8-byte address. Every anchor's reference ends
+within `REFERENCE_WINDOW`, 256 bytes, after its signature.
 
 To read a value, the auto splitter reads the root's object from its slot, and
 for `Celeste.Instance`, `AutoSplitterInfo`'s object from it, at the offset the
