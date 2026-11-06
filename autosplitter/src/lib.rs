@@ -7,77 +7,39 @@ mod vanilla;
 
 asr::async_main!(stable);
 
-fn set_debug_info(state: &memory::GameState, process: &Process) {
-    if let Some(count) = state.file_strawberries(process) {
-        asr::timer::set_variable_int("Strawberries", count);
+fn set_debug_info(values: &memory::Values) {
+    asr::timer::set_variable_int("Strawberries", values.file_strawberries);
+    asr::timer::set_variable_int("Chapter Strawberries", values.chapter_strawberries);
+    asr::timer::set_variable_int("Cassettes", values.file_cassettes);
+    asr::timer::set_variable_int("Hearts", values.file_hearts);
+    asr::timer::set_variable_int("Chapter", values.chapter);
+    asr::timer::set_variable_int("Mode", values.mode);
+    if let Some(level) = &values.level {
+        asr::timer::set_variable("Level", level);
     }
-    if let Some(count) = state.chapter_strawberries(process) {
-        asr::timer::set_variable_int("Chapter Strawberries", count);
+    asr::timer::set_variable("Chapter Time", &values.chapter_time.to_string());
+    asr::timer::set_variable("File Time", &values.file_time.to_string());
+    asr::timer::set_variable_int("Timer Active", values.timer_active as i32);
+    asr::timer::set_variable_int("Chapter Started", values.chapter_started as i32);
+    asr::timer::set_variable_int("Chapter Complete", values.chapter_complete as i32);
+    asr::timer::set_variable_int("Chapter Cassette", values.chapter_cassette as i32);
+    asr::timer::set_variable_int("Chapter Heart", values.chapter_heart as i32);
+    if let Some(everest) = &values.everest {
+        asr::timer::set_variable_int("Golden Strawberries", everest.file_golden_strawberries);
+        asr::timer::set_variable_int("Grabbed Golden", everest.grabbed_golden as i32);
+        if let Some(level_set) = &everest.level_set {
+            asr::timer::set_variable("Level Set", level_set);
+        }
+        if let Some(sid) = &everest.chapter_sid {
+            asr::timer::set_variable("Chapter SID", sid);
+        }
+        asr::timer::set_variable_int("Debug", everest.is_debug as i32);
+        asr::timer::set_variable_int("Assist Mode", everest.assist_mode as i32);
+        asr::timer::set_variable_int("Variants Mode", everest.variants_mode as i32);
+        asr::timer::set_variable_int("Starting New File", everest.starting_new_file as i32);
+        asr::timer::set_variable_int("File Active", everest.file_active as i32);
     }
-    if let Some(count) = state.file_cassettes(process) {
-        asr::timer::set_variable_int("Cassettes", count);
-    }
-    if let Some(count) = state.file_hearts(process) {
-        asr::timer::set_variable_int("Hearts", count);
-    }
-    if let Some(chapter) = state.chapter(process) {
-        asr::timer::set_variable_int("Chapter", chapter);
-    }
-    if let Some(mode) = state.mode(process) {
-        asr::timer::set_variable_int("Mode", mode);
-    }
-    if let Some(level) = state.level(process) {
-        asr::timer::set_variable("Level", &level);
-    }
-    if let Some(time) = state.chapter_time(process) {
-        asr::timer::set_variable("Chapter Time", &time.to_string());
-    }
-    if let Some(time) = state.file_time(process) {
-        asr::timer::set_variable("File Time", &time.to_string());
-    }
-    if let Some(v) = state.timer_active(process) {
-        asr::timer::set_variable_int("Timer Active", v as i32);
-    }
-    if let Some(v) = state.chapter_started(process) {
-        asr::timer::set_variable_int("Chapter Started", v as i32);
-    }
-    if let Some(v) = state.chapter_complete(process) {
-        asr::timer::set_variable_int("Chapter Complete", v as i32);
-    }
-    if let Some(v) = state.chapter_cassette(process) {
-        asr::timer::set_variable_int("Chapter Cassette", v as i32);
-    }
-    if let Some(v) = state.chapter_heart(process) {
-        asr::timer::set_variable_int("Chapter Heart", v as i32);
-    }
-    if let Some(goldens) = state.file_golden_strawberries(process) {
-        asr::timer::set_variable_int("Golden Strawberries", goldens);
-    }
-    if let Some(grabbed) = state.grabbed_golden(process) {
-        asr::timer::set_variable_int("Grabbed Golden", grabbed as i32);
-    }
-    if let Some(level_set) = state.level_set(process) {
-        asr::timer::set_variable("Level Set", &level_set);
-    }
-    if let Some(sid) = state.chapter_sid(process) {
-        asr::timer::set_variable("Chapter SID", &sid);
-    }
-    if let Some(v) = state.is_debug(process) {
-        asr::timer::set_variable_int("Debug", v as i32);
-    }
-    if let Some(v) = state.assist_mode(process) {
-        asr::timer::set_variable_int("Assist Mode", v as i32);
-    }
-    if let Some(v) = state.variants_mode(process) {
-        asr::timer::set_variable_int("Variants Mode", v as i32);
-    }
-    if let Some(v) = state.starting_new_file(process) {
-        asr::timer::set_variable_int("Starting New File", v as i32);
-    }
-    if let Some(v) = state.file_active(process) {
-        asr::timer::set_variable_int("File Active", v as i32);
-    }
-    if let Some(deaths) = state.total_deaths(process) {
+    if let Some(deaths) = values.deaths {
         asr::timer::set_variable_int("Deaths", deaths);
     }
 }
@@ -116,7 +78,9 @@ async fn main() {
                 asr::print_message("Init OK");
 
                 loop {
-                    set_debug_info(&state, &process);
+                    if let Some(values) = state.read(&process) {
+                        set_debug_info(&values);
+                    }
                     next_tick().await;
                 }
             })

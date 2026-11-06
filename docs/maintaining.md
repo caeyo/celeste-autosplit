@@ -63,7 +63,8 @@ To read another value of a root the auto splitter already finds:
    `AutoSplitterInfo`.
 2. Add a field to `Layout` in `vanilla.rs`, with its offset in both `CLR32` and
    `MONO64`.
-3. Read it in [`memory.rs`](../autosplitter/src/memory.rs), and report it in
+3. Add it to `Values` in [`memory.rs`](../autosplitter/src/memory.rs), as an
+   `Option` if it can be missing, read it in `Vanilla::read`, and report it in
    [`lib.rs`](../autosplitter/src/lib.rs).
 4. Add its root, path, kind and debug variable to `PATHS` in the
    [harness](../harness/src/main.rs), so that the live check writes it and checks
