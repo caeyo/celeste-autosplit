@@ -52,6 +52,7 @@ name = "celeste-autosplit"
 version = "0.1.0"
 dependencies = [
  "asr",
+ "bytemuck",
 ]
 
 [[package]]

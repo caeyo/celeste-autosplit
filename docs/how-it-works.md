@@ -1,5 +1,24 @@
 # How it works
 
+## Attaching
+
+The auto splitter attaches to the first process named `Celeste.bin.x86_64`,
+`Celeste.bin.x86`, `Celeste.exe` or `Celeste`, then searches its memory for what
+it reads. A search scans the process's memory, and LiveSplit runs the auto
+splitter on its UI thread, so after a failed search the auto splitter waits a
+second before the next, and logs each kind of failure once. After 10 failed
+searches, it detaches and attaches again:
+
+- On Linux, vanilla starts through a bash script named `Celeste`, which runs
+  `Celeste.bin.x86_64` as its child. If the host's process list is refreshed
+  between the two, the auto splitter attaches to the script, and only attaching
+  again reaches the game.
+- Under Everest on Linux, the game itself runs as `Celeste`, so the name stays
+  in the list.
+
+asr's `sleep` and `timeout` need WASI, which the module isn't built for, so a
+second is 120 ticks, the runtime's default tick rate, which hosts follow.
+
 ## The layouts
 
 [`vanilla.rs`](../autosplitter/src/vanilla.rs) holds what the auto splitter
@@ -11,25 +30,30 @@ Each holds:
 - the pointer size, and where a string holds its length, an `i32`, and its
   UTF-16 characters;
 - for `Celeste.Instance` and `SaveData.Instance`, the anchor whose compiled code
-  holds the static slot's address: a signature that matches the code once,
-  reference patterns for an instruction after it that holds the address, and how
-  many bytes after the signature are searched for the reference, which ends
-  within them;
+  holds the static slot's address: a signature that matches the code once, and
+  reference patterns for an instruction after it that holds the address;
 - the pattern for the store of `AutoSplitterInfo` before `Celeste.Instance`'s
   signature, and how many bytes before the signature are searched for it, which
   starts within them;
 - each value's offset: after `AutoSplitterInfo`, or for `TotalDeaths`, from the
   object in `SaveData.Instance`'s slot.
 
-A pattern is hex bytes, with `??` for any byte, and `SS` for the bytes of the
-value it holds, in a row, least significant first. The reference is the earliest
-match of any reference pattern after the signature: earliest, because a pattern
-with a 4-byte address can also match inside one with an 8-byte address.
+A signature is hex bytes, with `??` for any byte, which asr parses when the auto
+splitter compiles. A pattern is the bytes before the value it holds, the value's
+width, 4 or 8 bytes, least significant first, and the bytes after it, with
+`None` for any byte. The reference is the earliest match of any reference
+pattern after the signature: earliest, because a pattern with a 4-byte address
+can also match inside one with an 8-byte address. Every anchor's reference ends
+within `REFERENCE_WINDOW`, 256 bytes, after its signature.
 
 To read a value, the auto splitter reads the root's object from its slot, and
 for `Celeste.Instance`, `AutoSplitterInfo`'s object from it, at the offset the
 store holds. The value's offset leads from there. All offsets are in bytes, from
 the address a reference to the object holds.
+
+Each tick, the auto splitter reads every value, and reports them only if every
+read succeeds. The exceptions are `Level`, which goes unreported when there's no
+string, and `TotalDeaths`, which goes unreported until a file starts.
 
 `AutoSplitterInfo`'s own offset is read from the code because it comes after the
 fields of the framework's `Game` class, and Everest replaces the FNA that vanilla
@@ -149,16 +173,27 @@ or with 2 for a bad command.
 ## Everest
 
 [`everest.rs`](../autosplitter/src/everest.rs) is Everest's `CoreAutoSplitterInfo`,
-transcribed by hand from
+as a `#[repr(C)]` struct with the same fields in the same order, transcribed by
+hand from
 [`AutoSplitter.cs`](https://github.com/EverestAPI/Everest/blob/47d6a61fa918c17b8085b93b61ee59a7465968f8/Celeste.Mod.mm/Mod/Everest/AutoSplitter.cs)
-at commit `47d6a61`, in Everest `stable-1.6623.0`, where each field's type is. To
-update it, transcribe the struct again at a newer commit, and update the link.
+at commit `47d6a61`, in Everest `stable-1.6623.0`, where each field's type is. The
+compiler checks the struct's size and each field's offset against Everest's
+explicit ones. To update it, transcribe the struct again at a newer commit, and
+update the link.
 
 - Everest puts the struct at the start of a memory mapping of its own, and the
   auto splitter finds it by checking the start of each memory region for its
-  magic bytes. Each field's offset is from the struct's start.
-- Everest runs on 64-bit .NET, so a pointer takes 8 bytes.
+  magic bytes. It accepts the struct only if its `InfoVersion` is 3, the version
+  transcribed, and otherwise logs the version once and keeps looking.
+- Everest runs on 64-bit .NET, so a pointer takes 8 bytes. The struct takes 0x70
+  bytes, its last field padded to a pointer's alignment.
+- Each tick, the auto splitter copies the struct in one read, then reads the
+  strings it points to.
 - A string is a pointer to NUL-terminated UTF-8, with its length in bytes in the
-  `u16` before it, or 0 for no string.
-- `InfoVersion` reads 0xff while Everest updates the struct, as it does while it
-  raises `AutoSplitter.OnUpdateInfo`.
+  `u16` before it, or 0 for no string. Each update writes its strings to the
+  other of two pools, so a copy's strings last until the update after next.
+- Each update, Everest sets `InfoVersion` to 0xff, writes every field, raises
+  `AutoSplitter.OnUpdateInfo`, and sets `InfoVersion` back to 3. A tick whose
+  copy holds 0xff, or that reads 0xff right after copying, reports nothing, so
+  the last values stay. When attaching, a struct holding 0xff is skipped without
+  a log.
