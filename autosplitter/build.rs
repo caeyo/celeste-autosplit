@@ -75,7 +75,15 @@ fn fields(out: &mut String, fields: &Map<String, Value>) {
                 let default = string(field.get("default").expect("a default"));
                 enumeration(out, &camel(name), &self::names(values), default);
             }
-            ("i64", None, Some(_)) | ("string", None, None) => {
+            ("i64", None, Some(from)) => {
+                let from = string(from);
+                assert!(
+                    ["chapters", "checkpoints"].contains(&from),
+                    "{name}'s values come from {from}"
+                );
+                assert!(field.get("default").is_none(), "{name} has a default");
+            }
+            ("string", None, None) => {
                 assert!(field.get("default").is_none(), "{name} has a default");
             }
             (other, _, _) => panic!("{name} has the type {other}, or both values and values_from"),
