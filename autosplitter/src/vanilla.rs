@@ -40,6 +40,7 @@ pub struct Layout {
     pub file_cassettes: u64,
     pub file_hearts: u64,
     pub total_deaths: u64,
+    pub save_time: u64,
 }
 
 pub const CLR32: Layout = Layout {
@@ -87,6 +88,7 @@ pub const CLR32: Layout = Layout {
     file_cassettes: 0x28,
     file_hearts: 0x2c,
     total_deaths: 0x30,
+    save_time: 0x4,
 };
 
 pub const MONO64: Layout = Layout {
@@ -148,4 +150,5 @@ pub const MONO64: Layout = Layout {
     file_cassettes: 0x44,
     file_hearts: 0x48,
     total_deaths: 0x80,
+    save_time: 0x50,
 };

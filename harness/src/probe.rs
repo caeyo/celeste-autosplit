@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     io::{BufRead, BufReader, Read, Write},
     process::{Child, ChildStdin, Command, Stdio},
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
@@ -44,9 +45,16 @@ impl Probe {
 
     pub fn write(&mut self, changes: &Changes) -> Result<()> {
         let mut set = String::new();
+        let mut nulls = BTreeSet::new();
         for (&i, value) in changes {
             let (root, path, _, _) = PATHS[i];
             let text = match value {
+                Value::Null => {
+                    if nulls.insert(root) {
+                        set += &format!("{root}=null\n");
+                    }
+                    continue;
+                }
                 Value::Bool(flag) => flag.to_string(),
                 Value::Number(number) => number.to_string(),
                 Value::String(text) if !text.contains(['\r', '\n']) => text.clone(),

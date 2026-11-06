@@ -35,11 +35,13 @@ fn set_debug_info(values: &memory::Values) {
         asr::timer::set_variable_int("Debug", everest.is_debug as i32);
         asr::timer::set_variable_int("Assist Mode", everest.assist_mode as i32);
         asr::timer::set_variable_int("Variants Mode", everest.variants_mode as i32);
-        asr::timer::set_variable_int("Starting New File", everest.starting_new_file as i32);
         asr::timer::set_variable_int("File Active", everest.file_active as i32);
     }
     if let Some(deaths) = values.deaths {
         asr::timer::set_variable_int("Deaths", deaths);
+    }
+    if let Some(starting_new_file) = values.starting_new_file {
+        asr::timer::set_variable_int("Starting New File", starting_new_file as i32);
     }
 }
 

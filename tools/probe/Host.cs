@@ -22,13 +22,6 @@ namespace Probe
                 settings.SetValue(null, Activator.CreateInstance(settings.FieldType, true));
             }
             GC.SuppressFinalize(Activator.CreateInstance(Game.Type(game, "Celeste.Celeste"), true));
-            FieldInfo saveData = Game.StaticField(game, "Celeste.SaveData::Instance");
-            if (saveData.GetValue(null) == null)
-            {
-                object uninitialized = FormatterServices.GetUninitializedObject(saveData.FieldType);
-                GC.SuppressFinalize(uninitialized);
-                saveData.SetValue(null, uninitialized);
-            }
 
             Console.WriteLine("probe: ready");
             Console.Out.Flush();
@@ -56,11 +49,26 @@ namespace Probe
         {
             int space = line.IndexOf(' ');
             int equals = line.IndexOf('=');
+            if (equals < 0)
+            {
+                throw new ProbeException("expected Namespace.Type::Field path=value or Namespace.Type::Field=null");
+            }
             if (space < 0 || equals < space)
             {
-                throw new ProbeException("expected Namespace.Type::Field path=value");
+                if (line.Substring(equals + 1) != "null")
+                {
+                    throw new ProbeException("a root can only be set to null");
+                }
+                Game.StaticField(game, line.Substring(0, equals)).SetValue(null, null);
+                return;
             }
             FieldInfo field = Game.StaticField(game, line.Substring(0, space));
+            if (field.GetValue(null) == null)
+            {
+                object uninitialized = FormatterServices.GetUninitializedObject(field.FieldType);
+                GC.SuppressFinalize(uninitialized);
+                field.SetValue(null, uninitialized);
+            }
             object owner = null;
             foreach (string hop in line.Substring(space + 1, equals - space - 1).Split('.'))
             {

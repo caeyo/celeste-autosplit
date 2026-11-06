@@ -34,22 +34,23 @@ enum Kind {
 }
 
 #[rustfmt::skip]
-const PATHS: &[(&str, &str, Kind, &str)] = &[
-    (INSTANCE, "AutoSplitterInfo.Chapter", Kind::Int, "Chapter"),
-    (INSTANCE, "AutoSplitterInfo.Mode", Kind::Int, "Mode"),
-    (INSTANCE, "AutoSplitterInfo.Level", Kind::String, "Level"),
-    (INSTANCE, "AutoSplitterInfo.TimerActive", Kind::Bool, "Timer Active"),
-    (INSTANCE, "AutoSplitterInfo.ChapterStarted", Kind::Bool, "Chapter Started"),
-    (INSTANCE, "AutoSplitterInfo.ChapterComplete", Kind::Bool, "Chapter Complete"),
-    (INSTANCE, "AutoSplitterInfo.ChapterTime", Kind::Long, "Chapter Time"),
-    (INSTANCE, "AutoSplitterInfo.ChapterStrawberries", Kind::Int, "Chapter Strawberries"),
-    (INSTANCE, "AutoSplitterInfo.ChapterCassette", Kind::Bool, "Chapter Cassette"),
-    (INSTANCE, "AutoSplitterInfo.ChapterHeart", Kind::Bool, "Chapter Heart"),
-    (INSTANCE, "AutoSplitterInfo.FileTime", Kind::Long, "File Time"),
-    (INSTANCE, "AutoSplitterInfo.FileStrawberries", Kind::Int, "Strawberries"),
-    (INSTANCE, "AutoSplitterInfo.FileCassettes", Kind::Int, "Cassettes"),
-    (INSTANCE, "AutoSplitterInfo.FileHearts", Kind::Int, "Hearts"),
-    (SAVE_DATA, "TotalDeaths", Kind::Int, "Deaths"),
+const PATHS: &[(&str, &str, Kind, Option<&str>)] = &[
+    (INSTANCE, "AutoSplitterInfo.Chapter", Kind::Int, Some("Chapter")),
+    (INSTANCE, "AutoSplitterInfo.Mode", Kind::Int, Some("Mode")),
+    (INSTANCE, "AutoSplitterInfo.Level", Kind::String, Some("Level")),
+    (INSTANCE, "AutoSplitterInfo.TimerActive", Kind::Bool, Some("Timer Active")),
+    (INSTANCE, "AutoSplitterInfo.ChapterStarted", Kind::Bool, Some("Chapter Started")),
+    (INSTANCE, "AutoSplitterInfo.ChapterComplete", Kind::Bool, Some("Chapter Complete")),
+    (INSTANCE, "AutoSplitterInfo.ChapterTime", Kind::Long, Some("Chapter Time")),
+    (INSTANCE, "AutoSplitterInfo.ChapterStrawberries", Kind::Int, Some("Chapter Strawberries")),
+    (INSTANCE, "AutoSplitterInfo.ChapterCassette", Kind::Bool, Some("Chapter Cassette")),
+    (INSTANCE, "AutoSplitterInfo.ChapterHeart", Kind::Bool, Some("Chapter Heart")),
+    (INSTANCE, "AutoSplitterInfo.FileTime", Kind::Long, Some("File Time")),
+    (INSTANCE, "AutoSplitterInfo.FileStrawberries", Kind::Int, Some("Strawberries")),
+    (INSTANCE, "AutoSplitterInfo.FileCassettes", Kind::Int, Some("Cassettes")),
+    (INSTANCE, "AutoSplitterInfo.FileHearts", Kind::Int, Some("Hearts")),
+    (SAVE_DATA, "TotalDeaths", Kind::Int, Some("Deaths")),
+    (SAVE_DATA, "Time", Kind::Long, None),
 ];
 
 impl Kind {
@@ -204,6 +205,11 @@ fn check(
             .map(|&other| (other, Value::Bool(other == flag)));
         frames.push((format!("only {} set", PATHS[flag].1), alone.collect()));
     }
+    let save = (0..PATHS.len()).filter(|&i| PATHS[i].0 == SAVE_DATA);
+    let no_save = save.clone().map(|i| (i, Value::Null)).collect();
+    let new_file = save.map(|i| (i, 0.into())).collect();
+    frames.push(("no save".to_owned(), no_save));
+    frames.push(("a new file".to_owned(), new_file));
     for (frame, changes) in &frames {
         let problems = replay_frame(probe, &module, &mut held, changes)
             .with_context(|| format!("the live check, with {frame}"))?;
@@ -216,7 +222,7 @@ fn check(
         }
     }
     println!(
-        "live check: ok, the auto splitter reports the {} values the harness wrote, flipped, and each flag alone",
+        "live check: ok, the auto splitter reports the {} values the harness wrote, flipped, each flag alone, no save, and a new file",
         read.len()
     );
 
@@ -246,8 +252,11 @@ fn replay_frame(
 ) -> Result<Vec<String>> {
     for (&i, value) in changes {
         let (root, path, kind, _) = PATHS[i];
-        if !kind.holds(value) {
+        if !value.is_null() && !kind.holds(value) {
             bail!("{root} {path} is {kind:?}, which can't hold {value}");
+        }
+        if (value.is_null() || held[i].is_null()) && !whole(changes, root, value.is_null()) {
+            bail!("{root} becomes null, or an object again, with all its paths at once");
         }
     }
     probe.write(changes)?;
@@ -258,6 +267,12 @@ fn replay_frame(
         Ok(read) => differences(&expected(held), &read),
         Err(problem) => vec![problem],
     })
+}
+
+fn whole(changes: &Changes, root: &str, null: bool) -> bool {
+    (0..PATHS.len())
+        .filter(|&i| PATHS[i].0 == root)
+        .all(|i| changes.get(&i).is_some_and(|value| value.is_null() == null))
 }
 
 fn flipped(held: &[Value]) -> Result<Changes> {
@@ -337,10 +352,20 @@ fn read_frame(line: &str, number: usize) -> Result<Changes> {
 fn by_path(roots: &Value) -> Result<Changes> {
     let mut changes = Changes::new();
     for (root, paths) in roots.as_object().context("no roots")? {
+        if paths.is_null() {
+            let nulls = (0..PATHS.len()).filter(|&i| PATHS[i].0 == root);
+            let count = changes.len();
+            changes.extend(nulls.map(|i| (i, Value::Null)));
+            if changes.len() == count {
+                bail!("{root} isn't one of the harness's roots");
+            }
+            continue;
+        }
         for (path, value) in paths.as_object().context("a root with no paths")? {
-            let i = PATHS
-                .iter()
-                .position(|&(r, p, _, _)| r == root && p == path)
+            if value.is_null() {
+                bail!("{root} {path} is null: only a root can be");
+            }
+            let i = position(root, path)
                 .with_context(|| format!("{root} {path} isn't one of the harness's paths"))?;
             changes.insert(i, value.clone());
         }
@@ -348,19 +373,30 @@ fn by_path(roots: &Value) -> Result<Changes> {
     Ok(changes)
 }
 
-fn expected(held: &[Value]) -> BTreeMap<String, String> {
+fn position(root: &str, path: &str) -> Option<usize> {
     PATHS
         .iter()
+        .position(|&(r, p, _, _)| r == root && p == path)
+}
+
+fn expected(held: &[Value]) -> BTreeMap<String, String> {
+    let mut expected = PATHS
+        .iter()
         .zip(held)
-        .map(|(&(_, _, _, variable), value)| {
+        .filter_map(|(&(_, _, _, variable), value)| {
             let text = match value {
+                Value::Null => return None,
                 Value::Bool(flag) => u8::from(*flag).to_string(),
                 Value::String(text) => text.clone(),
                 number => number.to_string(),
             };
-            (variable.to_owned(), text)
+            Some((variable?.to_owned(), text))
         })
-        .collect()
+        .collect::<BTreeMap<_, _>>();
+    let time = &held[position(SAVE_DATA, "Time").unwrap()];
+    let new_file = u8::from(time.as_i64() == Some(0));
+    expected.insert("Starting New File".to_owned(), new_file.to_string());
+    expected
 }
 
 fn differences(
