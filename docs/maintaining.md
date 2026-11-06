@@ -161,6 +161,18 @@ and watch its Variables tab while you play. `Saves/0.celeste` holds the file's
 values to compare with. For Everest, use a fresh install with fresh saves and no
 `everest-savepath.txt`, started normally for its struct, or with `--vanilla`.
 
+With Everest:
+
+- Current Everest's `--vanilla` starts `orig/Celeste.exe` as a child process,
+  and the launcher exits. That child loads `orig/Content`: if it's empty, as
+  `record.sh` creates it, the game crashes loading `MonocleDefault.xnb`.
+  Replacing it with a directory junction to the install's `Content`
+  (`mklink /J`) fixes it, without admin rights.
+- Everest's pause menu adds "Mod Options", which shifts the menu's entries.
+- Everest `stable-1.4449.0`'s installer also adds FNA to the XNA build. On
+  current Everest, the XNA build's `orig/` holds the vanilla game converted to
+  FNA.
+
 ## Trying the component in LiveSplit
 
 In a copy of stock LiveSplit, of `LiveSplitVersion`, in a new folder, never an
