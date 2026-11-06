@@ -3,7 +3,10 @@ use asr::{
     Process,
 };
 
+#[allow(dead_code)]
+mod everest;
 mod memory;
+mod vanilla;
 
 asr::async_main!(stable);
 

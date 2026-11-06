@@ -5,8 +5,8 @@ plays a TAS through it. That's what the auto splitter reads, but for `TotalDeath
 from `SaveData.Instance`, which they don't record. Each `<name>.jsonl` is recorded
 from the `<name>.tas` next to it, by the [trace recorder](../tools/trace-recorder/).
 They hold values only, nothing from the game's files. The [harness](../harness/)
-replays every trace through the real game, on every vanilla flavour, in the Layouts
-workflow.
+replays every trace through the real game, on every vanilla flavour, in the Live
+check workflow.
 
 | Trace | What it covers |
 |---|---|
@@ -69,8 +69,8 @@ auto splitter reads until the next. It has:
 
 - `frame`: the update's number, from 0.
 - `roots`: the game's `AutoSplitterInfo`, every field of it, by root and path as
-  the [probe](../tools/probe/README.md#the-manifest) names them: strings, numbers
-  and booleans.
+  the [probe's host](../docs/how-it-works.md#the-probe) takes them: strings,
+  numbers and booleans.
 
 Each line only holds the values that changed since the previous line, and the first
 holds them all. A line without changes has only its `frame`:
