@@ -120,36 +120,26 @@ A scenario, `<trace>.<scenario>.json` next to its trace, holds a settings map an
 the timer events the auto splitter must give with it while the trace is
 replayed, as [How it works](../docs/how-it-works.md#what-the-tests-prove)
 describes. Its events are written by hand from reading the trace, never from the
-auto splitter's output.
+auto splitter's output. It's an object with two keys:
 
-```json
-{
-  "settings": {
-    "schema_version": 1,
-    "cfg": {
-      "start": { "kind": "new_file" },
-      "splits": [{ "kind": "chapter_complete", "chapter": 0 }]
-    }
-  },
-  "events": [
-    { "frame": 265, "event": "start", "game_time": 0 },
-    { "frame": 1942, "event": "split", "game_time": 256870000 }
-  ]
-}
-```
+- `settings`, the whole settings map: objects are maps, arrays lists, and numbers
+  `i64`. `null` isn't allowed.
+- `events`, every start and split, in order, each an object with the `frame` of
+  the trace it happens in, the `event`, `start` or `split`, and the `game_time`
+  in ticks of 100 ns, as the trace's times are, or `null` for none. Frame 0 also
+  holds what happens while the auto splitter attaches. The timer has one
+  segment, so a split ends the run.
 
-- `settings` is the whole settings map: objects are maps, arrays lists, numbers
-  `i64`, or `f64` if they don't fit, and `null` isn't allowed.
-- `events` lists every start, split and reset, in order, with the frame of the
-  trace it happens in, and the game time in ticks of 100 ns, as the trace's times
-  are, or `null` for none. Frame 0 also holds what happens while the auto
-  splitter attaches. The timer has one segment, so a split ends the run.
+All of `prologue`'s start a new file and split on completing chapter 0, unless
+the table says otherwise:
 
 | Scenario | Checks |
 |---|---|
-| `prologue.chapter-complete` | `new_file` starts in frame 265, where the save appears, at a file time of 0, and `chapter_complete` in chapter 0 splits in frame 1942, where `ChapterComplete` rises, at that frame's `FileTime`. |
-| `prologue.chapter-exit` | The same with `timing: "chapter_exit"`, which splits in frame 1974, where `ChapterComplete` falls. |
-| `prologue.empty` | An empty `cfg` neither starts nor splits. |
-| `prologue.invalid` | A split with a value not allowed, `timing: "chapter_end"`, is manual, and `start` still applies. |
-| `prologue.unknown` | An `unknown` split is manual, and `start` still applies. |
-| `prologue.newer` | `prologue.chapter-complete`'s settings with `schema_version` 2 neither start nor split. |
+| `chapter-complete` | `new_file` starts in frame 265, where the save appears, at a file time of 0, and `chapter_complete` splits in frame 1942, where `ChapterComplete` rises, at that frame's `FileTime`. |
+| `chapter-exit` | `timing: "chapter_exit"` and `side: 0` split in frame 1974, where `ChapterComplete` falls and `Mode` becomes -1, so the side is the previous tick's. |
+| `other-chapter` | `chapter: 1` doesn't split. |
+| `empty` | An empty `cfg` neither starts nor splits. |
+| `invalid-value` | `timing: "chapter_end"`, a value not allowed, makes the split manual, and `start` still applies. |
+| `invalid-type` | `chapter: "0"`, a string, makes the split manual. |
+| `invalid-kind` | `kind: "Chapter_Complete"`, a kind that differs only in case, makes the split manual. |
+| `newer` | `schema_version` 2 neither starts nor splits. |

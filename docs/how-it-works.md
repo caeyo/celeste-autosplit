@@ -194,8 +194,6 @@ does so in a second AppDomain of its own process, which works the same.
 
 ## Settings
 
-All the auto splitter's configuration is its settings map, which every host
-saves in the `.lss`, so settings travel with the splits.
 [`schema/settings-schema.json`](../schema/settings-schema.json) defines the keys,
 their defaults, the trigger kinds and their fields, the presets and the
 chapters' checkpoints, in the format [schema/README.md](../schema/README.md)
@@ -244,8 +242,8 @@ per change. It never writes the map.
 - A missing key means its default. `gui::add_bool` returns a default without
   writing it, so the map only holds what someone set.
 - A `schema_version` newer than the module's means `cfg` may mean something else,
-  so the module logs it and ignores `cfg`: nothing starts or splits. One that
-  isn't a number, or is older, is logged and read as the module's.
+  so the module logs it and ignores `cfg`: nothing starts or splits. An older
+  one, or one that isn't a number, is logged and read as the module's.
 - A setting of the wrong type or with a value not allowed falls back to its
   default, and is logged.
 - A trigger that isn't a map, has no `kind` or an unknown one, lacks a required
@@ -293,11 +291,19 @@ These rules keep parity with the legacy component, so none has a setting:
   be on another frame than the chapter ID changing. In chapter 7, it arms only in
   a room whose name isn't empty and doesn't start with `credits`, ignoring case,
   except without a `chapter`, as legacy does. The side matched is the previous
-  tick's, when it fires: on a side that doesn't match, it doesn't split, and
-  disarms. It also disarms when the split index changes.
+  tick's, when it fires. It disarms on every tick the split index differs from
+  the one it armed for, as legacy does on a split, skip, undo or reset.
 - Game time is the file time, `FileTime`, set every tick while the run is in
-  progress, and paused whenever its value hasn't changed since the previous
+  progress, except on a tick where it drops to 0, which keeps the game time
+  before. It's paused whenever `FileTime` hasn't changed since the previous
   tick, so it runs on between ticks only while the game's timer does.
+
+These deviate from legacy on purpose:
+
+| Legacy | Now | Who notices |
+|---|---|---|
+| A chapter split whose side doesn't match when it fires stays armed, so a later chapter's completion can split it | It disarms | Runners with a side on a chapter split, who complete that chapter on another side first. |
+| A new-file start fires whenever `Starting New File` is true, so after a reset it starts again at once while the value stays true | `new_file` fires when it rises | Runners who reset just after starting a new file. |
 
 The module uses only asr functions every host's auto splitting runtime has.
 
@@ -374,13 +380,12 @@ root, and `Starting New File` 1 exactly when the save's `Time` is 0.
   values before. A path that isn't in `PATHS` fails.
 - **The scenarios** follow each trace's replay, one per scenario file next to
   it, as [traces](../traces/README.md#scenarios) describes. A new auto splitter,
-  with the scenario's settings map and a fresh one-segment `Timer`, attaches
-  while the game holds the trace's first frame, then the trace is replayed
-  through it. The starts, splits and resets the `Timer` gets, their frames, and
-  their game times must be exactly the scenario's, which are written by hand
-  from the trace. A split's game time is the split time the run records, a
-  start's the game time once its tick ends, and a reset's the game time it reset
-  from. They're compared to the millisecond: the game's times are whole
+  with the scenario's settings map and a fresh `Timer`, attaches while the game
+  holds the trace's first frame, then the trace is replayed through it. The
+  starts and splits the `Timer` gets, their frames, and their game times must be
+  exactly the scenario's, which are written by hand from the trace. A split's
+  game time is the split time the run records, and a start's the game time once
+  its tick ends. They're compared to the millisecond: the game's times are whole
   milliseconds, and while game time isn't paused, livesplit-core runs it on in
   real time, a few microseconds past what the module set.
 
@@ -394,8 +399,10 @@ missing. It rests on the game's own runtime
 and one comparison per update, with no stand-in for the game. The auto splitter
 runs on livesplit-core's own `Timer`, pinned with the auto splitting runtime to
 one revision in `harness/Cargo.toml`. The scenarios add that the module reads its
-settings from that auto splitting runtime's map, and starts, splits and sets
-game time on the frames real play makes it.
+settings from that auto splitting runtime's map, and, in the Prologue, starts on
+a new file and splits on its completion, with both timings, on the frames and at
+the game times the trace gives, and doesn't with an empty, invalid or newer
+`cfg`, or another chapter.
 
 The [component's tests](livesplit-notes.md#the-components-tests) prove that
 LiveSplit's ASR loads the wasm module and keeps its settings.
@@ -420,6 +427,9 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
   show.
 - Loading the settings again, once a second and on a reset: a scenario's map
   never changes. Nor what the module logs.
+- What no trace has: the chapter 7 `credits` rule, disarming when the split
+  index changes, a side that doesn't match, and game time keeping its value when
+  `FileTime` drops to 0.
 - Splitting in LiveSplit: the component's tests don't run the game.
 
 ## Known gaps

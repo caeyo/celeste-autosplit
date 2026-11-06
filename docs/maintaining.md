@@ -104,7 +104,8 @@ build, or on Linux, the Linux build. The first run takes a couple of minutes and
 a display: Xvfb works. A hung game is stopped after 30 minutes, or by its
 process ID. The trace, `traces/prologue.jsonl` here, is replaced only once the
 recorder says it's complete. Commit it with its TAS file, and list a new one in
-[traces/README.md](../traces/README.md).
+[traces/README.md](../traces/README.md). Recording again can shift its frames
+and times, so read its scenarios' events again from the new trace.
 
 ## Running the probe and the harness
 
