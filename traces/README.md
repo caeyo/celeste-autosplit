@@ -11,6 +11,7 @@ see [Maintaining](../docs/maintaining.md#recording-a-trace).
 | Trace | What it covers |
 |---|---|
 | `prologue` | A new file through the Prologue: from the title screen, through starting a new file and the Prologue, to the overworld. |
+| `forsaken-city` | A new file through the Prologue, then Forsaken City as the community's All Hearts route plays it: the A-side through both checkpoints, its crystal heart, after which the TAS saves and quits and goes on, and its cassette, then back to the map; the B-side to its end; then a restart of the B-side. |
 
 ## TAS files
 
@@ -143,3 +144,11 @@ the table says otherwise:
 | `invalid-type` | `chapter: "0"`, a string, makes the split manual. |
 | `invalid-kind` | `kind: "Chapter_Complete"`, a kind that differs only in case, makes the split manual. |
 | `newer` | `schema_version` 2 neither starts nor splits. |
+
+`forsaken-city`'s start a new file in frame 265, and split on completing chapter
+1, whose only completion is the B-side's, in frame 11502:
+
+| Scenario | Checks |
+|---|---|
+| `b-side` | `side: 1` splits in frame 11502, at that frame's `FileTime`. |
+| `other-side` | `side: 0` doesn't split. |
