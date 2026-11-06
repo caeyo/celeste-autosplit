@@ -220,11 +220,11 @@ jobs:
           game="$RUNNER_TEMP/game"
           case "$RUNNER_OS" in
             Windows)
-              "$harness" replay traces/*.jsonl -- "$game/Celeste.exe" --game real/Celeste.exe ;;
+              "$harness" traces/*.jsonl -- "$game/Celeste.exe" --game real/Celeste.exe ;;
             Linux)
-              "$harness" replay traces/*.jsonl -- xvfb-run -a -s "$XVFB_SCREEN" "$game/Celeste" --game real/Celeste.exe ;;
+              "$harness" traces/*.jsonl -- xvfb-run -a -s "$XVFB_SCREEN" "$game/Celeste" --game real/Celeste.exe ;;
             macOS)
-              sudo "$harness" replay traces/*.jsonl -- sudo -u "$(id -un)" "$game/Celeste.app/Contents/MacOS/Celeste" --game real/Celeste.exe ;;
+              sudo "$harness" traces/*.jsonl -- sudo -u "$(id -un)" "$game/Celeste.app/Contents/MacOS/Celeste" --game real/Celeste.exe ;;
             *)
               echo "::error::No way to start the probe on $RUNNER_OS."
               exit 1 ;;

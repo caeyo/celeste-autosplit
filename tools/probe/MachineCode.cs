@@ -97,22 +97,17 @@ namespace Probe
             return references;
         }
 
-        public static void HexDump(byte[] bytes, Action<string> log)
+        public static void HexDump(byte[] bytes)
         {
             for (int line = 0; line < bytes.Length; line += 16)
             {
-                log(string.Format("  {0:x4}: {1}", line, Hex(bytes, line, Math.Min(16, bytes.Length - line))));
+                var text = new StringBuilder();
+                for (int i = line; i < Math.Min(line + 16, bytes.Length); i++)
+                {
+                    text.Append(bytes[i].ToString("x2")).Append(' ');
+                }
+                Console.WriteLine("  {0:x4}: {1}", line, text);
             }
-        }
-
-        public static string Hex(byte[] bytes, int start, int count)
-        {
-            var text = new StringBuilder(count * 3);
-            for (int i = start; i < start + count; i++)
-            {
-                text.Append(bytes[i].ToString("x2")).Append(' ');
-            }
-            return text.ToString();
         }
     }
 }
