@@ -90,7 +90,8 @@ auto splitter reads until the next. It has:
   and booleans. A root holding null is `null`.
 
 Each line only holds the values that changed since the previous line, and the first
-holds them all, as does a line where a root stops holding null. A line without
+holds them all. A line where a root stops holding null holds all of that root's
+values. A line without
 changes has only its `frame`. In `prologue`, the new file's save appears in frame
 265, and the timers start running in frame 432:
 

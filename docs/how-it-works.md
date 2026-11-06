@@ -118,14 +118,14 @@ from it. A flag is a byte, true when not 0.
 
 ### A new file
 
-The game leaves `SaveData.Instance` null until a file starts, and after that
-clears it only when launching and before PICO-8, so a save in the slot doesn't
-mean a file has just started. Starting a new file puts a new save there, with a
-`Time` of 0, in the same update that closes the file select and disables
-Madeline on the mountain. Its `Time` stays 0 until the Prologue's timer starts,
-when she first moves, while a file that's continued has played for longer.
-`AutoSplitterInfo.FileTime` can't tell the two apart from no save, since it's
-`Time`, or 0 without a save.
+The game leaves `SaveData.Instance` null from launch until a file starts, and
+after that clears it only before PICO-8, so a save in the slot doesn't mean a
+file has just started. Starting a new file puts a new save there, with a `Time`
+of 0, in the same update that closes the file select and disables Madeline on
+the mountain. Its `Time` stays 0 until the Prologue's timer starts, when she
+first moves, while a file that's continued has played for longer.
+`AutoSplitterInfo.FileTime` can't tell a new file from no save: it's `Time`, or
+0 without a save.
 
 Everest's `Starting New File` is its own flag, which its file select sets.
 
@@ -253,7 +253,9 @@ root, and `Starting New File` 1 exactly when the save's `Time` is 0.
 
 - **The live check** sends a distinctive value for every path, then the same
   with every number negated and every flag flipped, then each flag set alone,
-  then no save, then a new file's save, with every value 0.
+  then no save, then a save whose `Time` is 0, then only `Time`'s high half set.
+  `Time` is only published through `Starting New File`, so a wrong field or
+  width shows in those last two.
   Every number and string has a value of its own, spread over all its bytes, so
   reading the wrong field, or the wrong width, shows in every field. Two swapped
   flags would agree when flipped together, so each is also set alone.
@@ -294,7 +296,9 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
 
 - **Garbage the type check can't see.** An object of another type with the
   same size, where a garbage collection left a reference, would pass the check.
-  So would a string moved between reading its length and its characters.
+  So would a string moved between reading its length and its characters. In
+  `SaveData.Instance`'s slot, with 0 where `Time` is, such an object would make
+  `Starting New File` rise.
 - **A file saved before its timer started.** On vanilla, continuing it reads as
   a new file, since its `Time` is still 0.
 - **No splitting.** Nothing starts, splits or resets, and nothing reads settings.
