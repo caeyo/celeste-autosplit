@@ -1,5 +1,24 @@
 # How it works
 
+## Attaching
+
+The auto splitter attaches to the first process named `Celeste.bin.x86_64`,
+`Celeste.bin.x86`, `Celeste.exe` or `Celeste`, then searches its memory for what
+it reads. A search scans the process's memory, and LiveSplit runs the auto
+splitter on its UI thread, so after a failed search the auto splitter waits a
+second before the next, and logs only the first failure. After 10 failed
+searches, it detaches and attaches again:
+
+- On Linux, vanilla starts through a bash script named `Celeste`, which runs
+  `Celeste.bin.x86_64` as its child. If the host's process list is refreshed
+  between the two, the auto splitter attaches to the script, and only attaching
+  again reaches the game.
+- Under Everest on Linux, the game itself runs as `Celeste`, so the name stays
+  in the list.
+
+asr's `sleep` and `timeout` need WASI, which the module isn't built for, so a
+second is 120 ticks, the runtime's default tick rate, which hosts follow.
+
 ## The layouts
 
 [`vanilla.rs`](../autosplitter/src/vanilla.rs) holds what the auto splitter
