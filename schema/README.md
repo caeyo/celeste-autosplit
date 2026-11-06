@@ -1,12 +1,12 @@
 # schema
 
-`settings-schema.json` describes the planned settings: the `cfg` keys, the
-trigger kinds and their fields, the presets, and the vanilla chapters with their
-checkpoints. It's written by hand. Nothing reads it yet: the component embeds it
-as the resource `CelesteAutosplit.settings-schema.json`, and the website's
-deploy and `site/serve.mjs` copy it next to `index.html`, but neither uses it.
-The [plan](../docs/plan.md#settings) says what will read it, and what the
-settings mean.
+`settings-schema.json` describes the settings: the `cfg` keys, the trigger kinds
+and their fields, the presets, and the vanilla chapters with their checkpoints.
+It's written by hand. The wasm module's build reads it, as
+[How it works](../docs/how-it-works.md#settings) describes, with what the
+settings mean. The component embeds it as the resource
+`CelesteAutosplit.settings-schema.json`, and the website's deploy and
+`site/serve.mjs` copy it next to `index.html`, but neither uses it yet.
 
 ## Format
 
@@ -52,7 +52,7 @@ Types use the settings map's own names, plus one for triggers:
 | `description` | no | Help text. |
 | `default` | no | Used when the field is missing. Fields without one are filters that match anything when missing. |
 | `values` | no | The allowed values, as in `settings`. |
-| `values_from` | no | The allowed values come from `chapters`: `"chapters"` (chapter IDs) or `"checkpoints"` (checkpoint numbers of the trigger's chapter). |
+| `values_from` | no | The allowed values come from `chapters`: `"chapters"` (chapter IDs; the module also takes modded IDs above them) or `"checkpoints"` (checkpoint numbers of the trigger's chapter). |
 | `no_chapter` | no | On `chapter`: the value and label for "not in a chapter". Editors offer it only for triggers with `allow_no_chapter`. |
 | `everest` | no | `true`: Everest-only. Counts only when `cfg.everest` is on; otherwise editors hide it but keep it. |
 | `replaces` | no | When this field is present and counts, it stands in for the named field, including where that field is required. |

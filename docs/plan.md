@@ -1,9 +1,10 @@
 # Plan
 
-None of this is built. It's the design for splitting, its settings, the
+None of this is built. It's the design for the rest of splitting, the
 component's editor, the website, and the migration from the legacy component,
-written before the code. What is built is in [How it works](how-it-works.md).
-Check each part against the code before building it.
+written before the code. What is built, the settings map, how the module reads
+it, and its first triggers, is in [How it works](how-it-works.md). Check each part
+against the code before building it.
 
 ## The design
 
@@ -29,104 +30,60 @@ Check each part against the code before building it.
 
 ## Settings
 
-[`schema/settings-schema.json`](../schema/settings-schema.json) defines the
-keys, their defaults, the trigger kinds and their fields, the presets and the
-chapters' checkpoints, in the format [schema/README.md](../schema/README.md)
-describes. This is what it doesn't say.
-
-| Top-level key | Type | Written by | Purpose |
-|---|---|---|---|
-| `schema_version` | i64 | editors; the module when migrating | The version of `cfg`'s layout. |
-| `cfg` | map | editors | Every real setting. |
-| `legacy` | map | the component, when migrating | The legacy settings, verbatim, for migrating again and debugging. |
-| `_ui_*` | title widgets | the module | Reserved for the module's own widgets, since widget keys and map keys share one namespace. |
+The settings map, how the module reads it, and the triggers built so far are in
+[How it works](how-it-works.md#settings). This is what's left.
 
 In `cfg`:
 
-- `splits[i]` ends segment `i`, bound by position to the timer's current split
-  index, `asr::timer::current_split_index`, so manual splits, skips and undos
-  keep it aligned. Segments past the list's end are split by hand, and extra
-  entries are ignored.
-- `timing_method`: `file` is the save file's time. `chapter` is the chapter
-  time, held outside a chapter so that a save and quit doesn't drop it to 0.
-  `*_since_start` subtracts the value when the start trigger fired.
+- `timing_method`: `chapter` is the chapter time, held outside a chapter so that
+  a save and quit doesn't drop it to 0. `*_since_start` subtracts the value when
+  the start trigger fired.
 - `auto_reset`: whenever the start trigger fires while a run is in progress or
   has ended, reset and start again in the same tick, which commits the attempt.
   `room_enter` on a room the run passes again would reset mid-run, so editors
   warn about it.
-- `high_priority` and `set_game_time` are the component's alone.
-- An empty `cfg` does nothing but report game time.
 - Presets exist only in editors. A configuration matching none is "Custom".
 
 ### Triggers
 
-A trigger is a map with a `kind` and that kind's fields. Every kind is valid in
-`start` and in `splits`.
-
 | `kind` | Fires when |
 |---|---|
-| `manual` | never |
-| `unknown` | never. Only migration makes it, and editors flag it. |
-| `new_file` | a new save file is started: `Starting New File` rises |
 | `chapter_start` | the chapter timer starts: `ChapterStarted` rises |
 | `chapter_enter`, `chapter_exit` | the chapter ID changes to or from `chapter` |
-| `chapter_complete` | the chapter is completed (`timing: "chapter_complete"`, the default), or the game leaves the completed chapter (`timing: "chapter_exit"`) |
 | `checkpoint` | the checkpoint's room for the side is entered |
 | `heart`, `cassette` | the chapter's crystal heart or cassette is collected |
 | `room_enter`, `room_exit` | the room changes to or from `room` |
 
-- `chapter` is the game's chapter ID, not its number: 9 is Core, chapter 8, and
-  10 is Farewell, chapter 9. Higher IDs are modded. `-1`, not in a chapter, is
-  only for `chapter_enter` and `chapter_exit`.
 - `room` matches the game's room name exactly, case included.
-- `sid` is a chapter's SID, such as `Celeste/1-ForsakenCity`. Everest assigns
-  modded chapters' IDs at load time, so they change with the mods installed,
-  while SIDs don't.
+- `sid` is a chapter's SID, such as `Celeste/1-ForsakenCity`. Modded chapters
+  have IDs above 10, which Everest assigns at load time, so they change with the
+  mods installed, while SIDs don't.
 - C-sides have no checkpoints, but legacy checks B-side rooms on C-sides, so the
   schema's C-side rooms repeat B's.
 
 ### Rules
 
-1. A missing key means its default. `gui::add_bool` returns a default without
-   writing it, so the map only holds what someone set.
-2. A new optional key, trigger kind or field doesn't bump `schema_version`.
-   Renames, removals and changes of meaning do.
-3. Editors keep unknown keys in `cfg` and in triggers, so an older editor doesn't
+1. Editors keep unknown keys in `cfg` and in triggers, so an older editor doesn't
    delete newer settings, and open a newer `schema_version` read-only.
-4. The schema is the one definition. The component and the website render from
-   it, and the module generates its settings types and checkpoint rooms from it
-   in a `build.rs`, so no JSON parser ends up in the wasm.
-5. The module writes the map only to migrate a schema, with
+2. The schema is the one definition: the component and the website render from
+   it, as the module's `build.rs` generates from it.
+3. The module writes the map only to migrate a schema, with
    `Map::store_if_unchanged`, retrying on `false`, never `Map::store`.
-6. The module ignores `high_priority` and `set_game_time`. The website labels
-   them "LiveSplit (Windows) only".
-7. An absent optional field matches anything: `{kind: "heart"}` is any heart. An
-   invalid trigger, with a missing field, a wrong type, a value out of range or
-   an unknown `kind`, behaves like `manual`, so an older module treats a newer
-   kind as `manual`. The module logs it, and editors flag it.
-8. Everest-only fields count only when `everest` is on; otherwise the module
-   ignores them, and editors hide them but keep them. `sid` is the only one, and
-   replaces `chapter`. Without Everest, the module logs that, and those triggers
-   don't fire. Later candidates: a level set filter, and a golden-grabbed
-   trigger from Everest's chapter flags.
+4. The website labels `high_priority` and `set_game_time` "LiveSplit (Windows)
+   only".
+5. Editors flag invalid triggers.
+6. With `everest` on, `sid` replaces `chapter`, and editors hide Everest-only
+   fields while it's off, but keep them. Without Everest, the module logs that,
+   and those triggers don't fire. Later candidates: a level set filter, and a
+   golden-grabbed trigger from Everest's chapter flags.
 
 ## The module
 
-- It registers title widgets only, plain text saying where the website is, with
-  a short URL. On Windows they're never shown.
-- It loads its settings again about once a second and on a reset, and parses
-  `cfg` only when it changed. Wrong types and values out of range fall back to
-  defaults, and are logged.
-- It uses only asr functions every host's auto splitting runtime has.
+It registers title widgets only, plain text saying where the website is, with
+a short URL. On Windows they're never shown.
 
 These rules keep parity with the legacy component, so none has a setting:
 
-- `chapter_complete` arms on the rising edge of `ChapterComplete` in the
-  matching chapter. With `timing: "chapter_complete"` it fires at once; with
-  `"chapter_exit"`, when `ChapterComplete` falls again, in any chapter, which can
-  be on another frame than the chapter ID changing. In chapter 7, it arms only in
-  a room not starting with `credits`, except without a `chapter`, as legacy
-  does. The side matched is the previous tick's.
 - `heart` and `cassette` fire on the rising edge of the chapter's flag. Counting
   breaks individual levels on a file that already has the heart, and a flag that
   stays set double-splits consecutive splits.
@@ -136,7 +93,6 @@ These rules keep parity with the legacy component, so none has a setting:
 - `chapter_start` ignores the first 3 s after attaching.
 - `chapter_enter` and `chapter_exit` with a `side` need the side to change too.
 - `room_enter` and `room_exit` fire only inside a chapter.
-- Game time is paused whenever its value doesn't change.
 
 ## The component
 
@@ -339,8 +295,10 @@ reads flat elements the new format lacks: release notes should say so.
   room values.
 - Round-trip: the component's writer, then ASR's parser and writer, gives the
   same XML, which livesplit-core's `StoredAutoSplitterSettings` also parses.
-- The module: missing keys, wrong types, a newer `schema_version`, an empty map,
-  invalid and unknown triggers, and `sid` with `everest` off and on.
+- The module, once traces have them: the chapter 7 `credits` rule, disarming
+  when the split index changes, a side that doesn't match, game time when
+  `FileTime` drops to 0, loading the settings again once a second and on a
+  reset, and `sid` with `everest` off and on.
 - In LiveSplit, built with `AutoSplitterFactory.AutoSplittersXmlUrl` pointing at
   a test copy of the list: a fresh install, a legacy user, a legacy component in
   the layout, the layout editor, an update, a deleted wasm, Cancel in the

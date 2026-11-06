@@ -1,0 +1,12 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "new_file" },
+      "splits": [{ "kind": "chapter_complete", "chapter": 1 }]
+    }
+  },
+  "events": [
+    { "frame": 265, "event": "start", "game_time": 0 }
+  ]
+}

@@ -2,6 +2,8 @@ use asr::{future::next_tick, Process};
 
 mod everest;
 mod memory;
+mod settings;
+mod splitter;
 mod vanilla;
 
 asr::async_main!(stable);
@@ -86,10 +88,13 @@ async fn main() {
                 };
                 asr::print_message("Init OK");
 
+                let mut splitter = splitter::Splitter::new();
                 loop {
-                    if let Some(values) = state.read(&process) {
-                        set_debug_info(&values);
+                    let values = state.read(&process);
+                    if let Some(values) = &values {
+                        set_debug_info(values);
                     }
+                    splitter.update(values.as_ref());
                     next_tick().await;
                 }
             })
