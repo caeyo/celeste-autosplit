@@ -13,7 +13,6 @@ pub struct HarnessTimer(Arc<Mutex<Recorded>>);
 pub enum Event {
     Start,
     Split(Option<TimeSpan>),
-    Reset(Option<TimeSpan>),
 }
 
 struct Recorded {
@@ -21,12 +20,6 @@ struct Recorded {
     variables: BTreeMap<String, String>,
     log: Vec<String>,
     events: Vec<Event>,
-}
-
-impl Recorded {
-    fn game_time(&self) -> Option<TimeSpan> {
-        self.timer.snapshot().current_time().game_time
-    }
 }
 
 impl HarnessTimer {
@@ -65,7 +58,7 @@ impl HarnessTimer {
     }
 
     pub fn game_time(&self) -> Option<TimeSpan> {
-        self.lock().game_time()
+        self.lock().timer.snapshot().current_time().game_time
     }
 }
 
@@ -126,11 +119,7 @@ impl AutoSplitTimer for HarnessTimer {
     }
 
     fn reset(&mut self) {
-        let mut recorded = self.lock();
-        let time = recorded.game_time();
-        if recorded.timer.reset(true).is_ok() {
-            recorded.events.push(Event::Reset(time));
-        }
+        let _ = self.lock().timer.reset(true);
     }
 
     fn set_game_time(&mut self, time: time::Duration) {

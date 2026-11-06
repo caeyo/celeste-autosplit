@@ -306,7 +306,6 @@ fn timer_events(module: &Module, frame: usize) -> Vec<String> {
         let (event, time) = match event {
             Event::Start => ("start", after),
             Event::Split(time) => ("split", time),
-            Event::Reset(time) => ("reset", time),
         };
         describe(frame as u64, event, time.map(ticks))
     });
@@ -474,8 +473,8 @@ fn expected_event(event: &Value) -> Result<String> {
     let frame = frame.context("an event without a frame")?;
     let name = event.get("event").and_then(Value::as_str);
     let name = name
-        .filter(|name| ["start", "split", "reset"].contains(name))
-        .context("an event that isn't start, split or reset")?;
+        .filter(|name| ["start", "split"].contains(name))
+        .context("an event that isn't start or split")?;
     let time = event
         .get("game_time")
         .context("an event without a game_time")?;
@@ -488,10 +487,9 @@ fn expected_event(event: &Value) -> Result<String> {
 fn setting(value: &Value) -> Result<settings::Value> {
     Ok(match value {
         Value::Bool(flag) => settings::Value::Bool(*flag),
-        Value::Number(number) => match number.as_i64() {
-            Some(number) => settings::Value::I64(number),
-            None => settings::Value::F64(number.as_f64().context("an unreadable number")?),
-        },
+        Value::Number(number) => {
+            settings::Value::I64(number.as_i64().context("a number that isn't an i64")?)
+        }
         Value::String(text) => settings::Value::String(text.as_str().into()),
         Value::Array(items) => {
             let mut list = settings::List::new();
