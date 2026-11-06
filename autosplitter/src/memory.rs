@@ -1,3 +1,5 @@
+use core::iter;
+
 use asr::{
     deep_pointer::DeepPointer, future::retry, signature::Signature, Address, MemoryRangeFlags,
     PointerSize, Process,
@@ -5,273 +7,147 @@ use asr::{
 
 use crate::{
     everest,
-    vanilla::{Anchor, Layout, CLR32, MONO64},
+    vanilla::{Anchor, Layout, Pattern, CLR32, MONO64, REFERENCE_WINDOW},
 };
+
+pub struct Values {
+    pub chapter: i32,
+    pub mode: i32,
+    pub level: Option<String>,
+    pub timer_active: bool,
+    pub chapter_started: bool,
+    pub chapter_complete: bool,
+    pub chapter_time: i64,
+    pub chapter_strawberries: i32,
+    pub chapter_cassette: bool,
+    pub chapter_heart: bool,
+    pub file_time: i64,
+    pub file_strawberries: i32,
+    pub file_cassettes: i32,
+    pub file_hearts: i32,
+    pub deaths: Option<i32>,
+    pub everest: Option<EverestValues>,
+}
+
+pub struct EverestValues {
+    pub file_golden_strawberries: i32,
+    pub grabbed_golden: bool,
+    pub level_set: Option<String>,
+    pub chapter_sid: Option<String>,
+    pub is_debug: bool,
+    pub assist_mode: bool,
+    pub variants_mode: bool,
+    pub starting_new_file: bool,
+    pub file_active: bool,
+}
 
 #[expect(
     clippy::large_enum_variant,
     reason = "only one exists per attach, so its size doesn't matter"
 )]
 pub enum GameState {
-    Vanilla {
-        ptr_size: PointerSize,
-        string_len: u64,
-        string_chars: u64,
-        chapter_time: DeepPointer<3>,
-        file_time: DeepPointer<3>,
-        level: DeepPointer<3>,
-        chapter: DeepPointer<3>,
-        mode: DeepPointer<3>,
-        chapter_strawberries: DeepPointer<3>,
-        file_strawberries: DeepPointer<3>,
-        file_cassettes: DeepPointer<3>,
-        file_hearts: DeepPointer<3>,
-        timer_active: DeepPointer<3>,
-        chapter_started: DeepPointer<3>,
-        chapter_complete: DeepPointer<3>,
-        chapter_cassette: DeepPointer<3>,
-        chapter_heart: DeepPointer<3>,
-        total_deaths: DeepPointer<2>,
-    },
-    Everest {
-        info: Address,
-    },
+    Vanilla(Vanilla),
+    Everest(Everest),
 }
 
 impl GameState {
-    pub fn chapter_time(&self, process: &Process) -> Option<i64> {
+    pub fn read(&self, process: &Process) -> Option<Values> {
         match self {
-            Self::Vanilla { chapter_time, .. } => chapter_time.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::CHAPTER_TIME).ok(),
+            Self::Vanilla(vanilla) => vanilla.read(process),
+            Self::Everest(everest) => everest.read(process),
         }
     }
+}
 
-    pub fn file_time(&self, process: &Process) -> Option<i64> {
-        match self {
-            Self::Vanilla { file_time, .. } => file_time.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::FILE_TIME).ok(),
-        }
+pub struct Vanilla {
+    ptr_size: PointerSize,
+    string_len: u64,
+    string_chars: u64,
+    chapter_time: DeepPointer<3>,
+    file_time: DeepPointer<3>,
+    level: DeepPointer<3>,
+    chapter: DeepPointer<3>,
+    mode: DeepPointer<3>,
+    chapter_strawberries: DeepPointer<3>,
+    file_strawberries: DeepPointer<3>,
+    file_cassettes: DeepPointer<3>,
+    file_hearts: DeepPointer<3>,
+    timer_active: DeepPointer<3>,
+    chapter_started: DeepPointer<3>,
+    chapter_complete: DeepPointer<3>,
+    chapter_cassette: DeepPointer<3>,
+    chapter_heart: DeepPointer<3>,
+    total_deaths: DeepPointer<2>,
+}
+
+impl Vanilla {
+    fn read(&self, process: &Process) -> Option<Values> {
+        let flag = |pointer: &DeepPointer<3>| Some(pointer.deref::<u8>(process).ok()? != 0);
+        let level = self.level.deref_offsets(process).ok()?;
+        let level = process.read_pointer(level, self.ptr_size).ok()?.value();
+        Some(Values {
+            chapter: self.chapter.deref(process).ok()?,
+            mode: self.mode.deref(process).ok()?,
+            level: read_dotnet_string(process, level, self.string_len, self.string_chars),
+            timer_active: flag(&self.timer_active)?,
+            chapter_started: flag(&self.chapter_started)?,
+            chapter_complete: flag(&self.chapter_complete)?,
+            chapter_time: self.chapter_time.deref(process).ok()?,
+            chapter_strawberries: self.chapter_strawberries.deref(process).ok()?,
+            chapter_cassette: flag(&self.chapter_cassette)?,
+            chapter_heart: flag(&self.chapter_heart)?,
+            file_time: self.file_time.deref(process).ok()?,
+            file_strawberries: self.file_strawberries.deref(process).ok()?,
+            file_cassettes: self.file_cassettes.deref(process).ok()?,
+            file_hearts: self.file_hearts.deref(process).ok()?,
+            deaths: self.total_deaths.deref(process).ok(),
+            everest: None,
+        })
     }
+}
 
-    pub fn level(&self, process: &Process) -> Option<String> {
-        match self {
-            Self::Vanilla {
-                ptr_size,
-                string_len,
-                string_chars,
-                level,
-                ..
-            } => {
-                let addr = level.deref_offsets(process).ok()?;
-                let obj = process.read_pointer(addr, *ptr_size).ok()?.value();
-                read_dotnet_string(process, obj, *string_len, *string_chars)
-            }
-            Self::Everest { info } => {
-                let ptr = process.read(*info + everest::ROOM_NAME_STR_PTR).ok()?;
-                read_everest_string(process, ptr)
-            }
-        }
-    }
+pub struct Everest {
+    info: Address,
+}
 
-    pub fn chapter(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { chapter, .. } => chapter.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::CHAPTER_ID).ok(),
+impl Everest {
+    fn read(&self, process: &Process) -> Option<Values> {
+        let info: everest::CoreAutoSplitterInfo = process.read(self.info).ok()?;
+        let version: u8 = process.read(self.info + everest::INFO_VERSION).ok()?;
+        if info.info_version == everest::UPDATING_VERSION || version == everest::UPDATING_VERSION {
+            return None;
         }
-    }
-
-    pub fn mode(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { mode, .. } => mode.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::CHAPTER_MODE).ok(),
-        }
-    }
-
-    pub fn chapter_strawberries(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla {
-                chapter_strawberries,
-                ..
-            } => chapter_strawberries.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::CHAPTER_STRAWBERRIES).ok(),
-        }
-    }
-
-    pub fn file_strawberries(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla {
-                file_strawberries, ..
-            } => file_strawberries.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::FILE_STRAWBERRIES).ok(),
-        }
-    }
-
-    pub fn file_cassettes(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { file_cassettes, .. } => file_cassettes.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::FILE_CASSETTES).ok(),
-        }
-    }
-
-    pub fn file_hearts(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { file_hearts, .. } => file_hearts.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::FILE_HEARTS).ok(),
-        }
-    }
-
-    pub fn timer_active(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { timer_active, .. } => {
-                Some(timer_active.deref::<u8>(process).ok()? != 0)
-            }
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::TIMER_ACTIVE != 0)
-            }
-        }
-    }
-
-    pub fn chapter_started(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla {
-                chapter_started, ..
-            } => Some(chapter_started.deref::<u8>(process).ok()? != 0),
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::CHAPTER_STARTED != 0)
-            }
-        }
-    }
-
-    pub fn chapter_complete(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla {
-                chapter_complete, ..
-            } => Some(chapter_complete.deref::<u8>(process).ok()? != 0),
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::CHAPTER_COMPLETE != 0)
-            }
-        }
-    }
-
-    pub fn chapter_cassette(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla {
-                chapter_cassette, ..
-            } => Some(chapter_cassette.deref::<u8>(process).ok()? != 0),
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::CHAPTER_CASSETTE != 0)
-            }
-        }
-    }
-
-    pub fn chapter_heart(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { chapter_heart, .. } => {
-                Some(chapter_heart.deref::<u8>(process).ok()? != 0)
-            }
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::CHAPTER_HEART != 0)
-            }
-        }
-    }
-
-    pub fn total_deaths(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { total_deaths, .. } => total_deaths.deref(process).ok(),
-            Self::Everest { .. } => None,
-        }
-    }
-
-    pub fn file_golden_strawberries(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => process.read(*info + everest::FILE_GOLDEN_STRAWBERRIES).ok(),
-        }
-    }
-
-    pub fn grabbed_golden(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::GRABBED_GOLDEN != 0)
-            }
-        }
-    }
-
-    pub fn level_set(&self, process: &Process) -> Option<String> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let ptr = process.read(*info + everest::LEVEL_SET_STR_PTR).ok()?;
-                read_everest_string(process, ptr)
-            }
-        }
-    }
-
-    pub fn chapter_sid(&self, process: &Process) -> Option<String> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let ptr = process.read(*info + everest::CHAPTER_SID_STR_PTR).ok()?;
-                read_everest_string(process, ptr)
-            }
-        }
-    }
-
-    pub fn is_debug(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::FILE_FLAGS).ok()?;
-                Some(flags & everest::IS_DEBUG != 0)
-            }
-        }
-    }
-
-    pub fn assist_mode(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::FILE_FLAGS).ok()?;
-                Some(flags & everest::ASSIST_MODE != 0)
-            }
-        }
-    }
-
-    pub fn variants_mode(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::FILE_FLAGS).ok()?;
-                Some(flags & everest::VARIANTS_MODE != 0)
-            }
-        }
-    }
-
-    pub fn starting_new_file(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::FILE_FLAGS).ok()?;
-                Some(flags & everest::STARTING_NEW_FILE != 0)
-            }
-        }
-    }
-
-    pub fn file_active(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::FILE_FLAGS).ok()?;
-                Some(flags & everest::FILE_ACTIVE != 0)
-            }
-        }
+        let string = |ptr| read_everest_string(process, ptr);
+        let chapter = |flag| info.chapter_flags & flag != 0;
+        let file = |flag| info.file_flags & flag != 0;
+        Some(Values {
+            chapter: info.chapter_id,
+            mode: info.chapter_mode,
+            level: string(info.room_name_str_ptr),
+            timer_active: chapter(everest::TIMER_ACTIVE),
+            chapter_started: chapter(everest::CHAPTER_STARTED),
+            chapter_complete: chapter(everest::CHAPTER_COMPLETE),
+            chapter_time: info.chapter_time,
+            chapter_strawberries: info.chapter_strawberries,
+            chapter_cassette: chapter(everest::CHAPTER_CASSETTE),
+            chapter_heart: chapter(everest::CHAPTER_HEART),
+            file_time: info.file_time,
+            file_strawberries: info.file_strawberries,
+            file_cassettes: info.file_cassettes,
+            file_hearts: info.file_hearts,
+            deaths: None,
+            everest: Some(EverestValues {
+                file_golden_strawberries: info.file_golden_strawberries,
+                grabbed_golden: chapter(everest::GRABBED_GOLDEN),
+                level_set: string(info.level_set_str_ptr),
+                chapter_sid: string(info.chapter_sid_str_ptr),
+                is_debug: file(everest::IS_DEBUG),
+                assist_mode: file(everest::ASSIST_MODE),
+                variants_mode: file(everest::VARIANTS_MODE),
+                starting_new_file: file(everest::STARTING_NEW_FILE),
+                file_active: file(everest::FILE_ACTIVE),
+            }),
+        })
     }
 }
 
@@ -363,69 +239,39 @@ fn signature_ends<const N: usize>(
         .collect()
 }
 
-#[derive(Clone, Copy)]
-struct Slot {
-    address: Address,
-    ptr_size: PointerSize,
-}
-
-impl Slot {
-    fn field(self, field: u64) -> DeepPointer<2> {
-        DeepPointer::new(self.address, self.ptr_size, &[0, field])
-    }
-
-    fn info_field(self, info: u64, field: u64) -> DeepPointer<3> {
-        DeepPointer::new(self.address, self.ptr_size, &[0, info, field])
-    }
-}
-
-fn find_instance(process: &Process, runtime: &Runtime) -> Option<(Slot, u64)> {
+fn find_instance(process: &Process, runtime: &Runtime) -> Option<(Address, u64)> {
     let layout = runtime.layout;
     scan_executable(process, |(start, size)| {
         let end = start.value() + size;
         (runtime.scan_instance)(process, (start, size))
             .into_iter()
             .find_map(|code| {
-                let slot =
-                    layout
-                        .celeste_instance
-                        .read_slot(process, layout.pointer_size, code, end)?;
+                let slot = layout.celeste_instance.read_slot(process, code, end)?;
                 let info = layout.read_info_store(process, code, start)?;
                 layout.has_info(process, slot, info).then_some((slot, info))
             })
     })
 }
 
-fn find_save_data(process: &Process, runtime: &Runtime) -> Option<Slot> {
+fn find_save_data(process: &Process, runtime: &Runtime) -> Option<Address> {
     let layout = runtime.layout;
     scan_executable(process, |(start, size)| {
         let end = start.value() + size;
         (runtime.scan_save_data)(process, (start, size))
             .into_iter()
-            .find_map(|code| {
-                layout
-                    .save_data_instance
-                    .read_slot(process, layout.pointer_size, code, end)
-            })
+            .find_map(|code| layout.save_data_instance.read_slot(process, code, end))
     })
 }
 
 impl Anchor {
-    fn read_slot(
-        &self,
-        process: &Process,
-        ptr_size: PointerSize,
-        code: Address,
-        end: u64,
-    ) -> Option<Slot> {
-        let len = self.reference_window.min(end - code.value());
+    fn read_slot(&self, process: &Process, code: Address, end: u64) -> Option<Address> {
+        let len = REFERENCE_WINDOW.min(end - code.value());
         let code = process.read_vec::<u8>(code, len as usize).ok()?;
-        let address = (0..code.len()).find_map(|start| {
+        (0..code.len()).find_map(|start| {
             self.references
                 .iter()
                 .find_map(|reference| match_pattern(reference, &code[start..]))
-        })?;
-        Some(Slot { address, ptr_size })
+        })
     }
 }
 
@@ -440,12 +286,20 @@ impl Layout {
             .ok()?;
         (0..code.len())
             .rev()
-            .find_map(|start| match_pattern(self.auto_splitter_info_store, &code[start..]))
+            .find_map(|start| match_pattern(&self.auto_splitter_info_store, &code[start..]))
             .map(|offset| offset.value())
     }
 
-    fn has_info(&self, process: &Process, slot: Slot, info: u64) -> bool {
-        let Ok(field) = slot.field(info).deref_offsets(process) else {
+    fn field(&self, slot: Address, field: u64) -> DeepPointer<2> {
+        DeepPointer::new(slot, self.pointer_size, &[0, field])
+    }
+
+    fn info_field(&self, slot: Address, info: u64, field: u64) -> DeepPointer<3> {
+        DeepPointer::new(slot, self.pointer_size, &[0, info, field])
+    }
+
+    fn has_info(&self, process: &Process, slot: Address, info: u64) -> bool {
+        let Ok(field) = self.field(slot, info).deref_offsets(process) else {
             return false;
         };
         process
@@ -453,49 +307,44 @@ impl Layout {
             .is_ok_and(|object| !object.is_null())
     }
 
-    fn state(&self, slot: Slot, info: u64, save: Slot) -> GameState {
-        GameState::Vanilla {
-            ptr_size: slot.ptr_size,
+    fn state(&self, slot: Address, info: u64, save: Address) -> GameState {
+        GameState::Vanilla(Vanilla {
+            ptr_size: self.pointer_size,
             string_len: self.string_length,
             string_chars: self.string_chars,
-            chapter_time: slot.info_field(info, self.chapter_time),
-            file_time: slot.info_field(info, self.file_time),
-            level: slot.info_field(info, self.level),
-            chapter: slot.info_field(info, self.chapter),
-            mode: slot.info_field(info, self.mode),
-            chapter_strawberries: slot.info_field(info, self.chapter_strawberries),
-            file_strawberries: slot.info_field(info, self.file_strawberries),
-            file_cassettes: slot.info_field(info, self.file_cassettes),
-            file_hearts: slot.info_field(info, self.file_hearts),
-            timer_active: slot.info_field(info, self.timer_active),
-            chapter_started: slot.info_field(info, self.chapter_started),
-            chapter_complete: slot.info_field(info, self.chapter_complete),
-            chapter_cassette: slot.info_field(info, self.chapter_cassette),
-            chapter_heart: slot.info_field(info, self.chapter_heart),
-            total_deaths: save.field(self.total_deaths),
-        }
+            chapter_time: self.info_field(slot, info, self.chapter_time),
+            file_time: self.info_field(slot, info, self.file_time),
+            level: self.info_field(slot, info, self.level),
+            chapter: self.info_field(slot, info, self.chapter),
+            mode: self.info_field(slot, info, self.mode),
+            chapter_strawberries: self.info_field(slot, info, self.chapter_strawberries),
+            file_strawberries: self.info_field(slot, info, self.file_strawberries),
+            file_cassettes: self.info_field(slot, info, self.file_cassettes),
+            file_hearts: self.info_field(slot, info, self.file_hearts),
+            timer_active: self.info_field(slot, info, self.timer_active),
+            chapter_started: self.info_field(slot, info, self.chapter_started),
+            chapter_complete: self.info_field(slot, info, self.chapter_complete),
+            chapter_cassette: self.info_field(slot, info, self.chapter_cassette),
+            chapter_heart: self.info_field(slot, info, self.chapter_heart),
+            total_deaths: self.field(save, self.total_deaths),
+        })
     }
 }
 
-fn match_pattern(pattern: &str, code: &[u8]) -> Option<Address> {
-    let mut value = 0;
-    let mut value_bytes = 0;
-    for (i, byte) in pattern.split(' ').enumerate() {
-        let actual = *code.get(i)?;
-        match byte {
-            "SS" => {
-                value |= u64::from(actual) << (8 * value_bytes);
-                value_bytes += 1;
-            }
-            "??" => {}
-            _ => {
-                if u8::from_str_radix(byte, 16).ok()? != actual {
-                    return None;
-                }
-            }
-        }
+fn match_pattern(pattern: &Pattern, code: &[u8]) -> Option<Address> {
+    let (before, code) = code.split_at_checked(pattern.before.len())?;
+    let (value, after) = code.split_at_checked(pattern.width)?;
+    let matches = |expected: &[Option<u8>], actual: &[u8]| {
+        actual.len() >= expected.len()
+            && iter::zip(expected, actual)
+                .all(|(expected, actual)| expected.is_none_or(|expected| expected == *actual))
+    };
+    if !matches(pattern.before, before) || !matches(pattern.after, after) {
+        return None;
     }
-    Some(Address::new(value))
+    let mut bytes = [0; 8];
+    bytes[..value.len()].copy_from_slice(value);
+    Some(Address::new(u64::from_le_bytes(bytes)))
 }
 
 fn scan_executable<T>(
@@ -530,33 +379,34 @@ pub async fn wait_attach() -> Process {
     retry(|| PROCESS_NAMES.iter().find_map(|&name| Process::attach(name))).await
 }
 
-fn init_everest(process: &Process) -> Option<GameState> {
+#[derive(Clone, Copy, PartialEq)]
+pub enum Failure {
+    NotFound,
+    EverestVersion(u8),
+}
+
+fn init_everest(process: &Process) -> Result<GameState, Failure> {
+    let mut failure = Failure::NotFound;
     for region in process.memory_ranges() {
         let Ok(base) = region.address() else {
             continue;
         };
-        let mut magic = [0u8; everest::MAGIC_BYTES.len()];
-        if process.read_into_slice(base, &mut magic).is_err() {
-            continue;
-        }
-        if magic != everest::MAGIC_BYTES {
-            continue;
-        }
-        let Ok(version) = process.read::<u8>(base + everest::INFO_VERSION) else {
+        let Ok(info) = process.read::<everest::CoreAutoSplitterInfo>(base) else {
             continue;
         };
-        if version < everest::CURRENT_VERSION {
+        if info.magic != everest::MAGIC_BYTES {
             continue;
         }
-        return Some(GameState::Everest { info: base });
+        match info.info_version {
+            everest::CURRENT_VERSION => return Ok(GameState::Everest(Everest { info: base })),
+            everest::UPDATING_VERSION => {}
+            version => failure = Failure::EverestVersion(version),
+        }
     }
-    None
+    Err(failure)
 }
 
-pub fn init(process: &Process) -> Option<GameState> {
-    if let Some(state) = init_everest(process) {
-        return Some(state);
-    }
+fn init_vanilla(process: &Process) -> Option<GameState> {
     let os = asr::get_os().ok()?;
     let runtime = RUNTIMES
         .iter()
@@ -564,4 +414,8 @@ pub fn init(process: &Process) -> Option<GameState> {
     let (slot, info) = find_instance(process, runtime)?;
     let save = find_save_data(process, runtime)?;
     Some(runtime.layout.state(slot, info, save))
+}
+
+pub fn init(process: &Process) -> Result<GameState, Failure> {
+    init_everest(process).or_else(|failure| init_vanilla(process).ok_or(failure))
 }
