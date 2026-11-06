@@ -12,31 +12,8 @@ using System.Text;
 
 namespace Probe
 {
-    /// <summary>
-    /// Measures the memory layout the auto splitter reads, inside the runtime of the game flavour
-    /// it runs with, and writes it as Rust, &lt;runtime&gt;.rs, for the auto splitter's memory.rs.
-    /// Manifest.cs says what to measure. It also constructs the game, which the harness reads
-    /// through the auto splitter, in replay mode. It has to run in the game's own runtime, from
-    /// the game's folder: 32-bit .NET Framework on Windows, and the Mono bundled with the game on
-    /// Linux and macOS, through the game's MonoKickstart launcher (which runs the .exe named after
-    /// itself).
-    ///
-    /// Options:
-    ///   --out DIR         writes DIR/&lt;runtime&gt;.rs once every check has passed.
-    ///   --game PATH       the game's Celeste.exe, relative to the probe's directory (default:
-    ///                     Celeste.exe next to the probe). Lets the probe itself be Celeste.exe,
-    ///                     so its process has the game's name.
-    ///   --replay          once every check has passed, writes distinctive values into the game
-    ///                     and prints them, then writes the values it's sent, until its input
-    ///                     ends: see Replay. The harness starts the probe this way.
-    ///
-    /// The game's Linux launcher script changes directory first, so pass an absolute --out path.
-    /// </summary>
     internal static class Program
     {
-        // The anchor's length isn't available, so a fixed amount is read, stopping early at an
-        // unmapped page. This covers Celeste's constructor on every flavour: it's 0xb6 bytes on
-        // Windows, 0x15a on Linux and 0x1e9 on macOS.
         private const int AnchorCodeLength = 768;
 
         private static string outDirectory;
@@ -45,14 +22,12 @@ namespace Probe
 
         private static string os;
         private static string flavour;
-        /// <summary>What the flavour's layout is named after: it's the same on each of them.</summary>
         private static string runtime;
         private static Assembly game;
         private static string gameVersion;
         private static Root[] roots;
         private static long stringLength;
         private static long stringChars;
-        /// <summary>Every path, once the game is constructed.</summary>
         private static List<HeldPath> held;
 
         private static int Main(string[] args)
@@ -68,7 +43,6 @@ namespace Probe
                 return 2;
             }
 
-            // Each step needs the ones before it.
             bool ok = Step("runtime", DescribeRuntime)
                 && Step("game", LoadGame)
                 && Step("manifest", ResolveManifest)
@@ -79,7 +53,6 @@ namespace Probe
 
             Console.WriteLine();
             Console.WriteLine(ok ? "probe: ok" : "probe: failed");
-            // Only a probe that passed replays, so that the game it holds is the one it measured.
             if (ok && replay && !Step("replay", Replay))
             {
                 Console.WriteLine("probe: failed");
@@ -115,7 +88,6 @@ namespace Probe
             }
             catch (Exception e)
             {
-                // The probe's own failures explain themselves. Anything else gets its stack trace.
                 Console.WriteLine("FAILED: " + (e is ProbeException ? e.Message : e.ToString()));
                 return false;
             }
@@ -149,8 +121,6 @@ namespace Probe
             {
                 return "windows";
             }
-            // Mono reports Unix on both Linux and macOS, so ask the kernel. The struct uname
-            // fills starts with the kernel's name on both.
             IntPtr buffer = Marshal.AllocHGlobal(4096);
             try
             {
@@ -181,7 +151,6 @@ namespace Probe
             Console.WriteLine("mvid: " + game.ManifestModule.ModuleVersionId);
             Console.WriteLine("references: " + string.Join(", ", references.Select(a => a.Name + " " + a.Version).OrderBy(n => n).ToArray()));
 
-            // Linux and macOS have one flavour each. On Windows, the game is built on XNA or FNA.
             flavour = os != "windows" ? os
                 : references.Any(a => a.Name == "FNA") ? "windows-fna"
                 : references.Any(a => a.Name == "Microsoft.Xna.Framework.Game") ? "windows-xna"
@@ -211,8 +180,6 @@ namespace Probe
             Console.WriteLine("root {0} : {1}, anchored by {2}", root.Name, Names.TypeName(root.Field.FieldType), root.AnchorName);
             root.Paths = entry.Paths.Select(p => ResolvePath(root, p)).ToArray();
             CheckUnique(root.Paths.Select(p => p.Name), " in the paths of " + root.Name);
-            // A layout holds one offset per path. With a CodeField, memory.rs reads a path's first
-            // offset from the code.
             FieldPath other = root.Paths.FirstOrDefault(p => root.CodeField == null ? p.Fields.Length != 1 : p.Fields.Length != 2 || p.Fields[0].Name != root.CodeField);
             if (other != null)
             {
@@ -235,7 +202,6 @@ namespace Probe
                 fields.Add(field);
                 type = field.FieldType;
             }
-            // Only values the probe can write, so that the harness checks every path.
             if (!IsValue(type))
             {
                 throw new ProbeException(name + " ends in a " + Names.TypeName(type) + ", but the probe can only write a string, bool, int or long: another type needs sample values and parsing here, and checking in the harness");
@@ -244,7 +210,6 @@ namespace Probe
             return new FieldPath { Name = name, Fields = fields.ToArray() };
         }
 
-        /// <summary>Paths go through objects, whose fields the probe measures on an instance.</summary>
         private static void CheckObjectType(Type type, string where)
         {
             if (type.IsValueType || type.IsAbstract || type.IsArray)
@@ -264,8 +229,6 @@ namespace Probe
 
         private static void MeasureLayout()
         {
-            // A string's length and first character are fields, so they're measured like any
-            // other. The characters must start where the runtime says string data does.
             const string sample = "Celeste";
             FieldInfo[] stringFields = typeof(string).GetFields(Names.DeclaredInstance);
             stringLength = Memory.FieldOffset(stringFields.Single(f => f.FieldType == typeof(int)), sample);
@@ -276,7 +239,6 @@ namespace Probe
             }
             Console.WriteLine("string: length at 0x{0:x}, chars at 0x{1:x}", stringLength, stringChars);
 
-            // Offsets need an instance of each type along the paths, but not a constructed one.
             var instances = new Dictionary<Type, object>();
             foreach (Root root in roots)
             {
@@ -311,14 +273,12 @@ namespace Probe
             if (!instances.TryGetValue(type, out object instance))
             {
                 instance = FormatterServices.GetUninitializedObject(type);
-                // The game's finalizers would clean up after these half-made objects.
                 GC.SuppressFinalize(instance);
                 instances.Add(type, instance);
             }
             return instance;
         }
 
-        /// <summary>Every instance field of the type, for reference when adding paths.</summary>
         private static void PrintFields(Type type, object instance)
         {
             Console.WriteLine(string.Join(" : ", Hierarchy(type).Select(t => t.FullName + " [" + t.Assembly.GetName().Name + "]").ToArray()));
@@ -332,7 +292,6 @@ namespace Probe
             }
         }
 
-        /// <summary>The type and its base classes, most derived first, without Object.</summary>
         private static IEnumerable<Type> Hierarchy(Type type)
         {
             for (Type t = type; t != null && t != typeof(object); t = t.BaseType)
@@ -343,27 +302,19 @@ namespace Probe
 
         private static void FindSlot(Root root)
         {
-            // Run the class constructors first, as the game has by the time it runs the anchor:
-            // the JIT may compile static accesses differently before a class is initialized.
-            // SaveData has none, so it doesn't matter that the game may not have initialized it
-            // when it first runs AutoSplitterInfo.Update.
             RuntimeHelpers.RunClassConstructor(root.Field.DeclaringType.TypeHandle);
             RuntimeHelpers.RunClassConstructor(root.Anchor.DeclaringType.TypeHandle);
             ulong slot = Memory.StaticFieldAddress(root.Field);
             Console.WriteLine("slot: 0x{0:x}", slot);
 
-            // Once the method is compiled, both runtimes return its code here rather than a stub
-            // that jumps to it. A stub would show in the dump, and the signature wouldn't match.
             RuntimeHelpers.PrepareMethod(root.Anchor.MethodHandle);
             ulong address = Memory.ToAddress(root.Anchor.MethodHandle.GetFunctionPointer());
-            // Printed for debugging only: it holds addresses that change from run to run.
             byte[] code = Memory.ReadMapped(address, AnchorCodeLength);
             Console.WriteLine("anchor code at 0x{0:x} ({1} bytes read):", address, code.Length);
             MachineCode.HexDump(code, Console.WriteLine);
 
             List<SlotReference> references = MachineCode.FindSlotReferences(code, slot);
             Console.WriteLine("slot's address in the code: " + (references.Count == 0 ? "nowhere" : string.Join(", ", references.Select(r => r.ToString()).ToArray())));
-            // Only now, so that a new root's first run prints the code to write its signature from.
             if (!root.Signatures.TryGetValue(runtime, out root.Signature))
             {
                 throw new ProbeException(root.Name + " has no signature for " + runtime + " yet: write one from the code above, in Manifest.cs");
@@ -375,8 +326,6 @@ namespace Probe
                 throw new ProbeException(matches.Length == 0 ? "the signature doesn't match the anchor's code" : "the signature matches the anchor's code more than once");
             }
 
-            // The reference is the earliest match of any reference pattern after the signature,
-            // and must hold the slot's address.
             int after = matches[0] + root.Signature.Code.Length;
             var reference = root.Signature.References
                 .Select(p => new { Pattern = p, Match = p.Matches(code, after).DefaultIfEmpty(-1).First() })
@@ -402,8 +351,6 @@ namespace Probe
                 return;
             }
 
-            // The field's store is the last match of its pattern before the signature, and must
-            // hold the field's measured offset.
             int fieldStore = root.Signature.FieldStore.Matches(code)
                 .Where(m => m + root.Signature.FieldStore.Length <= matches[0])
                 .DefaultIfEmpty(-1)
@@ -427,7 +374,6 @@ namespace Probe
             }
         }
 
-        /// <summary>A path in the constructed game, with the object that holds its last field.</summary>
         private sealed class HeldPath
         {
             public Root Root;
@@ -435,14 +381,8 @@ namespace Probe
             public object Owner;
         }
 
-        /// <summary>
-        /// Constructs the game for real, as the game's Main does, and finds the object that holds
-        /// each path's last field.
-        /// </summary>
         private static void Construct()
         {
-            // Main loads the settings before constructing the game, and the constructor reads
-            // Settings.Instance.Fullscreen and VSync.
             FieldInfo settings = Names.StaticField(game, "Celeste.Settings::Instance");
             if (settings.GetValue(null) == null)
             {
@@ -459,7 +399,6 @@ namespace Probe
             {
                 throw new Exception("new Celeste() threw", e.InnerException);
             }
-            // Nothing disposes it before the process exits.
             GC.SuppressFinalize(celeste);
             Console.WriteLine("constructed in {0} ms", timer.ElapsedMilliseconds);
             gameVersion = Names.InstanceField(celeste.GetType(), "Version").GetValue(celeste).ToString();
@@ -471,8 +410,6 @@ namespace Probe
                 object value = root.Field.GetValue(null);
                 if (value == null)
                 {
-                    // The game leaves it null until later, as it does SaveData.Instance until a
-                    // file starts, so the auto splitter needs an object of the probe's to read.
                     value = FormatterServices.GetUninitializedObject(root.Field.FieldType);
                     GC.SuppressFinalize(value);
                     root.Field.SetValue(null, value);
@@ -490,12 +427,6 @@ namespace Probe
             }
         }
 
-        /// <summary>
-        /// A distinctive value for the n-th path, so that reading the wrong field, or the wrong
-        /// width, can't give one that happens to match. Neighbouring flags differ, so two swapped
-        /// ones would show. The harness then negates the numbers and flips the flags, so that each
-        /// flag is seen both set and clear.
-        /// </summary>
         private static object SampleValue(Type type, int n)
         {
             if (type == typeof(string)) return "path " + n;
@@ -517,17 +448,8 @@ namespace Probe
             }
         }
 
-        /// <summary>
-        /// Replay mode, for the harness. First writes distinctive values into every number and flag,
-        /// and into strings that are still null, then prints "probe: values", and its flavour and
-        /// the values the paths hold. Then writes the values it's sent into the game, through the
-        /// same paths, until its input ends. They come in sets: a path=value line per path, with the
-        /// value read as the path's type (a string is the rest of the line), and an empty line at the
-        /// end of each set. Once a set is written, it prints "probe: written".
-        /// </summary>
         private static void Replay()
         {
-            // The lines only name paths, and two roots can have paths with the same name.
             var paths = new Dictionary<string, HeldPath>();
             foreach (HeldPath path in held)
             {
@@ -536,8 +458,6 @@ namespace Probe
                     throw new ProbeException("two roots have the path " + path.Path.Name + ", which the replay can't tell apart");
                 }
                 paths.Add(path.Path.Name, path);
-                // Every number and flag gets a distinctive value, and a string only while it's
-                // null.
                 FieldInfo last = path.Path.Last;
                 if (last.FieldType.IsValueType || last.GetValue(path.Owner) == null)
                 {
@@ -566,7 +486,6 @@ namespace Probe
             }
         }
 
-        /// <summary>A path=value line, with the value read as the path's type.</summary>
         private static KeyValuePair<HeldPath, object> ParseLine(string line, Dictionary<string, HeldPath> paths)
         {
             int separator = line.IndexOf('=');
@@ -594,10 +513,6 @@ namespace Probe
             return long.Parse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
         }
 
-        /// <summary>
-        /// The flavour, and the values the paths hold now, as reflection reads them, as JSON on one
-        /// line, for the harness to compare the auto splitter with.
-        /// </summary>
         private static string ValuesJson()
         {
             IEnumerable<string> rootsJson = roots.Select(root =>
@@ -624,10 +539,6 @@ namespace Probe
             }
         }
 
-        /// <summary>
-        /// The layout as Rust, which memory.rs uses, always in this format, so that regenerated
-        /// layouts only differ where values do. Lines end in \n on every OS.
-        /// </summary>
         private static string LayoutRust()
         {
             var text = new StringBuilder();
@@ -685,11 +596,6 @@ namespace Probe
             return text.ToString();
         }
 
-        /// <summary>
-        /// The Rust constant named after dotted .NET names: AutoSplitterInfo.ChapterTime is
-        /// AUTO_SPLITTER_INFO_CHAPTER_TIME. An acronym stays one word: a field named SIDStrPtr
-        /// would be SID_STR_PTR.
-        /// </summary>
         private static string ConstantName(string name)
         {
             var text = new StringBuilder();
@@ -701,8 +607,6 @@ namespace Probe
                     text.Append('_');
                     continue;
                 }
-                // A word starts at a capital after a lower-case letter or a digit, or at a
-                // capital before a lower-case letter, after another capital.
                 if (i > 0 && char.IsUpper(c)
                     && (char.IsLower(name[i - 1]) || char.IsDigit(name[i - 1])
                         || char.IsUpper(name[i - 1]) && i + 1 < name.Length && char.IsLower(name[i + 1])))
@@ -716,10 +620,6 @@ namespace Probe
 
         private static string Hex(long value) => "0x" + value.ToString("x");
 
-        /// <summary>
-        /// A JSON string. The probe's strings are .NET names and short game values, which shouldn't
-        /// need escaping, so it refuses one that would rather than escape it.
-        /// </summary>
         private static string Quote(string s)
         {
             if (s.Any(c => c == '"' || c == '\\' || c < ' '))

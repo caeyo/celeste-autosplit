@@ -9,23 +9,16 @@ using Xunit;
 
 namespace CelesteAutosplit.Tests;
 
-// Tests that run the wasm module change process-wide state (working directory and
-// ComponentManager.BasePath), so they never run in parallel.
 [CollectionDefinition(Name, DisableParallelization = true)]
 public class LiveSplitCollection : ICollectionFixture<LiveSplitHost>
 {
     public const string Name = "LiveSplit";
 }
 
-// Stands in for LiveSplit without its UI. The test output folder plays LiveSplit's
-// folder, and a hidden form on an STA thread plays its UI thread, which ASR steps
-// the runtime on and which all component calls go through, as in LiveSplit.
 public sealed class LiveSplitHost : IDisposable
 {
     public string BasePath { get; } = AppDomain.CurrentDomain.BaseDirectory;
 
-    // Scratch folders, kept short and out of the output folder, since .NET
-    // Framework doesn't support paths over 260 characters by default.
     public string TempPath { get; } = Path.Combine(Path.GetTempPath(), "celeste-autosplit-tests", Guid.NewGuid().ToString("N"));
     public string MissingWasmBasePath { get; }
     public string CorruptWasmBasePath { get; }
@@ -41,7 +34,6 @@ public sealed class LiveSplitHost : IDisposable
             throw new InvalidOperationException($"{wasmPath} is missing. Build the wasm module first (cd autosplitter && cargo b --release), then rebuild the tests.");
         }
 
-        // ASR loads Components\x64\asr_capi.dll relative to the working directory.
         Environment.CurrentDirectory = BasePath;
         ComponentManager.BasePath = BasePath;
 

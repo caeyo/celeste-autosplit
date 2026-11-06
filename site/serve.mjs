@@ -1,8 +1,3 @@
-// Serves the site locally the same way it is deployed: site/ plus a copy of the
-// shared settings schema (see .github/workflows/site.yml). No dependencies.
-//
-//   node site/serve.mjs [port]
-
 import { copyFileSync, createReadStream, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";

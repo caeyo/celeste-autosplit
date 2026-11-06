@@ -1,9 +1,5 @@
 name: Release
 
-# Pushing a tag vX.Y.Z publishes celeste-autosplit.dll and celeste_autosplit.wasm
-# together as one release. The tag must match <Version> in CelesteAutosplit.csproj.
-# Add the update.xml entry only after this succeeds.
-
 on:
   push:
     tags:
