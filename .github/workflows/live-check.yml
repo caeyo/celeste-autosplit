@@ -1,0 +1,152 @@
+name: Live check
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      GAME_FILES_TOKEN:
+        required: true
+  pull_request:
+    paths: &paths
+      - 'autosplitter/**'
+      - 'harness/**'
+      - 'tools/probe/**'
+      - 'traces/**'
+      - '.github/workflows/live-check.yml'
+      - 'rust-toolchain.toml'
+      - 'global.json'
+      - '!**/*.md'
+  push:
+    branches:
+      - 'master'
+    paths: *paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GAME_FILES_REPO: caeyo/celeste-autosplit-gamefiles
+  GAME_FILES_TAG: gamefiles-v2
+  PROBE_BUILD: tools/probe/bin/Release/net45
+  XVFB_SCREEN: '-screen 0 1280x720x24'
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  live-check:
+    name: ${{ matrix.flavour }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavour: windows-xna
+            runner: windows-2025-vs2026
+            game-dir: .
+            launcher: Celeste.exe
+            executables: Celeste.exe
+          - flavour: windows-fna
+            runner: windows-2025-vs2026
+            game-dir: .
+            launcher: Celeste.exe
+            executables: Celeste.exe
+          - flavour: linux
+            runner: ubuntu-24.04
+            game-dir: .
+            launcher: Celeste
+            executables: Celeste Celeste.bin.x86_64
+          - flavour: macos
+            runner: macos-26
+            game-dir: Celeste.app/Contents/Resources
+            launcher: Celeste.app/Contents/MacOS/Celeste
+            executables: Celeste.app/Contents/MacOS/Celeste
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Build probe
+        run: dotnet build tools/probe -c Release
+
+      - name: Install Rust
+        run: rustup toolchain install --profile minimal --no-self-update
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          workspaces: |
+            autosplitter
+            harness
+
+      - name: Build auto splitter and harness
+        run: |
+          (cd autosplitter && cargo b --release --locked)
+          (cd harness && cargo build --release --locked)
+
+      - name: Fetch game files
+        env:
+          GH_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
+          ZIP: celeste-${{ matrix.flavour }}.zip
+        run: |
+          gh release download "$GAME_FILES_TAG" --repo "$GAME_FILES_REPO" --pattern "$ZIP" --dir "$RUNNER_TEMP"
+          unzip -q "$RUNNER_TEMP/$ZIP" -d "$RUNNER_TEMP/game"
+          rm "$RUNNER_TEMP/$ZIP"
+
+      - name: Install XNA 4.0
+        if: matrix.flavour == 'windows-xna'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GAME_FILES_TOKEN }}
+        run: |
+          gh release download $env:GAME_FILES_TAG --repo $env:GAME_FILES_REPO --pattern xna-redist-4.0.zip --dir $env:RUNNER_TEMP
+          Expand-Archive $env:RUNNER_TEMP\xna-redist-4.0.zip $env:RUNNER_TEMP\xna
+          $xna = Start-Process msiexec -ArgumentList '/i', "$env:RUNNER_TEMP\xna\xnafx40_redist.msi", '/qn', '/norestart' -Wait -PassThru
+          "XNA installer exit code: $($xna.ExitCode)"
+          if ($xna.ExitCode -notin 0, 3010) { exit 1 }
+
+      - name: Install probe
+        working-directory: ${{ runner.temp }}/game
+        env:
+          GAME_DIR: ${{ matrix.game-dir }}
+          EXECUTABLES: ${{ matrix.executables }}
+        run: |
+          mkdir "$GAME_DIR/real"
+          mv "$GAME_DIR/Celeste.exe" "$GAME_DIR/real/"
+          cp "$GITHUB_WORKSPACE/$PROBE_BUILD/Probe.exe" "$GAME_DIR/Celeste.exe"
+          chmod +x $EXECUTABLES
+
+      - name: Live check and replay
+        timeout-minutes: 5
+        env:
+          GAME: ${{ runner.temp }}/game/${{ matrix.launcher }}
+        run: |
+          harness=harness/target/release/harness
+          case "$RUNNER_OS" in
+            Linux) "$harness" traces/*.jsonl -- xvfb-run -a -s "$XVFB_SCREEN" "$GAME" host ;;
+            macOS) sudo "$harness" traces/*.jsonl -- sudo -u "$(id -un)" "$GAME" host ;;
+            *) "$harness" traces/*.jsonl -- "$GAME" host ;;
+          esac
+
+      - name: Dump
+        if: always()
+        timeout-minutes: 4
+        env:
+          GAME: ${{ runner.temp }}/game/${{ matrix.launcher }}
+        run: |
+          case "$RUNNER_OS" in
+            Linux) xvfb-run -a -s "$XVFB_SCREEN" "$GAME" dump ;;
+            *) "$GAME" dump ;;
+          esac

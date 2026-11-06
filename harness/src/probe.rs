@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     io::{BufRead, BufReader, Read, Write},
     process::{Child, ChildStdin, Command, Stdio},
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
@@ -10,7 +9,7 @@ use std::{
 use anyhow::{Context, Error, Result, anyhow, bail};
 use serde_json::Value;
 
-use crate::{TIMEOUT, by_path};
+use crate::{Changes, PATHS, TIMEOUT};
 
 pub struct Probe {
     child: Child,
@@ -23,7 +22,6 @@ impl Probe {
     pub fn start(command: &[String]) -> Result<Self> {
         let mut child = Command::new(&command[0])
             .args(&command[1..])
-            .arg("--replay")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -40,32 +38,21 @@ impl Probe {
         })
     }
 
-    pub fn values(&mut self) -> Result<(String, BTreeMap<String, Value>)> {
-        self.expect("ok")?;
-        let answer = self.answer()?;
-        let Some(values) = answer
-            .strip_prefix("values ")
-            .and_then(|json| serde_json::from_str::<Value>(json).ok())
-        else {
-            return Err(self.failure(&format!("expected the probe's values, not {answer}")));
-        };
-        let flavour = values["flavour"]
-            .as_str()
-            .context("the probe's values have no flavour")?;
-        let held = by_path(&values["roots"]).context("the probe's values")?;
-        Ok((flavour.to_owned(), held))
+    pub fn ready(&mut self) -> Result<()> {
+        self.expect("ready")
     }
 
-    pub fn write(&mut self, values: &BTreeMap<String, Value>) -> Result<()> {
+    pub fn write(&mut self, changes: &Changes) -> Result<()> {
         let mut set = String::new();
-        for (path, value) in values {
+        for (&i, value) in changes {
+            let (root, path, _, _) = PATHS[i];
             let text = match value {
                 Value::Bool(flag) => flag.to_string(),
                 Value::Number(number) => number.to_string(),
                 Value::String(text) if !text.contains(['\r', '\n']) => text.clone(),
-                _ => bail!("can't send the probe {value} for {path}"),
+                _ => bail!("can't send the probe {value} for {root} {path}"),
             };
-            set += &format!("{path}={text}\n");
+            set += &format!("{root} {path}={text}\n");
         }
         set.push('\n');
         let input = self.input.as_mut().context("the probe's input is closed")?;
