@@ -67,7 +67,7 @@ A trigger is a map with a `kind` and that kind's fields. Every kind is valid in
 |---|---|
 | `manual` | never |
 | `unknown` | never. Only migration makes it, and editors flag it. |
-| `new_file` | a new save file is started. Only Everest's struct has a signal for it: vanilla needs a source. |
+| `new_file` | a new save file is started: `Starting New File` rises |
 | `chapter_start` | the chapter timer starts: `ChapterStarted` rises |
 | `chapter_enter`, `chapter_exit` | the chapter ID changes to or from `chapter` |
 | `chapter_complete` | the chapter is completed (`timing: "chapter_complete"`, the default), or the game leaves the completed chapter (`timing: "chapter_exit"`) |

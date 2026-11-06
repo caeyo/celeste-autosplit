@@ -20,6 +20,8 @@ public class TraceRecorderModule : EverestModule
 
     private const string Root = "Celeste.Celeste::Instance";
 
+    private const string SaveRoot = "Celeste.SaveData::Instance";
+
     private static readonly FieldInfo[] InfoFields = typeof(AutoSplitterInfo)
         .GetFields(BindingFlags.Public | BindingFlags.Instance)
         .OrderBy(field => field.MetadataToken)
@@ -32,6 +34,7 @@ public class TraceRecorderModule : EverestModule
     private int updatesWithoutTas;
     private ulong lastFrameCounter;
     private readonly Dictionary<string, object?> vanilla = new();
+    private Dictionary<string, object?>? save = new();
     private long? startFileTime;
     private long fileTime;
 
@@ -112,10 +115,37 @@ public class TraceRecorderModule : EverestModule
         fileTime = game.FileTime;
 
         var line = new Dictionary<string, object> { ["frame"] = frame++ };
+        var roots = new Dictionary<string, object?>();
         Dictionary<string, object?> vanillaChanges = Changes(vanilla, InfoFields.ToDictionary(field => "AutoSplitterInfo." + field.Name, field => field.GetValue(game)));
         if (vanillaChanges.Count > 0)
         {
-            line["roots"] = new Dictionary<string, object> { [Root] = vanillaChanges };
+            roots[Root] = vanillaChanges;
+        }
+        SaveData? saveData = SaveData.Instance;
+        if (saveData == null)
+        {
+            if (save != null)
+            {
+                roots[SaveRoot] = null;
+            }
+            save = null;
+        }
+        else
+        {
+            save ??= new();
+            Dictionary<string, object?> saveChanges = Changes(save, new Dictionary<string, object?>
+            {
+                ["TotalDeaths"] = saveData.TotalDeaths,
+                ["Time"] = saveData.Time,
+            });
+            if (saveChanges.Count > 0)
+            {
+                roots[SaveRoot] = saveChanges;
+            }
+        }
+        if (roots.Count > 0)
+        {
+            line["roots"] = roots;
         }
         trace!.WriteLine(JsonSerializer.Serialize(line));
     }
