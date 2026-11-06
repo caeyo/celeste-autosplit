@@ -139,6 +139,13 @@ held an object of the right size when it was read. Types don't move, so reading
 the size later is safe. Nothing has to be learned, so values are published from
 the first tick.
 
+A hand check on 2026-11-06, on Windows XNA, over four boots and seven Save and
+Quits, logged every failed check. Each collection failed it for one to five
+ticks: the type pointer had its lowest bit set, which is how the CLR marks an
+object during a collection, or `AutoSplitterInfo`'s new address held 0 or other
+data, or `Level` led to a type pointer of 0xc. Nothing wrong was published, and
+`Deaths` counted up one per Save and Quit, matching `Saves/0.celeste`.
+
 ## Everest
 
 [`everest.rs`](../autosplitter/src/everest.rs) is Everest's struct as a
