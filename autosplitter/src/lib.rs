@@ -1,7 +1,4 @@
-use asr::{
-    future::{next_tick, retry},
-    Process,
-};
+use asr::{future::next_tick, Process};
 
 #[allow(dead_code)]
 mod everest;
@@ -85,6 +82,25 @@ fn set_debug_info(state: &memory::GameState, process: &Process) {
     }
 }
 
+const TICKS_PER_SECOND: u32 = 120;
+
+const INIT_ATTEMPTS: u32 = 10;
+
+async fn init(process: &Process) -> Option<memory::GameState> {
+    for attempt in 0..INIT_ATTEMPTS {
+        if let Some(state) = memory::init(process) {
+            return Some(state);
+        }
+        if attempt == 0 {
+            asr::print_message("Init failed, retrying");
+        }
+        for _ in 0..TICKS_PER_SECOND {
+            next_tick().await;
+        }
+    }
+    None
+}
+
 async fn main() {
     loop {
         asr::print_message("Waiting for Celeste");
@@ -93,7 +109,10 @@ async fn main() {
 
         process
             .until_closes(async {
-                let state = retry(|| memory::init(&process)).await;
+                let Some(state) = init(&process).await else {
+                    asr::print_message("Init failed, detaching");
+                    return;
+                };
                 asr::print_message("Init OK");
 
                 loop {
