@@ -66,29 +66,26 @@ pub struct Vanilla {
 impl Vanilla {
     fn read(&self, process: &Process) -> Option<Values> {
         let layout = self.layout;
-        let celeste = process
-            .read_pointer(self.instance, layout.pointer_size)
-            .ok()?;
         let info = process
-            .read_pointer(celeste + self.info, layout.pointer_size)
-            .ok()?;
-        let info = self.object(process, info, layout.auto_splitter_info_size)?;
+            .read_pointer(self.instance, layout.pointer_size)
+            .and_then(|celeste| process.read_pointer(celeste + self.info, layout.pointer_size))
+            .ok()
+            .and_then(|info| self.object(process, info, layout.auto_splitter_info_size))?;
         let save = process
             .read_pointer(self.save_data, layout.pointer_size)
             .ok()
             .and_then(|save| self.object(process, save, layout.save_data_size));
-        let flag = |offset| Some(value::<u8>(&info, offset)? != 0);
         Some(Values {
             chapter: value(&info, layout.chapter)?,
             mode: value(&info, layout.mode)?,
             level: self.string(process, pointer(&info, layout.level, layout.pointer_size)?),
-            timer_active: flag(layout.timer_active)?,
-            chapter_started: flag(layout.chapter_started)?,
-            chapter_complete: flag(layout.chapter_complete)?,
+            timer_active: flag(&info, layout.timer_active)?,
+            chapter_started: flag(&info, layout.chapter_started)?,
+            chapter_complete: flag(&info, layout.chapter_complete)?,
             chapter_time: value(&info, layout.chapter_time)?,
             chapter_strawberries: value(&info, layout.chapter_strawberries)?,
-            chapter_cassette: flag(layout.chapter_cassette)?,
-            chapter_heart: flag(layout.chapter_heart)?,
+            chapter_cassette: flag(&info, layout.chapter_cassette)?,
+            chapter_heart: flag(&info, layout.chapter_heart)?,
             file_time: value(&info, layout.file_time)?,
             file_strawberries: value(&info, layout.file_strawberries)?,
             file_cassettes: value(&info, layout.file_cassettes)?,
@@ -132,6 +129,10 @@ fn value<T: AnyBitPattern>(object: &[u8], offset: u64) -> Option<T> {
     object
         .get(start..start + size_of::<T>())
         .map(bytemuck::pod_read_unaligned)
+}
+
+fn flag(object: &[u8], offset: u64) -> Option<bool> {
+    Some(value::<u8>(object, offset)? != 0)
 }
 
 fn pointer(object: &[u8], offset: u64, size: PointerSize) -> Option<Address> {
