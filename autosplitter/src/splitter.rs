@@ -72,6 +72,10 @@ impl Splitter {
         if reset || self.ticks_since_load >= TICKS_PER_SECOND {
             self.load();
         }
+        let slot = timer::current_split_index();
+        if self.armed.is_some_and(|armed| armed != slot) {
+            self.armed = None;
+        }
         let Some(values) = values else {
             return;
         };
@@ -94,14 +98,13 @@ impl Splitter {
         };
         match state {
             TimerState::NotRunning => {
-                if fires(&self.settings.start, None, &tick, &mut self.armed) {
+                if fires(&self.settings.start, slot, &tick, &mut self.armed) {
                     timer::start();
                     set_game_time(file_time);
                 }
             }
             TimerState::Running | TimerState::Paused => {
                 set_game_time(file_time);
-                let slot = timer::current_split_index();
                 let index = slot.and_then(|index| usize::try_from(index).ok());
                 let trigger = index.and_then(|index| self.settings.splits.get(index));
                 if trigger.is_some_and(|trigger| fires(trigger, slot, &tick, &mut self.armed)) {
@@ -114,7 +117,9 @@ impl Splitter {
 }
 
 fn set_game_time(file_time: Pair<i64>) {
-    timer::set_game_time(Duration::nanoseconds(file_time.current.saturating_mul(100)));
+    if file_time.current > 0 || file_time.unchanged() {
+        timer::set_game_time(Duration::nanoseconds(file_time.current.saturating_mul(100)));
+    }
     if file_time.changed() {
         timer::resume_game_time();
     } else {
@@ -128,9 +133,6 @@ fn fires(
     tick: &Tick,
     armed: &mut Option<Option<u64>>,
 ) -> bool {
-    if armed.is_some_and(|armed| armed != slot) {
-        *armed = None;
-    }
     match trigger.kind {
         Kind::NewFile => tick.new_file,
         Kind::ChapterComplete => chapter_complete(trigger, slot, tick, armed),
