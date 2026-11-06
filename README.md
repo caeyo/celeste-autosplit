@@ -1,46 +1,62 @@
 # celeste-autosplit
 
-An auto splitter for Celeste that runs on every LiveSplit host.
+An auto splitter for Celeste, for every LiveSplit host. It's a wasm module that
+attaches to the game, reads its memory, and publishes what it reads as debug
+variables, on vanilla Celeste 1.4.0.0 on Windows, Linux and macOS, and on
+Everest. It doesn't split yet: splitting, its settings and their editors are in
+the [plan](docs/plan.md).
 
-## Repository layout
+## Folders
 
-| Folder | What | Built with |
-|---|---|---|
-| [`autosplitter/`](autosplitter/) | The auto splitter itself, compiled to `celeste_autosplit.wasm`. The only splitting engine on every host. It holds the memory layouts it reads, kept by hand: each runtime's in `vanilla.rs`, from the probe's dump, and Everest's in `everest.rs`, transcribed from its source. | Rust (`cargo`) |
-| [`component/`](component/) | `celeste-autosplit.dll`, the LiveSplit (Windows) component that wraps the wasm module and provides the settings editor and legacy migration. | .NET SDK (`dotnet`) |
-| [`schema/`](schema/) | `settings-schema.json`, the shared settings schema consumed by the component and the website. | — |
-| [`site/`](site/) | The GitHub Pages settings editor for `.lss` files, for livesplit-core hosts. | Static HTML/CSS/JS |
-| [`tools/probe/`](tools/probe/) | Runs inside each flavour's own runtime, posing as the game: holds the real game for the harness, and dumps the field offsets and the anchors' machine code that the layouts are kept from. | .NET SDK (`dotnet`) |
-| [`harness/`](harness/) | The live check and the replay: runs the wasm module on livesplit-core's timer, against the real game, which the probe constructs, and replays the traces through the game. | Rust (`cargo`) |
-| [`traces/`](traces/) | The real game's `AutoSplitterInfo`, update by update, while CelesteTAS plays a TAS, for each TAS file there. | — |
-| [`tools/trace-recorder/`](tools/trace-recorder/) | Records the traces: an Everest mod, and a script that records with it in an install of the game of its own. | .NET SDK (`dotnet`) |
-| [`update.xml`](update.xml) | LiveSplit's update manifest for the component. | — |
+| Folder | What |
+|---|---|
+| [`autosplitter/`](autosplitter/) | The auto splitter, in Rust, built to `celeste_autosplit.wasm`. `vanilla.rs` holds the layouts it reads vanilla with, kept by hand from the probe's dump, `everest.rs` Everest's struct, transcribed from Everest's source, and `memory.rs` the reading. |
+| [`component/`](component/) | `celeste-autosplit.dll`, the LiveSplit component, in C#, which runs the wasm module in LiveSplit's auto splitting runtime, and its tests. Its settings editor is planned. |
+| [`tools/probe/`](tools/probe/) | Poses as the game, in the game's own runtime: `host` holds the real game for the harness, and `dump` prints the offsets and machine code the layouts are kept from. C#. |
+| [`harness/`](harness/) | The live check and the replay, which run the wasm module against the real game, held by the probe. Rust. |
+| [`traces/`](traces/) | The game's values, update by update, while a TAS plays, and the TAS files. |
+| [`tools/trace-recorder/`](tools/trace-recorder/) | The Everest mod and the script that record the traces. C#. |
+| [`schema/`](schema/) | `settings-schema.json`, the schema of the planned settings. Nothing reads it yet. |
+| [`site/`](site/) | A stub of the planned settings website, deployed to GitHub Pages. |
+| [`docs/`](docs/) | How it all works, and how to maintain it. |
+| [`update.xml`](update.xml) | LiveSplit's update manifest for the component, empty until the first release. |
 
 ## Building
 
-```sh
-cd autosplitter && cargo b --release    # wasm module
-cd component && dotnet build            # LiveSplit component (+ dotnet test, after the wasm)
-cd harness && cargo build --release     # live check and replay, against the probe (see its README)
-cd tools/trace-recorder && dotnet build # trace recorder (see its README to record)
-node site/serve.mjs                     # website at http://localhost:8000
-```
+From the repository's root, in Git Bash, with
+[Rust](https://www.rust-lang.org/tools/install), the .NET SDK and Node.js.
+`rust-toolchain.toml` and `global.json` pin Rust and the .NET SDK, and rustup
+installs the pinned Rust on first use.
 
-See each folder's README, and [How it works](docs/how-it-works.md) and [Maintaining](docs/maintaining.md), for details.
-
-## CI and releases
-
-| Workflow | Runs |
+| Command | Builds |
 |---|---|
-| `ci.yml` | Runs clippy and fmt on both Rust crates (the auto splitter and the harness), failing on any warning. On Windows, builds the wasm module, then builds the component and runs its tests, which run the wasm module. On Linux, builds the trace recorder. On changes to `autosplitter/`, `harness/`, `component/`, `schema/`, `tools/trace-recorder/` or the pinned versions. |
-| `site.yml` | Deploys `site/` (plus the schema) to GitHub Pages on pushes to `master`. |
-| `live-check.yml` | On each vanilla flavour, builds the wasm module and runs it in the harness against the real game, which the probe constructs from game files in a private repository: the live check, then the replay of every trace. Then the probe's dump prints the field offsets and the anchors' machine code, for keeping the layouts by hand. Runs on changes to `autosplitter/`, `harness/`, the probe, `traces/` or the pinned versions, on dispatch to collect the dump, and from `release.yml`. Skips pull requests from forks, which can't fetch the game files: push a reviewed fork's branch here to check it. |
-| `release.yml` | On a `v*` tag on `master`: runs `ci.yml` and `live-check.yml`, then publishes the `celeste-autosplit.dll` and `celeste_autosplit.wasm` it built and tested together. |
+| `(cd autosplitter && cargo b --release)` | the wasm module, in `autosplitter/target/wasm32-unknown-unknown/release/` |
+| `dotnet build component` | the component, in `component/CelesteAutosplit/bin/Debug/net4.8.1/`, and its tests, which copy the wasm module, so build that first |
+| `dotnet test component` | the component's tests, which run the wasm module in LiveSplit's ASR |
+| `(cd harness && cargo build --release)` | the harness, in `harness/target/release/` |
+| `dotnet build tools/probe -c Release` | the probe, in `tools/probe/bin/Release/net45/` |
+| `dotnet build tools/trace-recorder` | the trace recorder |
+| `node site/serve.mjs` | serves the site at http://localhost:8000 |
 
-The root `rust-toolchain.toml` and `global.json` pin the Rust toolchain and the .NET SDK, for local builds and the workflows alike. A change to Markdown files alone runs no workflow.
+The wasm module is built from inside `autosplitter/`, because cargo reads its
+wasm target from `autosplitter/.cargo/config.toml` only there. The component's
+build fetches LiveSplit into `component/.deps/`, and the recorder's fetches
+Everest into `tools/trace-recorder/.deps/`.
 
-Releasing:
+Running the harness needs the game: see
+[Maintaining](docs/maintaining.md#running-the-probe-and-the-harness).
 
-1. Set `<Version>` in `component/CelesteAutosplit/CelesteAutosplit.csproj`.
-2. Push a matching tag, for example `v1.0.0`.
-3. After the release is published, add the version to `update.xml` and commit it.
+## Docs
+
+- [How it works](docs/how-it-works.md): the terms, how a value gets from the
+  game to a debug variable, what the tests prove and don't, known gaps, and
+  supported versions. Start here.
+- [Maintaining](docs/maintaining.md): the testing rules, releasing, keeping the
+  layouts, bumping versions, recording traces, running things locally,
+  debugging, and CI.
+- [LiveSplit notes](docs/livesplit-notes.md): what the code relies on about
+  LiveSplit, its auto splitting runtime, the auto splitter list and the updater.
+- [Plan](docs/plan.md): what isn't built yet.
+- [traces](traces/README.md): the TAS files, the recorder, and the traces'
+  format.
+- [schema](schema/README.md): the schema's format.
