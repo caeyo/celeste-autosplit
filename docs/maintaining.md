@@ -54,7 +54,12 @@ To add a root:
    patterns for the instruction holding it, on Mono one for each width.
 3. Add an `Anchor` to `Layout`, `CLR32` and `MONO64`, and in `memory.rs`, a
    `scan!` of it in each `Runtime`, and a search like `find_save_data`.
-4. Add its values as above. If the game leaves the slot null until later, give
+4. Add the size of the root's type, for the
+   [type check](how-it-works.md#the-type-check), to `Layout`, `CLR32` and
+   `MONO64`: from the dump, the end of its last field, rounded up to 4 and plus
+   4 on `CLR32`, and rounded up to 8 on `MONO64`. A wrong size shows in the live
+   check as the root's values missing.
+5. Add its values as above. If the game leaves the slot null until later, give
    the host an object for it, as [`Host.cs`](../tools/probe/Host.cs) does for
    `SaveData.Instance`.
 
