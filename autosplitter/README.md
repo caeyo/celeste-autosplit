@@ -8,11 +8,8 @@ on every host.
 
 This auto splitter is written in Rust. In order to compile it, you need to
 install the Rust compiler: [Install Rust](https://www.rust-lang.org/tools/install).
-
-Afterwards install the WebAssembly target:
-```sh
-rustup target add wasm32-unknown-unknown --toolchain stable
-```
+The repository's `rust-toolchain.toml` pins the Rust version, with the
+WebAssembly target, and rustup installs it on first use.
 
 The auto splitter can now be compiled from this directory:
 ```sh

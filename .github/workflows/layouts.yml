@@ -34,6 +34,9 @@ on:
       - 'tools/probe/**'
       - 'traces/**'
       - '.github/workflows/layouts.yml'
+      - 'rust-toolchain.toml'
+      - 'global.json'
+      - '!**/*.md'
   pull_request_target:
     paths: *paths
   push:
@@ -79,17 +82,17 @@ jobs:
         include:
           - flavour: windows-xna
             layout: clr32
-            runner: windows-latest
+            runner: windows-2025-vs2026
           - flavour: windows-fna
             layout: clr32
-            runner: windows-latest
+            runner: windows-2025-vs2026
           - flavour: linux
             layout: mono64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
           # The game is x86_64 only: on arm64 it runs under Rosetta.
           - flavour: macos
             layout: mono64
-            runner: macos-latest
+            runner: macos-26
     steps:
       # The game's code runs in this job, so it doesn't keep the checkout's token. A fork's
       # run checks out the commit it was approved for, not the branch, which can move.
@@ -102,20 +105,18 @@ jobs:
       - name: Install .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '9.0.x'
+          global-json-file: global.json
 
       - name: Build probe
         run: dotnet build tools/probe -c Release
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+        run: rustup toolchain install --profile minimal --no-self-update
 
       # The two Windows flavours share one cache. Only ~/.cargo and the target directories
       # go into it, never the game files.
       - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
           workspaces: |
             autosplitter
@@ -151,17 +152,6 @@ jobs:
           $xna = Start-Process msiexec -ArgumentList '/i', "$env:RUNNER_TEMP\xna\xnafx40_redist.msi", '/qn', '/norestart' -Wait -PassThru
           "XNA installer exit code: $($xna.ExitCode)"
           if ($xna.ExitCode -notin 0, 3010) { exit 1 }
-
-      - name: Check x86_64 support
-        if: runner.os == 'macOS'
-        run: |
-          sw_vers
-          uname -m
-          if [ "$(uname -m)" = arm64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
-            echo "Installing Rosetta"
-            sudo softwareupdate --install-rosetta --agree-to-license
-          fi
-          arch -x86_64 /usr/bin/true && echo "x86_64 binaries run"
 
       # The probe runs as the game, the way the auto splitter will see it: the probe
       # becomes Celeste.exe, the game's own Celeste.exe moves to real/, and it starts the
@@ -266,7 +256,7 @@ jobs:
     name: Open pull request
     needs: probe
     if: github.event_name == 'workflow_dispatch' && github.ref_type == 'branch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       pull-requests: write
