@@ -1,5 +1,6 @@
 {
     "rust-analyzer.linkedProjects": [
-        "autosplitter/Cargo.toml"
+        "autosplitter/Cargo.toml",
+        "harness/Cargo.toml"
     ]
 }

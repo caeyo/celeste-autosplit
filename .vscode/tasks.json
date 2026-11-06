@@ -29,20 +29,6 @@
 		},
 		{
 			"type": "shell",
-			// Install the `cargo watch` subcommand from here:
-			// https://github.com/watchexec/cargo-watch?tab=readme-ov-file#install
-			"command": "cargo watch -x b",
-			"options": {
-				"cwd": "${workspaceFolder}/autosplitter"
-			},
-			"problemMatcher": [
-				"$rustc",
-				"$rust-panic"
-			],
-			"label": "Watch Auto Splitter"
-		},
-		{
-			"type": "shell",
 			"command": "dotnet build",
 			"options": {
 				"cwd": "${workspaceFolder}/component"
