@@ -10,18 +10,17 @@ use std::{
 use anyhow::{Context, Error, Result, anyhow, bail};
 use serde_json::Value;
 
-use crate::by_path;
+use crate::{TIMEOUT, by_path};
 
 pub struct Probe {
     child: Child,
     input: Option<ChildStdin>,
     lines: Receiver<String>,
     log: Vec<String>,
-    timeout: Duration,
 }
 
 impl Probe {
-    pub fn start(command: &[String], timeout: Duration) -> Result<Self> {
+    pub fn start(command: &[String]) -> Result<Self> {
         let mut child = Command::new(&command[0])
             .args(&command[1..])
             .arg("--replay")
@@ -38,7 +37,6 @@ impl Probe {
             child,
             lines,
             log: Vec::new(),
-            timeout,
         })
     }
 
@@ -110,7 +108,7 @@ impl Probe {
     }
 
     fn answer(&mut self) -> Result<String> {
-        let deadline = Instant::now() + self.timeout;
+        let deadline = Instant::now() + TIMEOUT;
         loop {
             let problem = match self
                 .lines
@@ -124,10 +122,9 @@ impl Probe {
                         continue;
                     }
                 },
-                Err(RecvTimeoutError::Timeout) => format!(
-                    "the probe didn't answer within {} s",
-                    self.timeout.as_secs()
-                ),
+                Err(RecvTimeoutError::Timeout) => {
+                    format!("the probe didn't answer within {} s", TIMEOUT.as_secs())
+                }
                 Err(RecvTimeoutError::Disconnected) => "the probe exited".to_owned(),
             };
             return Err(self.failure(&problem));

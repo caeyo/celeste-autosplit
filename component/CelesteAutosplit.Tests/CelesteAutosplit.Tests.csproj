@@ -1,8 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <IsPackable>false</IsPackable>
-    <IsTestProject>true</IsTestProject>
     <UseWindowsForms>true</UseWindowsForms>
 
     <PlatformTarget>x64</PlatformTarget>
@@ -20,7 +18,6 @@
 
   <ItemGroup>
     <Reference Include="LiveSplit.Core" HintPath="$(LiveSplitDir)LiveSplit.Core.dll" />
-    <Reference Include="UpdateManager" HintPath="$(LiveSplitDir)UpdateManager.dll" />
     <Reference Include="LiveSplit.AutoSplittingRuntime" HintPath="$(LiveSplitDir)Components/LiveSplit.AutoSplittingRuntime.dll" />
   </ItemGroup>
 
