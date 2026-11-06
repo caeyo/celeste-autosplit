@@ -50,6 +50,10 @@ for `Celeste.Instance`, `AutoSplitterInfo`'s object from it, at the offset the
 store holds. The value's offset leads from there. All offsets are in bytes, from
 the address a reference to the object holds.
 
+Each tick, the auto splitter reads every value, and reports them only if every
+read succeeds. The exceptions are `Level`, which goes unreported when there's no
+string, and `TotalDeaths`, which goes unreported until a file starts.
+
 `AutoSplitterInfo`'s own offset is read from the code because it comes after the
 fields of the framework's `Game` class, and Everest replaces the FNA that vanilla
 runs on, with a different one in different versions, so no layout could hold it

@@ -8,270 +8,142 @@ use crate::{
     vanilla::{Anchor, Layout, CLR32, MONO64},
 };
 
+pub struct Values {
+    pub chapter: i32,
+    pub mode: i32,
+    pub level: Option<String>,
+    pub timer_active: bool,
+    pub chapter_started: bool,
+    pub chapter_complete: bool,
+    pub chapter_time: i64,
+    pub chapter_strawberries: i32,
+    pub chapter_cassette: bool,
+    pub chapter_heart: bool,
+    pub file_time: i64,
+    pub file_strawberries: i32,
+    pub file_cassettes: i32,
+    pub file_hearts: i32,
+    pub deaths: Option<i32>,
+    pub everest: Option<EverestValues>,
+}
+
+pub struct EverestValues {
+    pub file_golden_strawberries: i32,
+    pub grabbed_golden: bool,
+    pub level_set: Option<String>,
+    pub chapter_sid: Option<String>,
+    pub is_debug: bool,
+    pub assist_mode: bool,
+    pub variants_mode: bool,
+    pub starting_new_file: bool,
+    pub file_active: bool,
+}
+
 #[expect(
     clippy::large_enum_variant,
     reason = "only one exists per attach, so its size doesn't matter"
 )]
 pub enum GameState {
-    Vanilla {
-        ptr_size: PointerSize,
-        string_len: u64,
-        string_chars: u64,
-        chapter_time: DeepPointer<3>,
-        file_time: DeepPointer<3>,
-        level: DeepPointer<3>,
-        chapter: DeepPointer<3>,
-        mode: DeepPointer<3>,
-        chapter_strawberries: DeepPointer<3>,
-        file_strawberries: DeepPointer<3>,
-        file_cassettes: DeepPointer<3>,
-        file_hearts: DeepPointer<3>,
-        timer_active: DeepPointer<3>,
-        chapter_started: DeepPointer<3>,
-        chapter_complete: DeepPointer<3>,
-        chapter_cassette: DeepPointer<3>,
-        chapter_heart: DeepPointer<3>,
-        total_deaths: DeepPointer<2>,
-    },
-    Everest {
-        info: Address,
-    },
+    Vanilla(Vanilla),
+    Everest(Everest),
 }
 
 impl GameState {
-    pub fn chapter_time(&self, process: &Process) -> Option<i64> {
+    pub fn read(&self, process: &Process) -> Option<Values> {
         match self {
-            Self::Vanilla { chapter_time, .. } => chapter_time.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::CHAPTER_TIME).ok(),
+            Self::Vanilla(vanilla) => vanilla.read(process),
+            Self::Everest(everest) => everest.read(process),
         }
     }
+}
 
-    pub fn file_time(&self, process: &Process) -> Option<i64> {
-        match self {
-            Self::Vanilla { file_time, .. } => file_time.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::FILE_TIME).ok(),
-        }
+pub struct Vanilla {
+    ptr_size: PointerSize,
+    string_len: u64,
+    string_chars: u64,
+    chapter_time: DeepPointer<3>,
+    file_time: DeepPointer<3>,
+    level: DeepPointer<3>,
+    chapter: DeepPointer<3>,
+    mode: DeepPointer<3>,
+    chapter_strawberries: DeepPointer<3>,
+    file_strawberries: DeepPointer<3>,
+    file_cassettes: DeepPointer<3>,
+    file_hearts: DeepPointer<3>,
+    timer_active: DeepPointer<3>,
+    chapter_started: DeepPointer<3>,
+    chapter_complete: DeepPointer<3>,
+    chapter_cassette: DeepPointer<3>,
+    chapter_heart: DeepPointer<3>,
+    total_deaths: DeepPointer<2>,
+}
+
+impl Vanilla {
+    fn read(&self, process: &Process) -> Option<Values> {
+        let flag = |pointer: &DeepPointer<3>| Some(pointer.deref::<u8>(process).ok()? != 0);
+        let level = self.level.deref_offsets(process).ok()?;
+        let level = process.read_pointer(level, self.ptr_size).ok()?.value();
+        Some(Values {
+            chapter: self.chapter.deref(process).ok()?,
+            mode: self.mode.deref(process).ok()?,
+            level: read_dotnet_string(process, level, self.string_len, self.string_chars),
+            timer_active: flag(&self.timer_active)?,
+            chapter_started: flag(&self.chapter_started)?,
+            chapter_complete: flag(&self.chapter_complete)?,
+            chapter_time: self.chapter_time.deref(process).ok()?,
+            chapter_strawberries: self.chapter_strawberries.deref(process).ok()?,
+            chapter_cassette: flag(&self.chapter_cassette)?,
+            chapter_heart: flag(&self.chapter_heart)?,
+            file_time: self.file_time.deref(process).ok()?,
+            file_strawberries: self.file_strawberries.deref(process).ok()?,
+            file_cassettes: self.file_cassettes.deref(process).ok()?,
+            file_hearts: self.file_hearts.deref(process).ok()?,
+            deaths: self.total_deaths.deref(process).ok(),
+            everest: None,
+        })
     }
+}
 
-    pub fn level(&self, process: &Process) -> Option<String> {
-        match self {
-            Self::Vanilla {
-                ptr_size,
-                string_len,
-                string_chars,
-                level,
-                ..
-            } => {
-                let addr = level.deref_offsets(process).ok()?;
-                let obj = process.read_pointer(addr, *ptr_size).ok()?.value();
-                read_dotnet_string(process, obj, *string_len, *string_chars)
-            }
-            Self::Everest { info } => {
-                let ptr = process.read(*info + everest::ROOM_NAME_STR_PTR).ok()?;
-                read_everest_string(process, ptr)
-            }
-        }
-    }
+pub struct Everest {
+    info: Address,
+}
 
-    pub fn chapter(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { chapter, .. } => chapter.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::CHAPTER_ID).ok(),
-        }
-    }
-
-    pub fn mode(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { mode, .. } => mode.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::CHAPTER_MODE).ok(),
-        }
-    }
-
-    pub fn chapter_strawberries(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla {
-                chapter_strawberries,
-                ..
-            } => chapter_strawberries.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::CHAPTER_STRAWBERRIES).ok(),
-        }
-    }
-
-    pub fn file_strawberries(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla {
-                file_strawberries, ..
-            } => file_strawberries.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::FILE_STRAWBERRIES).ok(),
-        }
-    }
-
-    pub fn file_cassettes(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { file_cassettes, .. } => file_cassettes.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::FILE_CASSETTES).ok(),
-        }
-    }
-
-    pub fn file_hearts(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { file_hearts, .. } => file_hearts.deref(process).ok(),
-            Self::Everest { info } => process.read(*info + everest::FILE_HEARTS).ok(),
-        }
-    }
-
-    pub fn timer_active(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { timer_active, .. } => {
-                Some(timer_active.deref::<u8>(process).ok()? != 0)
-            }
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::TIMER_ACTIVE != 0)
-            }
-        }
-    }
-
-    pub fn chapter_started(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla {
-                chapter_started, ..
-            } => Some(chapter_started.deref::<u8>(process).ok()? != 0),
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::CHAPTER_STARTED != 0)
-            }
-        }
-    }
-
-    pub fn chapter_complete(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla {
-                chapter_complete, ..
-            } => Some(chapter_complete.deref::<u8>(process).ok()? != 0),
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::CHAPTER_COMPLETE != 0)
-            }
-        }
-    }
-
-    pub fn chapter_cassette(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla {
-                chapter_cassette, ..
-            } => Some(chapter_cassette.deref::<u8>(process).ok()? != 0),
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::CHAPTER_CASSETTE != 0)
-            }
-        }
-    }
-
-    pub fn chapter_heart(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { chapter_heart, .. } => {
-                Some(chapter_heart.deref::<u8>(process).ok()? != 0)
-            }
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::CHAPTER_HEART != 0)
-            }
-        }
-    }
-
-    pub fn total_deaths(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { total_deaths, .. } => total_deaths.deref(process).ok(),
-            Self::Everest { .. } => None,
-        }
-    }
-
-    pub fn file_golden_strawberries(&self, process: &Process) -> Option<i32> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => process.read(*info + everest::FILE_GOLDEN_STRAWBERRIES).ok(),
-        }
-    }
-
-    pub fn grabbed_golden(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::CHAPTER_FLAGS).ok()?;
-                Some(flags & everest::GRABBED_GOLDEN != 0)
-            }
-        }
-    }
-
-    pub fn level_set(&self, process: &Process) -> Option<String> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let ptr = process.read(*info + everest::LEVEL_SET_STR_PTR).ok()?;
-                read_everest_string(process, ptr)
-            }
-        }
-    }
-
-    pub fn chapter_sid(&self, process: &Process) -> Option<String> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let ptr = process.read(*info + everest::CHAPTER_SID_STR_PTR).ok()?;
-                read_everest_string(process, ptr)
-            }
-        }
-    }
-
-    pub fn is_debug(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::FILE_FLAGS).ok()?;
-                Some(flags & everest::IS_DEBUG != 0)
-            }
-        }
-    }
-
-    pub fn assist_mode(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::FILE_FLAGS).ok()?;
-                Some(flags & everest::ASSIST_MODE != 0)
-            }
-        }
-    }
-
-    pub fn variants_mode(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::FILE_FLAGS).ok()?;
-                Some(flags & everest::VARIANTS_MODE != 0)
-            }
-        }
-    }
-
-    pub fn starting_new_file(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::FILE_FLAGS).ok()?;
-                Some(flags & everest::STARTING_NEW_FILE != 0)
-            }
-        }
-    }
-
-    pub fn file_active(&self, process: &Process) -> Option<bool> {
-        match self {
-            Self::Vanilla { .. } => None,
-            Self::Everest { info } => {
-                let flags: u32 = process.read(*info + everest::FILE_FLAGS).ok()?;
-                Some(flags & everest::FILE_ACTIVE != 0)
-            }
-        }
+impl Everest {
+    fn read(&self, process: &Process) -> Option<Values> {
+        let field = |offset| self.info + offset;
+        let string = |offset| read_everest_string(process, process.read(field(offset)).ok()?);
+        let chapter_flags: u32 = process.read(field(everest::CHAPTER_FLAGS)).ok()?;
+        let file_flags: u32 = process.read(field(everest::FILE_FLAGS)).ok()?;
+        Some(Values {
+            chapter: process.read(field(everest::CHAPTER_ID)).ok()?,
+            mode: process.read(field(everest::CHAPTER_MODE)).ok()?,
+            level: string(everest::ROOM_NAME_STR_PTR),
+            timer_active: chapter_flags & everest::TIMER_ACTIVE != 0,
+            chapter_started: chapter_flags & everest::CHAPTER_STARTED != 0,
+            chapter_complete: chapter_flags & everest::CHAPTER_COMPLETE != 0,
+            chapter_time: process.read(field(everest::CHAPTER_TIME)).ok()?,
+            chapter_strawberries: process.read(field(everest::CHAPTER_STRAWBERRIES)).ok()?,
+            chapter_cassette: chapter_flags & everest::CHAPTER_CASSETTE != 0,
+            chapter_heart: chapter_flags & everest::CHAPTER_HEART != 0,
+            file_time: process.read(field(everest::FILE_TIME)).ok()?,
+            file_strawberries: process.read(field(everest::FILE_STRAWBERRIES)).ok()?,
+            file_cassettes: process.read(field(everest::FILE_CASSETTES)).ok()?,
+            file_hearts: process.read(field(everest::FILE_HEARTS)).ok()?,
+            deaths: None,
+            everest: Some(EverestValues {
+                file_golden_strawberries: process
+                    .read(field(everest::FILE_GOLDEN_STRAWBERRIES))
+                    .ok()?,
+                grabbed_golden: chapter_flags & everest::GRABBED_GOLDEN != 0,
+                level_set: string(everest::LEVEL_SET_STR_PTR),
+                chapter_sid: string(everest::CHAPTER_SID_STR_PTR),
+                is_debug: file_flags & everest::IS_DEBUG != 0,
+                assist_mode: file_flags & everest::ASSIST_MODE != 0,
+                variants_mode: file_flags & everest::VARIANTS_MODE != 0,
+                starting_new_file: file_flags & everest::STARTING_NEW_FILE != 0,
+                file_active: file_flags & everest::FILE_ACTIVE != 0,
+            }),
+        })
     }
 }
 
@@ -454,7 +326,7 @@ impl Layout {
     }
 
     fn state(&self, slot: Slot, info: u64, save: Slot) -> GameState {
-        GameState::Vanilla {
+        GameState::Vanilla(Vanilla {
             ptr_size: slot.ptr_size,
             string_len: self.string_length,
             string_chars: self.string_chars,
@@ -473,7 +345,7 @@ impl Layout {
             chapter_cassette: slot.info_field(info, self.chapter_cassette),
             chapter_heart: slot.info_field(info, self.chapter_heart),
             total_deaths: save.field(self.total_deaths),
-        }
+        })
     }
 }
 
@@ -548,7 +420,7 @@ fn init_everest(process: &Process) -> Option<GameState> {
         if version < everest::CURRENT_VERSION {
             continue;
         }
-        return Some(GameState::Everest { info: base });
+        return Some(GameState::Everest(Everest { info: base }));
     }
     None
 }
