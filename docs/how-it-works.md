@@ -51,9 +51,9 @@ The game's own classes lay out the same on every flavour of a runtime, so there'
 one layout per runtime, picked by the OS. It holds where a .NET string keeps its
 length, an `i32`, and its UTF-16 characters, an anchor for each root, the store
 pattern, and each value's offset: after `AutoSplitterInfo`, or for
-`TotalDeaths`, from the object in `SaveData.Instance`'s slot. For the type
-check, it also holds the path from an object's type pointer to its type's size,
-and the sizes of `AutoSplitterInfo`, `SaveData` and `String`.
+`TotalDeaths` and `Time`, from the object in `SaveData.Instance`'s slot. For the
+type check, it also holds the path from an object's type pointer to its type's
+size, and the sizes of `AutoSplitterInfo`, `SaveData` and `String`.
 
 ### Finding `Celeste.Instance`
 
@@ -110,9 +110,24 @@ from it. A flag is a byte, true when not 0.
 - `Level` goes unpublished when there's no string, it fails the check, or it's
   over 512 characters. Its characters are read after the check, in a second
   read.
-- `Deaths`, `SaveData.TotalDeaths`, goes unpublished until a file starts, since
-  the game leaves `SaveData.Instance` null until then, and on a tick its object
-  fails the check.
+- `Deaths`, `SaveData.TotalDeaths`, goes unpublished while `SaveData.Instance`
+  is null, and on a tick its object fails the check.
+- `Starting New File` is true while the save's `Time` is 0, false while
+  `SaveData.Instance` is null, and unpublished on a tick the save fails the
+  check, so a garbage read can't make it rise again.
+
+### A new file
+
+The game leaves `SaveData.Instance` null from launch until a file starts, and
+after that clears it only before PICO-8, so a save in the slot doesn't mean a
+file has just started. Starting a new file puts a new save there, with a `Time`
+of 0, in the same update that closes the file select and disables Madeline on
+the mountain. Its `Time` stays 0 until the Prologue's timer starts, when she
+first moves, while a file that's continued has played for longer.
+`AutoSplitterInfo.FileTime` can't tell a new file from no save: it's `Time`, or
+0 without a save.
+
+Everest's `Starting New File` is its own flag, which its file select sets.
 
 ### The type check
 
@@ -169,8 +184,7 @@ and each field's offset against Everest's explicit ones.
   `AutoSplitter.OnUpdateInfo`, and sets it back to 3. A tick whose copy holds
   0xff, or that reads 0xff right after copying, publishes nothing, so the last
   values stay. When attaching, a struct holding 0xff is skipped without a log.
-- It has values vanilla doesn't, such as `Starting New File` and `Chapter SID`,
-  and no `Deaths`.
+- It has values vanilla doesn't, such as `Chapter SID`, and no `Deaths`.
 
 Started with `--vanilla`, Everest runs the vanilla game on its own FNA, without
 the struct, so the auto splitter reads it as vanilla. Before .NET Core, Everest
@@ -191,13 +205,14 @@ in the game's own runtime, and loads the game from `real/Celeste.exe`.
   field tables from a Live check run: one per Windows flavour, and one for Linux
   and macOS, which are identical.
 - `host` runs the class constructors, compiles each anchor, and constructs the
-  game. `SaveData.Instance`, null until a file starts, gets an uninitialized
-  object of the probe's own. Then it prints `probe: ready`, and reads sets of
-  values until its input ends: a `root path=value` line per value, then an empty
-  line. Each field of the path is looked up in the object's class or its nearest
-  base class with it, and the value is parsed as the last field's type: `true` or
-  `false`, a whole number, or for a string, the rest of the line. The host writes
-  each line through reflection, and prints `probe: written` after each set.
+  game. Then it prints `probe: ready`, and reads sets of values until its input
+  ends: a `root path=value` line per value, or `root=null` to make a root null,
+  then an empty line. Each field of the path is looked up in the object's class or
+  its nearest base class with it, and the value is parsed as the last field's
+  type: `true` or `false`, a whole number, or for a string, the rest of the line.
+  A root holding null, as `SaveData.Instance` does until a file starts, first
+  gets an uninitialized object of the probe's own. The host writes each line
+  through reflection, and prints `probe: written` after each set.
 - On a failure, either prints why, then `probe: failed`, and exits with 1, or
   with 2 for a bad command.
 
@@ -230,13 +245,17 @@ Why it's built as it is:
 The [harness](../harness/) starts the probe with `host`, so the probe's process
 has the game's name, and the auto splitter, which the harness runs, attaches to
 it. `PATHS` in the harness lists every value the auto splitter reads on vanilla:
-its root, path, type and debug variable. The harness sends the probe a set of
-values, the probe writes them into the game, and the harness updates the auto
-splitter once. The debug variables must then be exactly the values the game
-holds, none missing and none extra.
+its root, path, type and debug variable, if it has one of its own. The harness
+sends the probe a set of values, the probe writes them into the game, and the
+harness updates the auto splitter once. The debug variables must then be exactly
+the values the game holds, none missing and none extra, with none for a null
+root, and `Starting New File` 1 exactly when the save's `Time` is 0.
 
 - **The live check** sends a distinctive value for every path, then the same
-  with every number negated and every flag flipped, then each flag set alone.
+  with every number negated and every flag flipped, then each flag set alone,
+  then no save, then a save whose `Time` is 0, then only `Time`'s high half set.
+  `Time` is only published through `Starting New File`, so a wrong field or
+  width shows in those last two.
   Every number and string has a value of its own, spread over all its bytes, so
   reading the wrong field, or the wrong width, shows in every field. Two swapped
   flags would agree when flipped together, so each is also set alone.
@@ -263,10 +282,7 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
   the transcription, and nothing checks the 0xff marker.
 - Vanilla on Everest's FNA, with `--vanilla`: checked once by hand on Windows,
   with Everest `stable-1.4449.0` and `stable-1.6662.0`.
-- Values neither check writes, such as the smallest and largest numbers. The
-  traces don't record `TotalDeaths`: only the live check writes it.
-- `SaveData.Instance` holding null: the probe always holds a save, so nothing
-  checks that `Deaths` goes unpublished without one.
+- Values neither check writes, such as the smallest and largest numbers.
 - Code the game doesn't have: a second match of a signature, or a 4-byte
   reference pattern matching inside an 8-byte one.
 - Reads during the game's update, or during a garbage collection: the probe's
@@ -280,10 +296,11 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
 
 - **Garbage the type check can't see.** An object of another type with the
   same size, where a garbage collection left a reference, would pass the check.
-  So would a string moved between reading its length and its characters.
-- **No new-file signal on vanilla.** Only Everest's struct has `Starting New
-  File`. `SaveData.Instance` is read only for `Deaths` so far: splitting will
-  need a source.
+  So would a string moved between reading its length and its characters. In
+  `SaveData.Instance`'s slot, with 0 where `Time` is, such an object would make
+  `Starting New File` rise.
+- **A file saved before its timer started.** On vanilla, continuing it reads as
+  a new file, since its `Time` is still 0.
 - **No splitting.** Nothing starts, splits or resets, and nothing reads settings.
   The component has no settings editor or migration, the website is a stub, and
   nothing reads the schema.

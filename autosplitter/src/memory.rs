@@ -27,6 +27,7 @@ pub struct Values {
     pub file_cassettes: i32,
     pub file_hearts: i32,
     pub deaths: Option<i32>,
+    pub starting_new_file: Option<bool>,
     pub everest: Option<EverestValues>,
 }
 
@@ -38,7 +39,6 @@ pub struct EverestValues {
     pub is_debug: bool,
     pub assist_mode: bool,
     pub variants_mode: bool,
-    pub starting_new_file: bool,
     pub file_active: bool,
 }
 
@@ -74,7 +74,13 @@ impl Vanilla {
         let save = process
             .read_pointer(self.save_data, layout.pointer_size)
             .ok()
-            .and_then(|save| self.object(process, save, layout.save_data_size));
+            .and_then(|save| {
+                if save.is_null() {
+                    Some(None)
+                } else {
+                    self.object(process, save, layout.save_data_size).map(Some)
+                }
+            });
         Some(Values {
             chapter: value(&info, layout.chapter)?,
             mode: value(&info, layout.mode)?,
@@ -90,7 +96,14 @@ impl Vanilla {
             file_strawberries: value(&info, layout.file_strawberries)?,
             file_cassettes: value(&info, layout.file_cassettes)?,
             file_hearts: value(&info, layout.file_hearts)?,
-            deaths: save.and_then(|save| value(&save, layout.total_deaths)),
+            deaths: save
+                .as_ref()
+                .and_then(Option::as_ref)
+                .and_then(|save| value(save, layout.total_deaths)),
+            starting_new_file: save.as_ref().and_then(|save| match save {
+                None => Some(false),
+                Some(save) => value::<i64>(save, layout.save_time).map(|time| time == 0),
+            }),
             everest: None,
         })
     }
@@ -176,6 +189,7 @@ impl Everest {
             file_cassettes: info.file_cassettes,
             file_hearts: info.file_hearts,
             deaths: None,
+            starting_new_file: Some(file(everest::STARTING_NEW_FILE)),
             everest: Some(EverestValues {
                 file_golden_strawberries: info.file_golden_strawberries,
                 grabbed_golden: chapter(everest::GRABBED_GOLDEN),
@@ -184,7 +198,6 @@ impl Everest {
                 is_debug: file(everest::IS_DEBUG),
                 assist_mode: file(everest::ASSIST_MODE),
                 variants_mode: file(everest::VARIANTS_MODE),
-                starting_new_file: file(everest::STARTING_NEW_FILE),
                 file_active: file(everest::FILE_ACTIVE),
             }),
         })
