@@ -12,6 +12,7 @@ see [Maintaining](../docs/maintaining.md#recording-a-trace).
 |---|---|
 | `prologue` | A new file through the Prologue: from the title screen, through starting a new file and the Prologue, to the overworld. |
 | `forsaken-city` | A new file through the Prologue, then Forsaken City as the community's All Hearts route plays it: the A-side through both checkpoints, its crystal heart, after which the TAS saves and quits and goes on, and its cassette, then back to the map; the B-side to its end; then a restart of the B-side. |
+| `summit` | The Summit from its last checkpoint, loaded with `console load`: its end, the credits, and the start of the Epilogue. |
 
 ## TAS files
 
@@ -27,7 +28,15 @@ for what the community's don't play. A TAS file:
   Commit it with the trace: a time that changes on a later recording means the
   TAS played differently;
 - never fast-forwards or pauses: no `***` breakpoints. CelesteTAS doesn't update
-  the auto splitter's values while it fast-forwards.
+  the auto splitter's values while it fast-forwards;
+- starts with `Unsafe` if it leaves a level without `StartFullGameFile`, whose
+  `SelectCampaign` sets it: otherwise CelesteTAS stops it outside a level.
+
+`summit` loads the point the community's `7A.tas` names for its last checkpoint,
+`3000M`, rather than playing the whole chapter. `console load` plays on
+CelesteTAS's own save slot, which it starts with a `Time` of 0, so `new_file`
+fires there. Community files that save and quit, such as `1HC`, play only on a
+real file.
 
 ## The recorder
 
@@ -152,3 +161,13 @@ the table says otherwise:
 |---|---|
 | `b-side` | `side: 1` splits in frame 11502, at that frame's `FileTime`. |
 | `other-side` | `side: 0` doesn't split. |
+
+`summit`'s start on completing chapter 7, in frame 7960, where `ChapterComplete`
+rises in room `g-03`, at that frame's `FileTime`. It rises again in frame 8376, in
+`credits-summit`. Editors offer `chapter_complete` only for splits, but no other
+start comes between the two, and the timer has one segment:
+
+| Scenario | Checks |
+|---|---|
+| `credits` | `chapter_complete` with `chapter: 7` doesn't split in the credits. |
+| `credits-any-chapter` | `chapter_complete` without a `chapter` splits in frame 8376, at that frame's `FileTime`. |
