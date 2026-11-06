@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-asr = { git = "https://github.com/LiveSplit/asr", features = [
+asr = { git = "https://github.com/LiveSplit/asr", rev = "a7ecee85abad7263bfa2150d3821f3d2ea69fe84", features = [
     "alloc",
     "flags",
     "integer-vars",
