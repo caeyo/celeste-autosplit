@@ -11,6 +11,7 @@ on:
       - '.github/workflows/ci.yml'
       - 'rust-toolchain.toml'
       - 'global.json'
+      - 'tools/trace-recorder/**'
       - '!**/*.md'
   push:
     branches:
@@ -24,6 +25,7 @@ on:
       - '.github/workflows/ci.yml'
       - 'rust-toolchain.toml'
       - 'global.json'
+      - 'tools/trace-recorder/**'
       - '!**/*.md'
   workflow_call:
 
@@ -110,3 +112,19 @@ jobs:
           name: component
           path: component/CelesteAutosplit/bin/Release/net4.8.1/celeste-autosplit.dll
           if-no-files-found: error
+
+  recorder:
+    name: Build the trace recorder
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Build trace recorder
+        run: dotnet build tools/trace-recorder
