@@ -23,7 +23,7 @@ logic yet: that, and its settings, are in the [plan](plan.md).
 | Pattern | The bytes before a value in code, the value's width, 4 or 8 bytes, least significant first, and the bytes after it, with `None` for any byte. |
 | Reference pattern | A pattern for the instruction after the signature that holds the slot's address. |
 | Store pattern | A pattern for the instruction before `Celeste.Instance`'s signature that stores the game's new `AutoSplitterInfo`, and holds that field's offset. |
-| Window | How far from the signature a pattern is searched, the whole match inside: `REFERENCE_WINDOW`, 256 bytes after it, and `auto_splitter_info_store_window`, 128 bytes before it. |
+| Window | How far from the signature a pattern is searched, after or before it, the whole match inside: `WINDOW`, 256 bytes. |
 | Everest's struct | `CoreAutoSplitterInfo`, which Everest writes into memory of its own each update, for auto splitters. |
 | Debug variable | A value as the auto splitter publishes it: a custom variable such as `Chapter`, named in [`lib.rs`](../autosplitter/src/lib.rs). |
 | Tick | One update of the auto splitter by its host: 120 a second by default. |

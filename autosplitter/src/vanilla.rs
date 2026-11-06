@@ -1,6 +1,6 @@
 use asr::PointerSize;
 
-pub const REFERENCE_WINDOW: u64 = 256;
+pub const WINDOW: u64 = 256;
 
 pub struct Pattern {
     pub before: &'static [Option<u8>],
@@ -19,7 +19,6 @@ pub struct Layout {
     pub string_chars: u64,
     pub celeste_instance: Anchor,
     pub auto_splitter_info_store: Pattern,
-    pub auto_splitter_info_store_window: u64,
     pub save_data_instance: Anchor,
     pub chapter: u64,
     pub mode: u64,
@@ -55,7 +54,6 @@ pub const CLR32: Layout = Layout {
         width: 4,
         after: &[Some(0xe8)],
     },
-    auto_splitter_info_store_window: 128,
     save_data_instance: Anchor {
         signature: "75 06 33 c9 33 d2 eb 09 8b 47 2c 8b 48 04 8b 50 08 89 4e 04 89 56 08",
         references: &[Pattern {
@@ -105,7 +103,6 @@ pub const MONO64: Layout = Layout {
         width: 4,
         after: &[],
     },
-    auto_splitter_info_store_window: 128,
     save_data_instance: Anchor {
         signature: "75 04 33 ed eb 0b 49 8b 46 58 48 8b a8 98 00 00 00 49 89 6c 24 28",
         references: &[
