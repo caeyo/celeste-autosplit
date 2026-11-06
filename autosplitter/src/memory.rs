@@ -110,38 +110,40 @@ pub struct Everest {
 
 impl Everest {
     fn read(&self, process: &Process) -> Option<Values> {
-        let field = |offset| self.info + offset;
-        let string = |offset| read_everest_string(process, process.read(field(offset)).ok()?);
-        let chapter_flags: u32 = process.read(field(everest::CHAPTER_FLAGS)).ok()?;
-        let file_flags: u32 = process.read(field(everest::FILE_FLAGS)).ok()?;
+        let info: everest::CoreAutoSplitterInfo = process.read(self.info).ok()?;
+        let version: u8 = process.read(self.info + everest::INFO_VERSION).ok()?;
+        if info.info_version == everest::UPDATING_VERSION || version == everest::UPDATING_VERSION {
+            return None;
+        }
+        let string = |ptr| read_everest_string(process, ptr);
+        let chapter = |flag| info.chapter_flags & flag != 0;
+        let file = |flag| info.file_flags & flag != 0;
         Some(Values {
-            chapter: process.read(field(everest::CHAPTER_ID)).ok()?,
-            mode: process.read(field(everest::CHAPTER_MODE)).ok()?,
-            level: string(everest::ROOM_NAME_STR_PTR),
-            timer_active: chapter_flags & everest::TIMER_ACTIVE != 0,
-            chapter_started: chapter_flags & everest::CHAPTER_STARTED != 0,
-            chapter_complete: chapter_flags & everest::CHAPTER_COMPLETE != 0,
-            chapter_time: process.read(field(everest::CHAPTER_TIME)).ok()?,
-            chapter_strawberries: process.read(field(everest::CHAPTER_STRAWBERRIES)).ok()?,
-            chapter_cassette: chapter_flags & everest::CHAPTER_CASSETTE != 0,
-            chapter_heart: chapter_flags & everest::CHAPTER_HEART != 0,
-            file_time: process.read(field(everest::FILE_TIME)).ok()?,
-            file_strawberries: process.read(field(everest::FILE_STRAWBERRIES)).ok()?,
-            file_cassettes: process.read(field(everest::FILE_CASSETTES)).ok()?,
-            file_hearts: process.read(field(everest::FILE_HEARTS)).ok()?,
+            chapter: info.chapter_id,
+            mode: info.chapter_mode,
+            level: string(info.room_name_str_ptr),
+            timer_active: chapter(everest::TIMER_ACTIVE),
+            chapter_started: chapter(everest::CHAPTER_STARTED),
+            chapter_complete: chapter(everest::CHAPTER_COMPLETE),
+            chapter_time: info.chapter_time,
+            chapter_strawberries: info.chapter_strawberries,
+            chapter_cassette: chapter(everest::CHAPTER_CASSETTE),
+            chapter_heart: chapter(everest::CHAPTER_HEART),
+            file_time: info.file_time,
+            file_strawberries: info.file_strawberries,
+            file_cassettes: info.file_cassettes,
+            file_hearts: info.file_hearts,
             deaths: None,
             everest: Some(EverestValues {
-                file_golden_strawberries: process
-                    .read(field(everest::FILE_GOLDEN_STRAWBERRIES))
-                    .ok()?,
-                grabbed_golden: chapter_flags & everest::GRABBED_GOLDEN != 0,
-                level_set: string(everest::LEVEL_SET_STR_PTR),
-                chapter_sid: string(everest::CHAPTER_SID_STR_PTR),
-                is_debug: file_flags & everest::IS_DEBUG != 0,
-                assist_mode: file_flags & everest::ASSIST_MODE != 0,
-                variants_mode: file_flags & everest::VARIANTS_MODE != 0,
-                starting_new_file: file_flags & everest::STARTING_NEW_FILE != 0,
-                file_active: file_flags & everest::FILE_ACTIVE != 0,
+                file_golden_strawberries: info.file_golden_strawberries,
+                grabbed_golden: chapter(everest::GRABBED_GOLDEN),
+                level_set: string(info.level_set_str_ptr),
+                chapter_sid: string(info.chapter_sid_str_ptr),
+                is_debug: file(everest::IS_DEBUG),
+                assist_mode: file(everest::ASSIST_MODE),
+                variants_mode: file(everest::VARIANTS_MODE),
+                starting_new_file: file(everest::STARTING_NEW_FILE),
+                file_active: file(everest::FILE_ACTIVE),
             }),
         })
     }
@@ -402,33 +404,34 @@ pub async fn wait_attach() -> Process {
     retry(|| PROCESS_NAMES.iter().find_map(|&name| Process::attach(name))).await
 }
 
-fn init_everest(process: &Process) -> Option<GameState> {
+#[derive(Clone, Copy, PartialEq)]
+pub enum Failure {
+    NotFound,
+    EverestVersion(u8),
+}
+
+fn init_everest(process: &Process) -> Result<GameState, Failure> {
+    let mut failure = Failure::NotFound;
     for region in process.memory_ranges() {
         let Ok(base) = region.address() else {
             continue;
         };
-        let mut magic = [0u8; everest::MAGIC_BYTES.len()];
-        if process.read_into_slice(base, &mut magic).is_err() {
-            continue;
-        }
-        if magic != everest::MAGIC_BYTES {
-            continue;
-        }
-        let Ok(version) = process.read::<u8>(base + everest::INFO_VERSION) else {
+        let Ok(info) = process.read::<everest::CoreAutoSplitterInfo>(base) else {
             continue;
         };
-        if version < everest::CURRENT_VERSION {
+        if info.magic != everest::MAGIC_BYTES {
             continue;
         }
-        return Some(GameState::Everest(Everest { info: base }));
+        match info.info_version {
+            everest::CURRENT_VERSION => return Ok(GameState::Everest(Everest { info: base })),
+            everest::UPDATING_VERSION => {}
+            version => failure = Failure::EverestVersion(version),
+        }
     }
-    None
+    Err(failure)
 }
 
-pub fn init(process: &Process) -> Option<GameState> {
-    if let Some(state) = init_everest(process) {
-        return Some(state);
-    }
+fn init_vanilla(process: &Process) -> Option<GameState> {
     let os = asr::get_os().ok()?;
     let runtime = RUNTIMES
         .iter()
@@ -436,4 +439,8 @@ pub fn init(process: &Process) -> Option<GameState> {
     let (slot, info) = find_instance(process, runtime)?;
     let save = find_save_data(process, runtime)?;
     Some(runtime.layout.state(slot, info, save))
+}
+
+pub fn init(process: &Process) -> Result<GameState, Failure> {
+    init_everest(process).or_else(|failure| init_vanilla(process).ok_or(failure))
 }
