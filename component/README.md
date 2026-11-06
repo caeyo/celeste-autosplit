@@ -32,7 +32,6 @@ with ASR's native library and the wasm under `Components\`, and a hidden form
 stands in for LiveSplit's UI thread. The tests check that:
 
 - ASR loads the module, and settings round-trip exactly through the native runtime;
-- `Dispose` stops the runtime;
 - a missing wasm, a wasm ASR can't load, and a LiveSplit without ASR are each
   reported, with the settings kept.
 

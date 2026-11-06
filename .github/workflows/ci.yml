@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - 'autosplitter/**'
+      - 'layouts/**'
+      - 'harness/**'
+      - 'component/**'
+      - 'schema/**'
+      - '.github/workflows/ci.yml'
+  push:
+    branches:
+      - 'master'
+    paths:
+      - 'autosplitter/**'
+      - 'layouts/**'
+      - 'harness/**'
+      - 'component/**'
+      - 'schema/**'
+      - '.github/workflows/ci.yml'
+  workflow_call:
+
+jobs:
+  lint:
+    name: Check formatting and clippy lints
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust build
+        if: github.ref_type != 'tag'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: harness
+
+      - name: Run cargo fmt
+        working-directory: autosplitter
+        run: cargo fmt -- --check
+
+      - name: Run cargo fmt on the harness
+        if: github.ref_type != 'tag'
+        working-directory: harness
+        run: cargo fmt -- --check
+
+      - name: Run Clippy
+        working-directory: autosplitter
+        run: cargo clippy --all-features -- -D warnings
+
+      - name: Run Clippy on the harness
+        if: github.ref_type != 'tag'
+        working-directory: harness
+        run: cargo clippy --locked -- -D warnings
+
+  build:
+    name: Build and test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v7
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: component/global.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: autosplitter
+
+      - name: Build wasm module
+        working-directory: autosplitter
+        run: cargo b --release --locked
+
+      - name: Build component
+        working-directory: component
+        run: dotnet build -c Release
+
+      - name: Test component
+        working-directory: component
+        run: dotnet test -c Release --no-build
+
+      - name: Upload wasm module
+        uses: actions/upload-artifact@v7
+        with:
+          name: autosplitter
+          path: autosplitter/target/wasm32-unknown-unknown/release/celeste_autosplit.wasm
+          if-no-files-found: error
+
+      - name: Upload component
+        uses: actions/upload-artifact@v7
+        with:
+          name: component
+          path: component/CelesteAutosplit/bin/Release/net4.8.1/celeste-autosplit.dll
+          if-no-files-found: error

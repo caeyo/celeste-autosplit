@@ -35,11 +35,6 @@ public sealed class LiveSplitHost : IDisposable
 
     public LiveSplitHost()
     {
-        if (!Environment.Is64BitProcess)
-        {
-            throw new InvalidOperationException("ASR only runs wasm modules in 64-bit processes.");
-        }
-
         string wasmPath = Path.Combine(BasePath, "Components", CelesteAutosplitComponent.WasmFileName);
         if (!File.Exists(wasmPath))
         {
