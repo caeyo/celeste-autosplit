@@ -15,11 +15,16 @@ pub struct Anchor {
 
 pub struct Layout {
     pub pointer_size: PointerSize,
+    pub type_size_path: &'static [u64],
+    pub size_before_object: u32,
+    pub string_size: u32,
     pub string_length: u64,
     pub string_chars: u64,
     pub celeste_instance: Anchor,
     pub auto_splitter_info_store: Pattern,
     pub save_data_instance: Anchor,
+    pub auto_splitter_info_size: u32,
+    pub save_data_size: u32,
     pub chapter: u64,
     pub mode: u64,
     pub level: u64,
@@ -39,6 +44,9 @@ pub struct Layout {
 
 pub const CLR32: Layout = Layout {
     pointer_size: PointerSize::Bit32,
+    type_size_path: &[0x4],
+    size_before_object: 0x4,
+    string_size: 0xe,
     string_length: 0x4,
     string_chars: 0x8,
     celeste_instance: Anchor {
@@ -62,6 +70,8 @@ pub const CLR32: Layout = Layout {
             after: &[Some(0x85), Some(0xc9)],
         }],
     },
+    auto_splitter_info_size: 0x3c,
+    save_data_size: 0x80,
     chapter: 0x18,
     mode: 0x1c,
     level: 0x14,
@@ -81,6 +91,9 @@ pub const CLR32: Layout = Layout {
 
 pub const MONO64: Layout = Layout {
     pointer_size: PointerSize::Bit64,
+    type_size_path: &[0x0, 0x1c],
+    size_before_object: 0x0,
+    string_size: 0x18,
     string_length: 0x10,
     string_chars: 0x14,
     celeste_instance: Anchor {
@@ -118,6 +131,8 @@ pub const MONO64: Layout = Layout {
             },
         ],
     },
+    auto_splitter_info_size: 0x50,
+    save_data_size: 0xb0,
     chapter: 0x18,
     mode: 0x1c,
     level: 0x10,
