@@ -1,0 +1,13 @@
+Read,community/StartFullGameFile
+Read,community/0 - Prologue,Start
+Read,community/LoadANoCollects,Prologue
+Read,community/1HC,Start,Return
+Read,community/LoadBFromA
+Read,community/1B,Start
+
+#Restart
+   1,Q
+   1,J
+  50
+
+FileTime: 2:39.324(9372)
