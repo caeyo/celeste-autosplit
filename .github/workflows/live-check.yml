@@ -10,6 +10,7 @@ on:
     paths: &paths
       - 'autosplitter/**'
       - 'harness/**'
+      - 'schema/**'
       - 'tools/probe/**'
       - 'traces/**'
       - '.github/workflows/live-check.yml'

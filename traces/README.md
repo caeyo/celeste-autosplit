@@ -5,8 +5,8 @@ and `Time`, update by update, while CelesteTAS plays a TAS through it: what the
 auto splitter reads. Each `<name>.jsonl` is recorded from the
 `<name>.tas` next to it. They hold values only, nothing from the game's files.
 The harness replays every trace through the real game, on every vanilla
-flavour, in the Live check. To record one, see
-[Maintaining](../docs/maintaining.md#recording-a-trace).
+flavour, in the Live check, and then its [scenarios](#scenarios). To record one,
+see [Maintaining](../docs/maintaining.md#recording-a-trace).
 
 | Trace | What it covers |
 |---|---|
@@ -113,3 +113,33 @@ update that its timers run.
 A trace has more lines than its TAS has input frames. CelesteTAS doesn't count the
 updates in which the game is loading or saving, but the game still updates, and so
 does what the auto splitter reads.
+
+## Scenarios
+
+A scenario, `<trace>.<scenario>.json` next to its trace, holds a settings map and
+the timer events the auto splitter must give with it while the trace is
+replayed, as [How it works](../docs/how-it-works.md#what-the-tests-prove)
+describes. Its events are written by hand from reading the trace, never from the
+auto splitter's output. It's an object with two keys:
+
+- `settings`, the whole settings map: objects are maps, arrays lists, and numbers
+  `i64`. `null` isn't allowed.
+- `events`, every start and split, in order, each an object with the `frame` of
+  the trace it happens in, the `event`, `start` or `split`, and the `game_time`
+  in ticks of 100 ns, as the trace's times are, or `null` for none. Frame 0 also
+  holds what happens while the auto splitter attaches. The timer has one
+  segment, so a split ends the run.
+
+All of `prologue`'s start a new file and split on completing chapter 0, unless
+the table says otherwise:
+
+| Scenario | Checks |
+|---|---|
+| `chapter-complete` | `new_file` starts in frame 265, where the save appears, at a file time of 0, and `chapter_complete` splits in frame 1942, where `ChapterComplete` rises, at that frame's `FileTime`. |
+| `chapter-exit` | `timing: "chapter_exit"` and `side: 0` split in frame 1974, where `ChapterComplete` falls and `Mode` becomes -1, so the side is the previous tick's. |
+| `other-chapter` | `chapter: 1` doesn't split. |
+| `empty` | An empty `cfg` neither starts nor splits. |
+| `invalid-value` | `timing: "chapter_end"`, a value not allowed, makes the split manual, and `start` still applies. |
+| `invalid-type` | `chapter: "0"`, a string, makes the split manual. |
+| `invalid-kind` | `kind: "Chapter_Complete"`, a kind that differs only in case, makes the split manual. |
+| `newer` | `schema_version` 2 neither starts nor splits. |

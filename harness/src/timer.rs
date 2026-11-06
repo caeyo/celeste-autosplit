@@ -5,15 +5,21 @@ use std::{
 };
 
 use livesplit_auto_splitting::{LogLevel, Timer as AutoSplitTimer, TimerState, time};
-use livesplit_core::{Run, Segment, Timer, TimerPhase};
+use livesplit_core::{Run, Segment, TimeSpan, Timer, TimerPhase};
 
 #[derive(Clone)]
 pub struct HarnessTimer(Arc<Mutex<Recorded>>);
+
+pub enum Event {
+    Start,
+    Split(Option<TimeSpan>),
+}
 
 struct Recorded {
     timer: Timer,
     variables: BTreeMap<String, String>,
     log: Vec<String>,
+    events: Vec<Event>,
 }
 
 impl HarnessTimer {
@@ -27,6 +33,7 @@ impl HarnessTimer {
             timer,
             variables: BTreeMap::new(),
             log: Vec::new(),
+            events: Vec::new(),
         })))
     }
 
@@ -44,6 +51,14 @@ impl HarnessTimer {
 
     pub fn log(&self) -> Vec<String> {
         self.lock().log.clone()
+    }
+
+    pub fn take_events(&self) -> Vec<Event> {
+        std::mem::take(&mut self.lock().events)
+    }
+
+    pub fn game_time(&self) -> Option<TimeSpan> {
+        self.lock().timer.snapshot().current_time().game_time
     }
 }
 
@@ -79,11 +94,20 @@ impl AutoSplitTimer for HarnessTimer {
     }
 
     fn start(&mut self) {
-        let _ = self.lock().timer.start();
+        let mut recorded = self.lock();
+        if recorded.timer.start().is_ok() {
+            recorded.events.push(Event::Start);
+        }
     }
 
     fn split(&mut self) {
-        let _ = self.lock().timer.split();
+        let mut recorded = self.lock();
+        let index = recorded.timer.current_split_index();
+        if recorded.timer.split().is_ok() {
+            let segment = index.and_then(|index| recorded.timer.run().segments().get(index));
+            let time = segment.and_then(|segment| segment.split_time().game_time);
+            recorded.events.push(Event::Split(time));
+        }
     }
 
     fn skip_split(&mut self) {

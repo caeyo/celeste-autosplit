@@ -104,7 +104,8 @@ build, or on Linux, the Linux build. The first run takes a couple of minutes and
 a display: Xvfb works. A hung game is stopped after 30 minutes, or by its
 process ID. The trace, `traces/prologue.jsonl` here, is replaced only once the
 recorder says it's complete. Commit it with its TAS file, and list a new one in
-[traces/README.md](../traces/README.md).
+[traces/README.md](../traces/README.md). Recording again can shift its frames
+and times, so read its scenarios' events again from the new trace.
 
 ## Running the probe and the harness
 
@@ -130,13 +131,14 @@ harness/target/release/harness traces/*.jsonl -- <folder>/Celeste.exe host
 <folder>/Celeste.exe dump
 ```
 
-The harness prints `ok` for the live check and each trace, or the differences
-and the auto splitter's log, and exits with 1. If the probe fails or hangs, it
-prints the probe's log. It waits 120 s for each answer, or 5 s for the probe to
-exit after an error. An auto splitting runtime updated by hand has no watchdog,
-so an update that hangs hangs the harness. It reads the wasm module from
-`autosplitter/target/`: build it without `CARGO_TARGET_DIR`. Started from a
-terminal, `host` keeps the game until its input ends, so the asr-debugger can
+The harness runs each trace's [scenarios](../traces/README.md#scenarios) after
+its replay, and prints `ok` for the live check, each trace and each scenario, or
+the differences and the auto splitter's log, and exits with 1. If the probe fails
+or hangs, it prints the probe's log. It waits 120 s for each answer, or 5 s for
+the probe to exit after an error. An auto splitting runtime updated by hand has
+no watchdog, so an update that hangs hangs the harness. It reads the wasm module
+from `autosplitter/target/`: build it without `CARGO_TARGET_DIR`. Started from
+a terminal, `host` keeps the game until its input ends, so the asr-debugger can
 read it while you type values in.
 
 Stop a stray probe by its process ID, never by name. Local timings come with
@@ -196,7 +198,7 @@ settings show its status, and DebugView shows the log.
 | Workflow | Runs |
 |---|---|
 | `ci.yml` | clippy and fmt on both crates, failing on any warning; on Windows, builds the wasm module and the component, and runs the component's tests; on Linux, builds the trace recorder. On changes to `autosplitter/`, `harness/`, `component/`, `schema/`, `tools/trace-recorder/`, `rust-toolchain.toml` or `global.json`. |
-| `live-check.yml` | on each vanilla flavour: the live check, the replay of every trace, then the dump. On changes to `autosplitter/`, `harness/`, `tools/probe/`, `traces/`, `rust-toolchain.toml` or `global.json`, and on dispatch. |
+| `live-check.yml` | on each vanilla flavour: the live check, the replay of every trace with its scenarios, then the dump. On changes to `autosplitter/`, `harness/`, `schema/`, `tools/probe/`, `traces/`, `rust-toolchain.toml` or `global.json`, and on dispatch. |
 | `release.yml` | on a `v*` tag: both of the above, then the release. |
 | `site.yml` | on pushes to `master` that change `site/` or `schema/`, and on dispatch: deploys `site/`, with the schema, to GitHub Pages. |
 

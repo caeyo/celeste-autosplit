@@ -1,0 +1,10 @@
+{
+  "settings": {
+    "schema_version": 2,
+    "cfg": {
+      "start": { "kind": "new_file" },
+      "splits": [{ "kind": "chapter_complete", "chapter": 0 }]
+    }
+  },
+  "events": []
+}

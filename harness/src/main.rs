@@ -11,10 +11,14 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use livesplit_auto_splitting::{AutoSplitter, CompiledAutoSplitter, Config, Runtime};
+use livesplit_auto_splitting::{AutoSplitter, CompiledAutoSplitter, Config, Runtime, settings};
+use livesplit_core::TimeSpan;
 use serde_json::Value;
 
-use crate::{probe::Probe, timer::HarnessTimer};
+use crate::{
+    probe::Probe,
+    timer::{Event, HarnessTimer},
+};
 
 const USAGE: &str = "usage: harness [TRACE...] -- COMMAND...";
 
@@ -83,6 +87,12 @@ type Changes = BTreeMap<usize, Value>;
 
 type Trace = Vec<Changes>;
 
+struct Scenario {
+    file: PathBuf,
+    settings: settings::Map,
+    events: Vec<String>,
+}
+
 fn main() -> ExitCode {
     let args = env::args().skip(1).collect::<Vec<_>>();
     let options = match parse(&args) {
@@ -142,10 +152,15 @@ fn run(options: &Options) -> Result<bool> {
         .iter()
         .map(|file| read_trace(file).with_context(|| format!("reading {}", file.display())))
         .collect::<Result<Vec<_>>>()?;
+    let scenarios = options
+        .traces
+        .iter()
+        .map(|file| scenarios(file))
+        .collect::<Result<Vec<_>>>()?;
     let compiled = Runtime::new(Config::default())?.compile(&wasm)?;
 
     let mut probe = Probe::start(&options.command)?;
-    let checked = check(&mut probe, &compiled, &traces, options);
+    let checked = check(&mut probe, &compiled, &traces, &scenarios, options);
     let wait = match checked {
         Ok(_) => TIMEOUT,
         Err(_) => Duration::from_secs(5),
@@ -162,6 +177,7 @@ fn check(
     probe: &mut Probe,
     compiled: &CompiledAutoSplitter,
     traces: &[Trace],
+    scenarios: &[Vec<Scenario>],
     options: &Options,
 ) -> Result<bool> {
     probe.ready()?;
@@ -174,22 +190,10 @@ fn check(
         .collect::<Changes>();
     probe.write(&samples)?;
     let mut held = samples.into_values().collect::<Vec<_>>();
-    let module = Module::new(compiled)?;
-
-    let deadline = Instant::now() + TIMEOUT;
-    let read = loop {
-        let read = match module.update() {
-            Ok(read) => read,
-            Err(problem) => return failed("live check: FAILED", &[problem], &module),
-        };
-        if !read.is_empty() {
-            break read;
-        }
-        if Instant::now() >= deadline {
-            let problem = "the auto splitter reported nothing".to_owned();
-            return failed("live check: FAILED", &[problem], &module);
-        }
-        thread::sleep(Duration::from_millis(10));
+    let module = Module::new(compiled, None)?;
+    let read = match attach(&module) {
+        Ok(read) => read,
+        Err(problem) => return failed("live check: FAILED", &[problem], &module),
     };
     let problems = differences(&expected(&held), &read);
     if !problems.is_empty() {
@@ -238,7 +242,7 @@ fn check(
         read.len()
     );
 
-    for (trace, file) in traces.iter().zip(&options.traces) {
+    for ((trace, file), scenarios) in traces.iter().zip(&options.traces).zip(scenarios) {
         for (frame, changes) in trace.iter().enumerate() {
             let problems = replay_frame(probe, &module, &mut held, changes)
                 .with_context(|| format!("frame {frame} of {}", file.display()))?;
@@ -252,8 +256,71 @@ fn check(
             trace.len(),
             file.display()
         );
+        for scenario in scenarios {
+            if !run_scenario(probe, compiled, trace, scenario)? {
+                return Ok(false);
+            }
+        }
     }
     Ok(true)
+}
+
+fn run_scenario(
+    probe: &mut Probe,
+    compiled: &CompiledAutoSplitter,
+    trace: &Trace,
+    scenario: &Scenario,
+) -> Result<bool> {
+    let name = scenario.file.display();
+    let heading = format!("scenario: FAILED, {name}");
+    probe.write(&trace[0])?;
+    let module = Module::new(compiled, Some(scenario.settings.clone()))?;
+    if let Err(problem) = attach(&module) {
+        return failed(&heading, &[problem], &module);
+    }
+    let mut events = timer_events(&module, 0);
+    for (frame, changes) in trace.iter().enumerate().skip(1) {
+        probe
+            .write(changes)
+            .with_context(|| format!("frame {frame} of {name}"))?;
+        if let Err(problem) = module.update() {
+            let heading = format!("{heading}, at frame {frame}");
+            return failed(&heading, &[problem], &module);
+        }
+        events.extend(timer_events(&module, frame));
+    }
+    if events != scenario.events {
+        let mut problems = vec!["expected:".to_owned()];
+        problems.extend(scenario.events.iter().map(|event| format!("  {event}")));
+        problems.push("read:".to_owned());
+        problems.extend(events.iter().map(|event| format!("  {event}")));
+        return failed(&heading, &problems, &module);
+    }
+    println!("scenario: ok, the timer gets the events of {name}");
+    Ok(true)
+}
+
+fn timer_events(module: &Module, frame: usize) -> Vec<String> {
+    let after = module.timer.game_time();
+    let events = module.timer.take_events().into_iter().map(|event| {
+        let (event, time) = match event {
+            Event::Start => ("start", after),
+            Event::Split(time) => ("split", time),
+        };
+        describe(frame as u64, event, time.map(ticks))
+    });
+    events.collect()
+}
+
+fn ticks(time: TimeSpan) -> i64 {
+    (time.to_duration().whole_milliseconds() * 10_000) as i64
+}
+
+fn describe(frame: u64, event: &str, game_time: Option<i64>) -> String {
+    match game_time {
+        Some(time) => format!("frame {frame}: {event}, game time {time}"),
+        None => format!("frame {frame}: {event}, no game time"),
+    }
 }
 
 fn replay_frame(
@@ -311,9 +378,9 @@ struct Module {
 }
 
 impl Module {
-    fn new(compiled: &CompiledAutoSplitter) -> Result<Self> {
+    fn new(compiled: &CompiledAutoSplitter, settings: Option<settings::Map>) -> Result<Self> {
         let timer = HarnessTimer::new();
-        let auto_splitter = compiled.instantiate(timer.clone(), None, None)?;
+        let auto_splitter = compiled.instantiate(timer.clone(), settings, None)?;
         Ok(Self {
             auto_splitter,
             timer,
@@ -330,6 +397,116 @@ impl Module {
             )),
         }
     }
+}
+
+fn attach(module: &Module) -> Result<BTreeMap<String, String>, String> {
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let read = module.update()?;
+        if !read.is_empty() {
+            return Ok(read);
+        }
+        if Instant::now() >= deadline {
+            return Err("the auto splitter reported nothing".to_owned());
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn scenarios(trace: &Path) -> Result<Vec<Scenario>> {
+    let name = trace.file_stem().context("a trace without a name")?;
+    let prefix = format!("{}.", name.to_string_lossy());
+    let dir = trace.parent().filter(|dir| !dir.as_os_str().is_empty());
+    let mut files = Vec::new();
+    for entry in fs::read_dir(dir.unwrap_or(Path::new(".")))? {
+        let file = entry?.path();
+        let name = file.file_name().unwrap_or_default().to_string_lossy();
+        let scenario = name.strip_prefix(&prefix);
+        let scenario = scenario.and_then(|rest| rest.strip_suffix(".json"));
+        if scenario.is_some_and(|scenario| !scenario.is_empty() && !scenario.contains('.')) {
+            files.push(file);
+        }
+    }
+    files.sort();
+    let scenarios = files
+        .into_iter()
+        .map(|file| read_scenario(&file).with_context(|| format!("reading {}", file.display())));
+    scenarios.collect()
+}
+
+fn read_scenario(file: &Path) -> Result<Scenario> {
+    let text = fs::read_to_string(file)?;
+    let scenario: serde_json::Map<String, Value> = serde_json::from_str(&text)?;
+    let mut settings = None;
+    let mut events = None;
+    for (key, value) in &scenario {
+        match key.as_str() {
+            "settings" => settings = Some(setting(value)?),
+            "events" => {
+                let list = value.as_array().context("events isn't a list")?;
+                events = Some(
+                    list.iter()
+                        .map(expected_event)
+                        .collect::<Result<Vec<_>>>()?,
+                );
+            }
+            _ => bail!("unexpected {key}"),
+        }
+    }
+    let Some(settings::Value::Map(settings)) = settings else {
+        bail!("no settings, or settings that aren't an object");
+    };
+    Ok(Scenario {
+        file: file.to_owned(),
+        settings,
+        events: events.context("no events")?,
+    })
+}
+
+fn expected_event(event: &Value) -> Result<String> {
+    let event = event.as_object().context("an event that isn't an object")?;
+    let keys = ["frame", "event", "game_time"];
+    if let Some(key) = event.keys().find(|&key| !keys.contains(&key.as_str())) {
+        bail!("unexpected {key} in an event");
+    }
+    let frame = event.get("frame").and_then(Value::as_u64);
+    let frame = frame.context("an event without a frame")?;
+    let name = event.get("event").and_then(Value::as_str);
+    let name = name
+        .filter(|name| ["start", "split"].contains(name))
+        .context("an event that isn't start or split")?;
+    let time = event
+        .get("game_time")
+        .context("an event without a game_time")?;
+    if !time.is_null() && !time.is_i64() {
+        bail!("a game_time that isn't a whole number or null");
+    }
+    Ok(describe(frame, name, time.as_i64()))
+}
+
+fn setting(value: &Value) -> Result<settings::Value> {
+    Ok(match value {
+        Value::Bool(flag) => settings::Value::Bool(*flag),
+        Value::Number(number) => {
+            settings::Value::I64(number.as_i64().context("a number that isn't an i64")?)
+        }
+        Value::String(text) => settings::Value::String(text.as_str().into()),
+        Value::Array(items) => {
+            let mut list = settings::List::new();
+            for item in items {
+                list.push(setting(item)?);
+            }
+            settings::Value::List(list)
+        }
+        Value::Object(entries) => {
+            let mut map = settings::Map::new();
+            for (key, value) in entries {
+                map.insert(key.as_str().into(), setting(value)?);
+            }
+            settings::Value::Map(map)
+        }
+        Value::Null => bail!("a setting can't be null"),
+    })
 }
 
 fn read_trace(file: &Path) -> Result<Trace> {

@@ -1,8 +1,9 @@
 # How it works
 
 The auto splitter is a wasm module that attaches to Celeste, reads its memory
-each tick, and publishes what it reads as debug variables. It has no splitting
-logic yet: that, and its settings, are in the [plan](plan.md).
+each tick, publishes what it reads as debug variables, and starts and splits the
+timer as its settings say. Some triggers and timing methods aren't built yet:
+they, and the settings' editors, are in the [plan](plan.md).
 
 ## Terms
 
@@ -29,8 +30,9 @@ logic yet: that, and its settings, are in the [plan](plan.md).
 | Tick | One update of the auto splitter by its host: 120 a second by default. |
 | Update | One update of the game, a frame: 60 a second. |
 | Probe | [`tools/probe/`](../tools/probe/), which poses as the game in its own runtime. |
-| Live check, replay | The harness's two checks, [below](#what-the-tests-prove). |
+| Live check, replay, scenario | The harness's three checks, [below](#what-the-tests-prove). |
 | Trace | A recording of the game's values, update by update, while a TAS plays: see [traces](../traces/README.md). |
+| Trigger | A map in the settings saying when to start or split, such as `{kind: "new_file"}`. |
 
 ## Attaching
 
@@ -190,6 +192,121 @@ Started with `--vanilla`, Everest runs the vanilla game on its own FNA, without
 the struct, so the auto splitter reads it as vanilla. Before .NET Core, Everest
 does so in a second AppDomain of its own process, which works the same.
 
+## Settings
+
+[`schema/settings-schema.json`](../schema/settings-schema.json) defines the keys,
+their defaults, the trigger kinds and their fields, the presets and the
+chapters' checkpoints, in the format [schema/README.md](../schema/README.md)
+describes.
+
+| Top-level key | Type | Written by | Purpose |
+|---|---|---|---|
+| `schema_version` | i64 | editors; the module when migrating | The version of `cfg`'s layout. |
+| `cfg` | map | editors | Every real setting. |
+| `legacy` | map | the component, when migrating | The legacy settings, verbatim, for migrating again and debugging. |
+| `_ui_*` | title widgets | the module | Reserved for the module's own widgets, since widget keys and map keys share one namespace. |
+
+In `cfg`:
+
+- `start` is the trigger that starts the timer, and `splits[i]` the one that
+  ends segment `i`, bound by position to the timer's current split index,
+  `asr::timer::current_split_index`, so manual splits, skips and undos keep it
+  aligned. Segments past the list's end are split by hand, and extra entries are
+  ignored.
+- `timing_method`: `file` is the save file's time. It's the only one built.
+- `high_priority` and `set_game_time` are the component's alone, and the module
+  ignores them.
+- An empty `cfg` does nothing but report game time.
+
+A new optional key, trigger kind or field doesn't bump `schema_version`.
+Renames, removals and changes of meaning do.
+
+### Reading them
+
+[`build.rs`](../autosplitter/build.rs) reads the schema when the module is built,
+with `serde_json` as a build dependency, so no JSON parser ends up in the wasm.
+It generates `schema.rs`, which [`settings.rs`](../autosplitter/src/settings.rs)
+includes: `SCHEMA_VERSION`; an enum of the trigger kinds, with the fields each
+requires and takes; an enum of the fields, with which are Everest-only and what
+they replace; an enum for each setting or field with string values, such as
+`TimingMethod` and `Timing`, defaulting to the schema's default; the other
+defaults and allowed values; and each chapter's ID and checkpoint rooms. A shape
+of schema it doesn't know fails the build, and so does a new field, until
+`settings.rs` reads it.
+
+The module loads the map once attached, then every 120 ticks, about once a
+second, and when the timer resets. It parses `schema_version` and `cfg` only when
+their debug text differs from the last parsed, so each problem is logged once
+per change. It never writes the map.
+
+- A missing key means its default. `gui::add_bool` returns a default without
+  writing it, so the map only holds what someone set.
+- A `schema_version` newer than the module's means `cfg` may mean something else,
+  so the module logs it and ignores `cfg`: nothing starts or splits. An older
+  one, or one that isn't a number, is logged and read as the module's.
+- A setting of the wrong type or with a value not allowed falls back to its
+  default, and is logged.
+- A trigger that isn't a map, has no `kind` or an unknown one, lacks a required
+  field, or has a field of the wrong type or with a value not allowed, behaves
+  like `manual`, so an older module treats a newer kind as `manual`. The module
+  logs it. `chapter` takes any ID from 0 up, modded ones included, and `-1`
+  only for the kinds that allow it; `checkpoint` takes the numbers of its chapter's checkpoints.
+- Keys the module doesn't know, in `cfg` or in a trigger, are ignored, and so are
+  fields a trigger's kind doesn't take. An Everest-only field, `sid`, is ignored
+  while `everest` is off.
+- Not built yet, and so logged and read as their defaults: a trigger of a kind
+  other than those [below](#splitting), or with a `sid` while `everest` is on,
+  is `manual`; a `timing_method` other than `file` is `file`; `auto_reset` is
+  off.
+
+## Splitting
+
+[`splitter.rs`](../autosplitter/src/splitter.rs) runs each tick after the
+values are read, and does nothing on a tick that read none. It keeps the
+previous tick's values in asr's watchers.
+
+- While the timer isn't running, if `start` fires, it starts the timer and sets
+  game time.
+- While it's running or paused, it sets game time, then splits if the trigger
+  for the current split index fires. The tick that starts the timer doesn't
+  check splits.
+- Once the run has ended, it does nothing.
+
+| `kind` | Fires when |
+|---|---|
+| `manual` | never |
+| `unknown` | never. Only migration makes it, and editors flag it. |
+| `new_file` | a new save file is started: `Starting New File` rises |
+| `chapter_complete` | the chapter is completed (`timing: "chapter_complete"`, the default), or the game leaves the completed chapter (`timing: "chapter_exit"`) |
+
+`chapter` is the game's chapter ID, not its number: 9 is Core, chapter 8, and
+10 is Farewell, chapter 9. Higher IDs are modded. An absent optional field matches anything:
+`{kind: "chapter_complete"}` is any chapter.
+
+These rules keep parity with the legacy component, so none has a setting:
+
+- `chapter_complete` arms on the rising edge of `ChapterComplete` in the
+  matching chapter. With `timing: "chapter_complete"` it fires at once; with
+  `"chapter_exit"`, when `ChapterComplete` falls again, in any chapter, which can
+  be on another frame than the chapter ID changing. In chapter 7, it arms only in
+  a room whose name isn't empty and doesn't start with `credits`, ignoring case,
+  except without a `chapter`, as legacy does. The side matched is the previous
+  tick's, when it fires. It disarms on every tick the split index differs from
+  the one it armed for, as legacy does on a split, skip, undo or reset.
+- Game time is the file time, `FileTime`, set every tick while the run is in
+  progress, except on a tick where it drops to 0, which keeps the game time
+  before. It's paused whenever `FileTime` hasn't changed since the previous
+  tick, so it runs on between ticks only while the game's timer does.
+
+These deviate from legacy on purpose:
+
+| Legacy | Now | Who notices |
+|---|---|---|
+| A chapter split whose side doesn't match when it fires stays armed, so a later chapter's completion can split it | It disarms | Runners with a side on a chapter split, who complete that chapter on another side first. |
+| A new-file start fires whenever `Starting New File` is true, so after a reset it starts again at once while the value stays true | `new_file` fires when it rises | Runners who reset just after starting a new file. |
+
+The module uses only asr functions every host's auto splitting runtime has.
+
 ## The probe
 
 [`tools/probe/`](../tools/probe/) is installed as the game's `Celeste.exe`, runs
@@ -261,6 +378,16 @@ root, and `Starting New File` 1 exactly when the save's `Time` is 0.
   flags would agree when flipped together, so each is also set alone.
 - **The replay** then sends each line of each trace: its changes, over all the
   values before. A path that isn't in `PATHS` fails.
+- **The scenarios** follow each trace's replay, one per scenario file next to
+  it, as [traces](../traces/README.md#scenarios) describes. A new auto splitter,
+  with the scenario's settings map and a fresh `Timer`, attaches while the game
+  holds the trace's first frame, then the trace is replayed through it. The
+  starts and splits the `Timer` gets, their frames, and their game times must be
+  exactly the scenario's, which are written by hand from the trace. A split's
+  game time is the split time the run records, and a start's the game time once
+  its tick ends. They're compared to the millisecond: the game's times are whole
+  milliseconds, and while game time isn't paused, livesplit-core runs it on in
+  real time, a few microseconds past what the module set.
 
 The live check catches layout mistakes whatever traces there are, and the replay
 adds the values only real play produces, such as empty strings. On all four
@@ -271,7 +398,11 @@ each OS. A wrong size in the type check fails it: the values of that object go
 missing. It rests on the game's own runtime
 and one comparison per update, with no stand-in for the game. The auto splitter
 runs on livesplit-core's own `Timer`, pinned with the auto splitting runtime to
-one revision in `harness/Cargo.toml`.
+one revision in `harness/Cargo.toml`. The scenarios add that the module reads its
+settings from that auto splitting runtime's map, and, in the Prologue, starts on
+a new file and splits on its completion, with both timings, on the frames and at
+the game times the trace gives, and doesn't with an empty, invalid or newer
+`cfg`, or another chapter.
 
 The [component's tests](livesplit-notes.md#the-components-tests) prove that
 LiveSplit's ASR loads the wasm module and keeps its settings.
@@ -291,6 +422,15 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
 - Reading at the tick rate: the harness ticks once per line of a trace, once
   per update of the game.
 - Detaching and attaching again after 10 failed searches.
+- Pausing game time: the harness ticks once per update, back to back, and the
+  module sets game time every tick, so whether it runs on between ticks doesn't
+  show.
+- Loading the settings again, once a second and on a reset: a scenario's map
+  never changes. Nor what the module logs.
+- What no trace has: the chapter 7 `credits` rule, disarming when the split
+  index changes, a side that doesn't match, and game time keeping its value when
+  `FileTime` drops to 0.
+- Splitting in LiveSplit: the component's tests don't run the game.
 
 ## Known gaps
 
@@ -301,9 +441,9 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
   `Starting New File` rise.
 - **A file saved before its timer started.** On vanilla, continuing it reads as
   a new file, since its `Time` is still 0.
-- **No splitting.** Nothing starts, splits or resets, and nothing reads settings.
-  The component has no settings editor or migration, the website is a stub, and
-  nothing reads the schema.
+- **Splitting is partial.** Only the triggers [above](#splitting) and the `file`
+  timing method are built, and nothing resets. The component has no settings
+  editor or migration, and the website is a stub.
 
 ## Supported versions
 
