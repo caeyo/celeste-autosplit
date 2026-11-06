@@ -33,11 +33,10 @@ See each folder's README for details.
 
 | Workflow | Runs |
 |---|---|
-| `autosplitter.yml` | Builds the wasm module, and runs clippy and fmt on both Rust crates (the auto splitter and the harness), failing on any warning. On changes to `autosplitter/`, `layouts/` or `harness/`. |
-| `component.yml` | Build and test on Windows on changes to `component/`, `schema/`, `autosplitter/` or `layouts/` (the tests run the wasm module). |
+| `ci.yml` | Runs clippy and fmt on both Rust crates (the auto splitter and the harness), failing on any warning. On Windows, builds the wasm module, then builds the component and runs its tests, which run the wasm module. On changes to `autosplitter/`, `layouts/`, `harness/`, `component/` or `schema/`. |
 | `site.yml` | Deploys `site/` (plus the schema) to GitHub Pages on pushes to `master`. |
 | `layouts.yml` | Runs the probe against each vanilla flavour's real game files, which come from a private repository. Then the harness runs the wasm module, built with the layout the probe wrote, against the game the probe constructs: the live check, then the replay of every trace. On dispatch, it then opens a pull request with the regenerated layouts. It also runs for pull requests that change `autosplitter/`, `layouts/`, `harness/`, the probe or `traces/`, and fails them if a committed layout isn't the one the probe writes. A pull request from a fork waits until a maintainer approves the run in the `game-files` environment: review its code first, since it runs with the game files and the token that fetches them. |
-| `release.yml` | On a `v*` tag: builds both, then publishes `celeste-autosplit.dll` and `celeste_autosplit.wasm` together. |
+| `release.yml` | On a `v*` tag on `master`: runs `ci.yml`, then publishes the `celeste-autosplit.dll` and `celeste_autosplit.wasm` it built and tested together. |
 
 Releasing:
 

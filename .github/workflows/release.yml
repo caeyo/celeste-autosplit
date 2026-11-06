@@ -13,21 +13,26 @@ permissions:
   contents: read
 
 jobs:
-  autosplitter:
-    uses: ./.github/workflows/autosplitter.yml
-
-  component:
-    uses: ./.github/workflows/component.yml
+  ci:
+    uses: ./.github/workflows/ci.yml
 
   release:
     name: Publish release
-    needs: [autosplitter, component]
+    needs: ci
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout Commit
         uses: actions/checkout@v7
+
+      - name: Check the tag is on master
+        run: |
+          git fetch --no-tags origin master
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::Tag $GITHUB_REF_NAME isn't on master"
+            exit 1
+          fi
 
       - name: Check version
         run: |
@@ -46,13 +51,8 @@ jobs:
           merge-multiple: true
 
       - name: Release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            dist/celeste-autosplit.dll
-            dist/celeste_autosplit.wasm
-          fail_on_unmatched_files: true
-          make_latest: true
-          generate_release_notes: true
-          body: |
-            Built against LiveSplit ${{ env.LIVESPLIT_VERSION }}.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/celeste-autosplit.dll dist/celeste_autosplit.wasm \
+            --verify-tag --latest --generate-notes --notes "Built against LiveSplit $LIVESPLIT_VERSION."
