@@ -1,8 +1,8 @@
 # traces
 
-Recordings of the real game's `AutoSplitterInfo`, update by update, while
-CelesteTAS plays a TAS through it. That's what the auto splitter reads, but for
-`TotalDeaths`, which they don't record. Each `<name>.jsonl` is recorded from the
+Recordings of the real game's `AutoSplitterInfo` and its save's `TotalDeaths`
+and `Time`, update by update, while CelesteTAS plays a TAS through it: what the
+auto splitter reads. Each `<name>.jsonl` is recorded from the
 `<name>.tas` next to it. They hold values only, nothing from the game's files.
 The harness replays every trace through the real game, on every vanilla
 flavour, in the Live check. To record one, see
@@ -84,17 +84,26 @@ sets at the start of that update, from the state the previous update left, which
 auto splitter reads until the next. It has:
 
 - `frame`: the update's number, from 0.
-- `roots`: every field of the game's `AutoSplitterInfo`, by root and path as
-  the [probe's host](../docs/how-it-works.md#the-probe) takes them: strings,
-  numbers and booleans.
+- `roots`: every field of the game's `AutoSplitterInfo`, and `TotalDeaths` and
+  `Time` from the save in `SaveData.Instance`, by root and path as the
+  [probe's host](../docs/how-it-works.md#the-probe) takes them: strings, numbers
+  and booleans. A root holding null is `null`.
 
 Each line only holds the values that changed since the previous line, and the first
-holds them all. A line without changes has only its `frame`:
+holds them all, as does a line where a root stops holding null. A line without
+changes has only its `frame`. In `prologue`, the new file's save appears in frame
+265, and the timers start running in frame 432:
+
+```json
+{"frame":264}
+{"frame":265,"roots":{"Celeste.SaveData::Instance":{"TotalDeaths":0,"Time":0}}}
+{"frame":266}
+```
 
 ```json
 {"frame":430}
 {"frame":431,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.Chapter":0,"AutoSplitterInfo.Mode":0,"AutoSplitterInfo.Level":"0","AutoSplitterInfo.TimerActive":true,"AutoSplitterInfo.ChapterStarted":true}}}
-{"frame":432,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.FileTime":170000}}}
+{"frame":432,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.FileTime":170000},"Celeste.SaveData::Instance":{"Time":170000}}}
 ```
 
 Times are in ticks of 100 ns. The game adds 17 ms, 170,000 ticks, to them each
