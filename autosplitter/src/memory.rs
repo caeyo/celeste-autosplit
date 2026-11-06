@@ -7,7 +7,7 @@ use asr::{
 
 use crate::{
     everest,
-    vanilla::{Anchor, Layout, Pattern, CLR32, MONO64},
+    vanilla::{Anchor, Layout, Pattern, CLR32, MONO64, REFERENCE_WINDOW},
 };
 
 pub struct Values {
@@ -239,69 +239,39 @@ fn signature_ends<const N: usize>(
         .collect()
 }
 
-#[derive(Clone, Copy)]
-struct Slot {
-    address: Address,
-    ptr_size: PointerSize,
-}
-
-impl Slot {
-    fn field(self, field: u64) -> DeepPointer<2> {
-        DeepPointer::new(self.address, self.ptr_size, &[0, field])
-    }
-
-    fn info_field(self, info: u64, field: u64) -> DeepPointer<3> {
-        DeepPointer::new(self.address, self.ptr_size, &[0, info, field])
-    }
-}
-
-fn find_instance(process: &Process, runtime: &Runtime) -> Option<(Slot, u64)> {
+fn find_instance(process: &Process, runtime: &Runtime) -> Option<(Address, u64)> {
     let layout = runtime.layout;
     scan_executable(process, |(start, size)| {
         let end = start.value() + size;
         (runtime.scan_instance)(process, (start, size))
             .into_iter()
             .find_map(|code| {
-                let slot =
-                    layout
-                        .celeste_instance
-                        .read_slot(process, layout.pointer_size, code, end)?;
+                let slot = layout.celeste_instance.read_slot(process, code, end)?;
                 let info = layout.read_info_store(process, code, start)?;
                 layout.has_info(process, slot, info).then_some((slot, info))
             })
     })
 }
 
-fn find_save_data(process: &Process, runtime: &Runtime) -> Option<Slot> {
+fn find_save_data(process: &Process, runtime: &Runtime) -> Option<Address> {
     let layout = runtime.layout;
     scan_executable(process, |(start, size)| {
         let end = start.value() + size;
         (runtime.scan_save_data)(process, (start, size))
             .into_iter()
-            .find_map(|code| {
-                layout
-                    .save_data_instance
-                    .read_slot(process, layout.pointer_size, code, end)
-            })
+            .find_map(|code| layout.save_data_instance.read_slot(process, code, end))
     })
 }
 
 impl Anchor {
-    fn read_slot(
-        &self,
-        process: &Process,
-        ptr_size: PointerSize,
-        code: Address,
-        end: u64,
-    ) -> Option<Slot> {
-        let len = self.reference_window.min(end - code.value());
+    fn read_slot(&self, process: &Process, code: Address, end: u64) -> Option<Address> {
+        let len = REFERENCE_WINDOW.min(end - code.value());
         let code = process.read_vec::<u8>(code, len as usize).ok()?;
-        let address = (0..code.len()).find_map(|start| {
+        (0..code.len()).find_map(|start| {
             self.references
                 .iter()
                 .find_map(|reference| match_pattern(reference, &code[start..]))
-        })?;
-        Some(Slot { address, ptr_size })
+        })
     }
 }
 
@@ -320,8 +290,16 @@ impl Layout {
             .map(|offset| offset.value())
     }
 
-    fn has_info(&self, process: &Process, slot: Slot, info: u64) -> bool {
-        let Ok(field) = slot.field(info).deref_offsets(process) else {
+    fn field(&self, slot: Address, field: u64) -> DeepPointer<2> {
+        DeepPointer::new(slot, self.pointer_size, &[0, field])
+    }
+
+    fn info_field(&self, slot: Address, info: u64, field: u64) -> DeepPointer<3> {
+        DeepPointer::new(slot, self.pointer_size, &[0, info, field])
+    }
+
+    fn has_info(&self, process: &Process, slot: Address, info: u64) -> bool {
+        let Ok(field) = self.field(slot, info).deref_offsets(process) else {
             return false;
         };
         process
@@ -329,26 +307,26 @@ impl Layout {
             .is_ok_and(|object| !object.is_null())
     }
 
-    fn state(&self, slot: Slot, info: u64, save: Slot) -> GameState {
+    fn state(&self, slot: Address, info: u64, save: Address) -> GameState {
         GameState::Vanilla(Vanilla {
-            ptr_size: slot.ptr_size,
+            ptr_size: self.pointer_size,
             string_len: self.string_length,
             string_chars: self.string_chars,
-            chapter_time: slot.info_field(info, self.chapter_time),
-            file_time: slot.info_field(info, self.file_time),
-            level: slot.info_field(info, self.level),
-            chapter: slot.info_field(info, self.chapter),
-            mode: slot.info_field(info, self.mode),
-            chapter_strawberries: slot.info_field(info, self.chapter_strawberries),
-            file_strawberries: slot.info_field(info, self.file_strawberries),
-            file_cassettes: slot.info_field(info, self.file_cassettes),
-            file_hearts: slot.info_field(info, self.file_hearts),
-            timer_active: slot.info_field(info, self.timer_active),
-            chapter_started: slot.info_field(info, self.chapter_started),
-            chapter_complete: slot.info_field(info, self.chapter_complete),
-            chapter_cassette: slot.info_field(info, self.chapter_cassette),
-            chapter_heart: slot.info_field(info, self.chapter_heart),
-            total_deaths: save.field(self.total_deaths),
+            chapter_time: self.info_field(slot, info, self.chapter_time),
+            file_time: self.info_field(slot, info, self.file_time),
+            level: self.info_field(slot, info, self.level),
+            chapter: self.info_field(slot, info, self.chapter),
+            mode: self.info_field(slot, info, self.mode),
+            chapter_strawberries: self.info_field(slot, info, self.chapter_strawberries),
+            file_strawberries: self.info_field(slot, info, self.file_strawberries),
+            file_cassettes: self.info_field(slot, info, self.file_cassettes),
+            file_hearts: self.info_field(slot, info, self.file_hearts),
+            timer_active: self.info_field(slot, info, self.timer_active),
+            chapter_started: self.info_field(slot, info, self.chapter_started),
+            chapter_complete: self.info_field(slot, info, self.chapter_complete),
+            chapter_cassette: self.info_field(slot, info, self.chapter_cassette),
+            chapter_heart: self.info_field(slot, info, self.chapter_heart),
+            total_deaths: self.field(save, self.total_deaths),
         })
     }
 }
