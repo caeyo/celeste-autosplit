@@ -34,8 +34,7 @@ public class TraceRecorderModule : EverestModule
     private int updatesWithoutTas;
     private ulong lastFrameCounter;
     private readonly Dictionary<string, object?> vanilla = new();
-    private readonly Dictionary<string, object?> save = new();
-    private bool saveWasNull;
+    private Dictionary<string, object?>? save = new();
     private long? startFileTime;
     private long fileTime;
 
@@ -125,14 +124,15 @@ public class TraceRecorderModule : EverestModule
         SaveData? saveData = SaveData.Instance;
         if (saveData == null)
         {
-            if (!saveWasNull)
+            if (save != null)
             {
                 roots[SaveRoot] = null;
             }
-            save.Clear();
+            save = null;
         }
         else
         {
+            save ??= new();
             Dictionary<string, object?> saveChanges = Changes(save, new Dictionary<string, object?>
             {
                 ["TotalDeaths"] = saveData.TotalDeaths,
@@ -143,7 +143,6 @@ public class TraceRecorderModule : EverestModule
                 roots[SaveRoot] = saveChanges;
             }
         }
-        saveWasNull = saveData == null;
         if (roots.Count > 0)
         {
             line["roots"] = roots;

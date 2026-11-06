@@ -206,10 +206,22 @@ fn check(
         frames.push((format!("only {} set", PATHS[flag].1), alone.collect()));
     }
     let save = (0..PATHS.len()).filter(|&i| PATHS[i].0 == SAVE_DATA);
+    let time = position(SAVE_DATA, "Time").unwrap();
     let no_save = save.clone().map(|i| (i, Value::Null)).collect();
-    let new_file = save.map(|i| (i, 0.into())).collect();
+    let time_zero = save
+        .map(|i| {
+            let value = if i == time {
+                0.into()
+            } else {
+                PATHS[i].2.sample(i as i64 + 1)
+            };
+            (i, value)
+        })
+        .collect();
+    let high_half = Changes::from([(time, (0x0101_0101_i64 << 32).into())]);
     frames.push(("no save".to_owned(), no_save));
-    frames.push(("a new file".to_owned(), new_file));
+    frames.push(("a save whose Time is 0".to_owned(), time_zero));
+    frames.push(("only Time's high half set".to_owned(), high_half));
     for (frame, changes) in &frames {
         let problems = replay_frame(probe, &module, &mut held, changes)
             .with_context(|| format!("the live check, with {frame}"))?;
@@ -222,7 +234,7 @@ fn check(
         }
     }
     println!(
-        "live check: ok, the auto splitter reports the {} values the harness wrote, flipped, each flag alone, no save, and a new file",
+        "live check: ok, the auto splitter reports the {} values the harness wrote, flipped, each flag alone, no save, a save whose Time is 0, and only Time's high half set",
         read.len()
     );
 
@@ -353,12 +365,11 @@ fn by_path(roots: &Value) -> Result<Changes> {
     let mut changes = Changes::new();
     for (root, paths) in roots.as_object().context("no roots")? {
         if paths.is_null() {
-            let nulls = (0..PATHS.len()).filter(|&i| PATHS[i].0 == root);
-            let count = changes.len();
-            changes.extend(nulls.map(|i| (i, Value::Null)));
-            if changes.len() == count {
+            if !PATHS.iter().any(|&(r, _, _, _)| r == root) {
                 bail!("{root} isn't one of the harness's roots");
             }
+            let nulls = (0..PATHS.len()).filter(|&i| PATHS[i].0 == root);
+            changes.extend(nulls.map(|i| (i, Value::Null)));
             continue;
         }
         for (path, value) in paths.as_object().context("a root with no paths")? {

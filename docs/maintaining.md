@@ -41,8 +41,10 @@ To read another value of a root:
    [`lib.rs`](../autosplitter/src/lib.rs).
 3. Add its root, path, kind and debug variable to `PATHS` in the
    [harness](../harness/src/main.rs), or `None` for a value published only
-   through another, as `Time` is through `Starting New File`, which `expected`
-   then works out. The host can write a string, a `bool`, an `int` or a `long`.
+   through another, as `Time` is through `Starting New File`. Then add what it
+   publishes to `expected`, and live check frames that a wrong field or width
+   fails, as `Time` has. The host can write a string, a `bool`, an `int` or a
+   `long`.
 
 To add a root:
 
@@ -61,7 +63,8 @@ To add a root:
    4 on `CLR32`, and rounded up to 8 on `MONO64`. A wrong size shows in the live
    check as the root's values missing.
 5. Add its values as above. The host gives a root holding null an object of its
-   own when a value is first written to it.
+   own when a value is first written to it. If the game leaves the slot null at
+   times, add live check frames with it null, as `SaveData.Instance` has.
 
 ## Bumping versions
 

@@ -102,7 +102,7 @@ impl Vanilla {
                 .and_then(|save| value(save, layout.total_deaths)),
             starting_new_file: save.as_ref().and_then(|save| match save {
                 None => Some(false),
-                Some(save) => Some(value::<i64>(save, layout.save_time)? == 0),
+                Some(save) => value::<i64>(save, layout.save_time).map(|time| time == 0),
             }),
             everest: None,
         })
