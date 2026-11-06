@@ -137,8 +137,6 @@ These rules keep parity with the legacy component, so none has a setting:
 - `chapter_enter` and `chapter_exit` with a `side` need the side to change too.
 - `room_enter` and `room_exit` fire only inside a chapter.
 - Game time is paused whenever its value doesn't change.
-- Reads during a garbage collection can be garbage, as
-  [Known gaps](how-it-works.md#known-gaps) says, and rising edges have to cope.
 
 ## The component
 

@@ -51,7 +51,9 @@ The game's own classes lay out the same on every flavour of a runtime, so there'
 one layout per runtime, picked by the OS. It holds where a .NET string keeps its
 length, an `i32`, and its UTF-16 characters, an anchor for each root, the store
 pattern, and each value's offset: after `AutoSplitterInfo`, or for
-`TotalDeaths`, from the object in `SaveData.Instance`'s slot.
+`TotalDeaths`, from the object in `SaveData.Instance`'s slot. For the type
+check, it also holds the path from an object's type pointer to its type's size,
+and the sizes of `AutoSplitterInfo`, `SaveData` and `String`.
 
 ### Finding `Celeste.Instance`
 
@@ -97,14 +99,45 @@ the instruction. So a reference always holds the slot's absolute address.
 
 ### Each tick
 
-The auto splitter follows each value's pointer path: the root's object from the
-slot, then for `Celeste.Instance`, the `AutoSplitterInfo` at the offset the store
-held, then the value at its offset. It reads every value, and publishes them
-only if every read succeeds. A flag is a byte, true when not 0. The exceptions:
+The auto splitter follows `Celeste.Instance`'s slot to the game, and the offset
+the store held to its `AutoSplitterInfo`, then copies that object in one read.
+It copies `SaveData.Instance`'s object the same way, and the start of the
+`Level` string. Each copy has to pass the type check before any value is taken
+from it. A flag is a byte, true when not 0.
 
-- `Level` goes unpublished when there's no string, or it's over 512 characters.
+- If `AutoSplitterInfo` fails the check, or a read fails, the tick publishes
+  nothing, so the last values stay.
+- `Level` goes unpublished when there's no string, it fails the check, or it's
+  over 512 characters. Its characters are read after the check, in a second
+  read.
 - `Deaths`, `SaveData.TotalDeaths`, goes unpublished until a file starts, since
-  the game leaves `SaveData.Instance` null until then.
+  the game leaves `SaveData.Instance` null until then, and on a tick its object
+  fails the check.
+
+### The type check
+
+A garbage collection can move an object while the auto splitter reads it, and
+for a moment, a reference can lead to memory holding something else. Before the
+check, that was seen at boot, as a string where `AutoSplitterInfo` should be,
+and after Save and Quit, as `Deaths` reading 0 for a tick, and as every value
+of `AutoSplitterInfo` reading garbage, its flags at 1.
+
+Every .NET object starts with a pointer to its type, and the type records its
+objects' size. The check takes the type pointer from the copy, follows the
+layout's path to the size, and accepts the copy only if that's the layout's
+size for the type expected:
+
+- CLR: the type pointer is the `MethodTable`, which holds the base size at
+  +0x4. The base size counts the 4-byte header before the object, so a copy is 4
+  bytes shorter than it.
+- Mono: the type pointer is the `MonoVTable`, whose first field is the
+  `MonoClass`, which holds the instance size at +0x1c, counted from the object's
+  start.
+
+The type pointer comes from the same read as the values, so a copy that passes
+held an object of the right size when it was read. Types don't move, so reading
+the size later is safe. Nothing has to be learned, so values are published from
+the first tick.
 
 ## Everest
 
@@ -206,8 +239,10 @@ holds, none missing and none extra.
 The live check catches layout mistakes whatever traces there are, and the replay
 adds the values only real play produces, such as empty strings. On all four
 flavours, a pass shows that the signatures, references and store are found, that
-every offset and pointer size is right, that .NET strings, numbers and flags read
-right, and that attaching works on each OS. It rests on the game's own runtime
+every offset and pointer size is right, that each object passes the type check,
+that .NET strings, numbers and flags read right, and that attaching works on
+each OS. A wrong size in the type check fails it: the values of that object go
+missing. It rests on the game's own runtime
 and one comparison per update, with no stand-in for the game. The auto splitter
 runs on livesplit-core's own `Timer`, pinned with the auto splitting runtime to
 one revision in `harness/Cargo.toml`.
@@ -228,24 +263,17 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
 - Code the game doesn't have: a second match of a signature, or a 4-byte
   reference pattern matching inside an 8-byte one.
 - Reads during the game's update, or during a garbage collection: the probe's
-  game never runs, and each set is written whole between two ticks.
+  game never runs, and each set is written whole between two ticks. So nothing
+  in CI fails the type check, and that it skips garbage rests on a hand check.
 - Reading at the tick rate: the harness ticks once per line of a trace, once
   per update of the game.
 - Detaching and attaching again after 10 failed searches.
 
 ## Known gaps
 
-- **Garbage during garbage collection.** Reads can return garbage for up to
-  about 0.24 s. It has been seen as a false `Chapter Started` and a false
-  `Chapter Complete`, and as `Deaths` reading 3, 0, 3 for one tick. Nothing
-  checks for it, by choice, so splitting logic will have to cope with it,
-  especially triggers on a rising edge. The hand check of 2026-11-05 saw it in
-  5 of 7 runs, each time for one tick. About 0.86 s after Save and Quit,
-  `Deaths` read 0 in three runs, and in one run every value of
-  `AutoSplitterInfo` read garbage, with `Timer Active`, `Chapter Started` and
-  `Chapter Complete` at 1. In another, during boot, the address read as
-  `AutoSplitterInfo` held a string: three counts decoded as the UTF-16 text
-  "Loadin".
+- **Garbage the type check can't see.** An object of another type with the
+  same size, where a garbage collection left a reference, would pass the check.
+  So would a string moved between reading its length and its characters.
 - **No new-file signal on vanilla.** Only Everest's struct has `Starting New
   File`. `SaveData.Instance` is read only for `Deaths` so far: splitting will
   need a source.
