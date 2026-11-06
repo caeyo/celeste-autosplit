@@ -1,3 +1,5 @@
+use core::iter;
+
 use asr::{
     deep_pointer::DeepPointer, future::retry, signature::Signature, Address, MemoryRangeFlags,
     PointerSize, Process,
@@ -5,7 +7,7 @@ use asr::{
 
 use crate::{
     everest,
-    vanilla::{Anchor, Layout, CLR32, MONO64},
+    vanilla::{Anchor, Layout, Pattern, CLR32, MONO64},
 };
 
 pub struct Values {
@@ -314,7 +316,7 @@ impl Layout {
             .ok()?;
         (0..code.len())
             .rev()
-            .find_map(|start| match_pattern(self.auto_splitter_info_store, &code[start..]))
+            .find_map(|start| match_pattern(&self.auto_splitter_info_store, &code[start..]))
             .map(|offset| offset.value())
     }
 
@@ -351,25 +353,20 @@ impl Layout {
     }
 }
 
-fn match_pattern(pattern: &str, code: &[u8]) -> Option<Address> {
-    let mut value = 0;
-    let mut value_bytes = 0;
-    for (i, byte) in pattern.split(' ').enumerate() {
-        let actual = *code.get(i)?;
-        match byte {
-            "SS" => {
-                value |= u64::from(actual) << (8 * value_bytes);
-                value_bytes += 1;
-            }
-            "??" => {}
-            _ => {
-                if u8::from_str_radix(byte, 16).ok()? != actual {
-                    return None;
-                }
-            }
-        }
+fn match_pattern(pattern: &Pattern, code: &[u8]) -> Option<Address> {
+    let (before, code) = code.split_at_checked(pattern.before.len())?;
+    let (value, after) = code.split_at_checked(pattern.width)?;
+    let matches = |expected: &[Option<u8>], actual: &[u8]| {
+        actual.len() >= expected.len()
+            && iter::zip(expected, actual)
+                .all(|(expected, actual)| expected.is_none_or(|expected| expected == *actual))
+    };
+    if !matches(pattern.before, before) || !matches(pattern.after, after) {
+        return None;
     }
-    Some(Address::new(value))
+    let mut bytes = [0; 8];
+    bytes[..value.len()].copy_from_slice(value);
+    Some(Address::new(u64::from_le_bytes(bytes)))
 }
 
 fn scan_executable<T>(
