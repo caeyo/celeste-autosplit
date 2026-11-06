@@ -40,10 +40,12 @@ Each holds:
 - each value's offset: after `AutoSplitterInfo`, or for `TotalDeaths`, from the
   object in `SaveData.Instance`'s slot.
 
-A pattern is hex bytes, with `??` for any byte, and `SS` for the bytes of the
-value it holds, in a row, least significant first. The reference is the earliest
-match of any reference pattern after the signature: earliest, because a pattern
-with a 4-byte address can also match inside one with an 8-byte address.
+A signature is hex bytes, with `??` for any byte, which asr parses when the auto
+splitter compiles. A pattern is the bytes before the value it holds, the value's
+width, 4 or 8 bytes, least significant first, and the bytes after it, with
+`None` for any byte. The reference is the earliest match of any reference
+pattern after the signature: earliest, because a pattern with a 4-byte address
+can also match inside one with an 8-byte address.
 
 To read a value, the auto splitter reads the root's object from its slot, and
 for `Celeste.Instance`, `AutoSplitterInfo`'s object from it, at the offset the
