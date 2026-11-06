@@ -249,8 +249,8 @@ per change. It never writes the map.
 - A trigger that isn't a map, has no `kind` or an unknown one, lacks a required
   field, or has a field of the wrong type or with a value not allowed, behaves
   like `manual`, so an older module treats a newer kind as `manual`. The module
-  logs it. `chapter` takes the schema's chapter IDs, and `-1` only for the kinds
-  that allow it; `checkpoint` takes the numbers of its chapter's checkpoints.
+  logs it. `chapter` takes any ID from 0 up, modded ones included, and `-1`
+  only for the kinds that allow it; `checkpoint` takes the numbers of its chapter's checkpoints.
 - Keys the module doesn't know, in `cfg` or in a trigger, are ignored, and so are
   fields a trigger's kind doesn't take. An Everest-only field, `sid`, is ignored
   while `everest` is off.
@@ -280,7 +280,7 @@ previous tick's values in asr's watchers.
 | `chapter_complete` | the chapter is completed (`timing: "chapter_complete"`, the default), or the game leaves the completed chapter (`timing: "chapter_exit"`) |
 
 `chapter` is the game's chapter ID, not its number: 9 is Core, chapter 8, and
-10 is Farewell, chapter 9. An absent optional field matches anything:
+10 is Farewell, chapter 9. Higher IDs are modded. An absent optional field matches anything:
 `{kind: "chapter_complete"}` is any chapter.
 
 These rules keep parity with the legacy component, so none has a setting:
