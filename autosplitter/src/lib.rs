@@ -1,6 +1,5 @@
 use asr::{future::next_tick, Process};
 
-#[allow(dead_code)]
 mod everest;
 mod memory;
 mod vanilla;
@@ -49,12 +48,20 @@ const TICKS_PER_SECOND: u32 = 120;
 const INIT_ATTEMPTS: u32 = 10;
 
 async fn init(process: &Process) -> Option<memory::GameState> {
-    for attempt in 0..INIT_ATTEMPTS {
-        if let Some(state) = memory::init(process) {
-            return Some(state);
-        }
-        if attempt == 0 {
-            asr::print_message("Init failed, retrying");
+    let mut logged = Vec::new();
+    for _ in 0..INIT_ATTEMPTS {
+        let failure = match memory::init(process) {
+            Ok(state) => return Some(state),
+            Err(failure) => failure,
+        };
+        if !logged.contains(&failure) {
+            match failure {
+                memory::Failure::NotFound => asr::print_message("Init failed, retrying"),
+                memory::Failure::EverestVersion(version) => asr::print_message(&format!(
+                    "Everest's auto splitter info version {version} isn't supported"
+                )),
+            }
+            logged.push(failure);
         }
         for _ in 0..TICKS_PER_SECOND {
             next_tick().await;

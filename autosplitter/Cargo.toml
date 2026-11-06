@@ -10,6 +10,7 @@ asr = { git = "https://github.com/LiveSplit/asr", rev = "a7ecee85abad7263bfa2150
     "integer-vars",
     "signature",
 ] }
+bytemuck = { version = "1.25.2", features = ["derive"] }
 
 [lib]
 crate-type = ["cdylib"]

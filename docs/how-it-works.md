@@ -6,7 +6,7 @@ The auto splitter attaches to the first process named `Celeste.bin.x86_64`,
 `Celeste.bin.x86`, `Celeste.exe` or `Celeste`, then searches its memory for what
 it reads. A search scans the process's memory, and LiveSplit runs the auto
 splitter on its UI thread, so after a failed search the auto splitter waits a
-second before the next, and logs only the first failure. After 10 failed
+second before the next, and logs each kind of failure once. After 10 failed
 searches, it detaches and attaches again:
 
 - On Linux, vanilla starts through a bash script named `Celeste`, which runs
@@ -172,16 +172,27 @@ or with 2 for a bad command.
 ## Everest
 
 [`everest.rs`](../autosplitter/src/everest.rs) is Everest's `CoreAutoSplitterInfo`,
-transcribed by hand from
+as a `#[repr(C)]` struct with the same fields in the same order, transcribed by
+hand from
 [`AutoSplitter.cs`](https://github.com/EverestAPI/Everest/blob/47d6a61fa918c17b8085b93b61ee59a7465968f8/Celeste.Mod.mm/Mod/Everest/AutoSplitter.cs)
-at commit `47d6a61`, in Everest `stable-1.6623.0`, where each field's type is. To
-update it, transcribe the struct again at a newer commit, and update the link.
+at commit `47d6a61`, in Everest `stable-1.6623.0`, where each field's type is. The
+compiler checks the struct's size and each field's offset against Everest's
+explicit ones. To update it, transcribe the struct again at a newer commit, and
+update the link.
 
 - Everest puts the struct at the start of a memory mapping of its own, and the
   auto splitter finds it by checking the start of each memory region for its
-  magic bytes. Each field's offset is from the struct's start.
-- Everest runs on 64-bit .NET, so a pointer takes 8 bytes.
+  magic bytes. It accepts the struct only if its `InfoVersion` is 3, the version
+  transcribed, and otherwise logs the version once and keeps looking.
+- Everest runs on 64-bit .NET, so a pointer takes 8 bytes. The struct takes 0x70
+  bytes, its last field padded to a pointer's alignment.
+- Each tick, the auto splitter copies the struct in one read, then reads the
+  strings it points to.
 - A string is a pointer to NUL-terminated UTF-8, with its length in bytes in the
-  `u16` before it, or 0 for no string.
-- `InfoVersion` reads 0xff while Everest updates the struct, as it does while it
-  raises `AutoSplitter.OnUpdateInfo`.
+  `u16` before it, or 0 for no string. Each update writes its strings to the
+  other of two pools, so a copy's strings last until the update after next.
+- Each update, Everest sets `InfoVersion` to 0xff, writes every field, raises
+  `AutoSplitter.OnUpdateInfo`, and sets `InfoVersion` back to 3. A tick whose
+  copy holds 0xff, or that reads 0xff right after copying, reports nothing, so
+  the last values stay. When attaching, a struct holding 0xff is skipped without
+  a log.
