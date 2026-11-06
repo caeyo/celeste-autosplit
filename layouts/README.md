@@ -136,7 +136,8 @@ run. The probe prints it in the run's log.
 
 ## `everest.rs`
 
-Everest's own struct, `CoreAutoSplitterInfo`, transcribed by hand: the file's
-header says where it comes from, what it holds, and how to update it. The auto
+Everest's own struct, `CoreAutoSplitterInfo`, transcribed by hand:
+[How it works](../docs/how-it-works.md#everest) says where it comes from, what it
+holds, and how to update it. The auto
 splitter finds the struct by checking the start of each memory region for its
 magic bytes.

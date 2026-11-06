@@ -34,6 +34,24 @@ To record or re-record traces, see the
 again gives the same trace, except for how many updates the game waits for a save
 to finish, which takes real time.
 
+## The recorder
+
+- CelesteTAS starts the TAS at the end of the title screen's first update. So the
+  recording fails if no TAS is running after 60 updates, a second, in the
+  overworld: it couldn't start.
+- It exits the game the way the game exits itself, after the update: exiting the
+  process from within an update can hang it. Once Everest has shut the game down,
+  it exits the process with 0, so the recorder exits it in `OnShutdown`, just
+  before, with its own code.
+- Everest's installer links `orig/Content` and `orig/Saves` to the game's own, so
+  that the vanilla game it keeps in `orig/` shares Everest's saves. On Windows,
+  that needs admin rights, which it asks for, unless they exist already, so
+  `record.sh` creates them first.
+- Each recording starts with fresh saves, except for the settings `record.sh`
+  writes. Without them, the game would start fullscreen and play its intro first,
+  Everest's first-run screens would take the TAS's inputs, and Everest would
+  colour its log.
+
 ## Format
 
 JSON, one object per line, with lines ending in `\n`. The first line holds the

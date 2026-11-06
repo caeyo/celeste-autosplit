@@ -5,21 +5,12 @@ using System.Runtime.InteropServices;
 
 namespace Probe
 {
-    /// <summary>
-    /// Field offsets, static fields' addresses, and reads of mapped memory, in this process. The IL
-    /// here is unverifiable, which dynamic methods may be in a full-trust process.
-    /// </summary>
     internal static class Memory
     {
-        /// <summary>
-        /// Offset of an instance field from its object's address. Marshal.OffsetOf only
-        /// works for sequential and explicit layouts, and these classes use auto layout.
-        /// </summary>
         public static long FieldOffset(FieldInfo field, object instance)
         {
             var method = new DynamicMethod("OffsetOf_" + field.Name, typeof(IntPtr), new[] { typeof(object) }, typeof(Memory).Module, true);
             ILGenerator il = method.GetILGenerator();
-            // &obj.field - obj, both in one method so the GC can't move the object in between.
             il.Emit(OpCodes.Ldarg_0);
             il.Emit(OpCodes.Ldflda, field);
             il.Emit(OpCodes.Conv_U);
@@ -31,7 +22,6 @@ namespace Probe
             return offsetOf(instance).ToInt64();
         }
 
-        /// <summary>Address of a static field's storage, which never moves.</summary>
         public static ulong StaticFieldAddress(FieldInfo field)
         {
             var method = new DynamicMethod("AddressOf_" + field.Name, typeof(IntPtr), Type.EmptyTypes, typeof(Memory).Module, true);
@@ -48,10 +38,6 @@ namespace Probe
         private static IntPtr ToPointer(ulong address) =>
             IntPtr.Size == 4 ? new IntPtr(unchecked((int)(uint)address)) : new IntPtr(unchecked((long)address));
 
-        /// <summary>
-        /// Reads up to <paramref name="max"/> bytes, stopping at the first unmapped page:
-        /// reading one would crash the process instead of throwing.
-        /// </summary>
         public static byte[] ReadMapped(ulong address, int max)
         {
             ulong pageSize = (ulong)Environment.SystemPageSize;
@@ -82,8 +68,6 @@ namespace Probe
                 return info.State == MemCommit && (info.Protect & (PageNoAccess | PageGuard)) == 0;
             }
 
-            // msync fails with ENOMEM on unmapped pages on both Linux and macOS (mincore
-            // doesn't on macOS). MS_ASYNC is 1 on both and does nothing to anonymous memory.
             return msync(ToPointer(page), new UIntPtr(pageSize), 1) == 0;
         }
 

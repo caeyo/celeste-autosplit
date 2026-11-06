@@ -9,8 +9,6 @@ using Xunit;
 
 namespace CelesteAutosplit.Tests;
 
-// Runs the real wasm module inside LiveSplit's ASR component, to catch changes in
-// the ASR internals the component relies on when moving to a newer LiveSplit.
 [Collection(LiveSplitCollection.Name)]
 public sealed class ComponentTests : IDisposable
 {
@@ -48,8 +46,6 @@ public sealed class ComponentTests : IDisposable
     [Fact]
     public void ASR_loads_the_wasm_module()
     {
-        // Compiling and instantiating the module is where unsupported wasm features
-        // and missing asr functions fail.
         IComponent component = Create();
 
         Assert.StartsWith("Running ", Status(component));
@@ -64,11 +60,9 @@ public sealed class ComponentTests : IDisposable
         Assert.Equal(Parse(Settings).InnerXml, GetSettings(component));
         XmlNode snapshot = host.OnUiThread(() => component.GetSettings(new XmlDocument()));
 
-        // Replaces rather than merges, which the editor relies on to remove keys.
         SetSettings(component, OtherSettings);
         Assert.Equal(Parse(OtherSettings).InnerXml, GetSettings(component));
 
-        // What LiveSplit's settings dialog does on Cancel.
         host.OnUiThread(() => component.SetSettings(snapshot));
         Assert.Equal(Parse(Settings).InnerXml, GetSettings(component));
     }
@@ -96,9 +90,6 @@ public sealed class ComponentTests : IDisposable
     [Fact]
     public void A_missing_ASR_assembly_is_reported_and_settings_are_kept()
     {
-        // Runs in its own AppDomain whose folder lacks LiveSplit.AutoSplittingRuntime.dll,
-        // as in a LiveSplit without ASR. Covers ASR types being kept out of the factory
-        // and out of everything the wrapper's constructor compiles.
         string folder = Path.Combine(host.TempPath, "without-asr");
         Directory.CreateDirectory(folder);
         foreach (string file in Directory.GetFiles(host.BasePath))

@@ -1,5 +1,3 @@
-# Requires at least the releases traces are recorded with: TraceRecorder.csproj's Everest, and
-# record.sh's CelesteTAS.
 - Name: TraceRecorder
   Version: 1.0.0
   DLL: TraceRecorder.dll

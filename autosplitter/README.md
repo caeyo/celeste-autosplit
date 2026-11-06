@@ -29,7 +29,11 @@ Make sure to look into the [API documentation](https://livesplit.org/asr/asr/) f
 
 You can use the [debugger](https://github.com/LiveSplit/asr-debugger) while
 developing the auto splitter to more easily see the log messages, statistics,
-dump memory, step through the code and more.
+dump memory, step through the code and more. Install it with:
+
+```sh
+cargo install --locked --git https://github.com/LiveSplit/asr-debugger
+```
 
 The repository comes with preconfigured Visual Studio Code tasks. During
 development it is recommended to use the `Debug Auto Splitter` launch action to

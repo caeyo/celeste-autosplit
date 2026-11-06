@@ -1,17 +1,13 @@
-# Rust
 target/
 
-# .NET
 bin/
 obj/
 *.user
 .vs/
 component/.deps/
 
-# Site (copied from schema/ by serve.mjs and the deploy workflow)
 site/settings-schema.json
 
-# The trace recorder's dependencies, and its own install of the game (see tools/trace-recorder/README.md)
 tools/trace-recorder/.deps/
 
 .claude/

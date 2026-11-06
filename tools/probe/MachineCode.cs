@@ -5,10 +5,6 @@ using System.Text;
 
 namespace Probe
 {
-    /// <summary>
-    /// A hand-written byte pattern: hex bytes separated by spaces, with ?? for any byte, and SS
-    /// for the bytes of a static slot's address or a field's offset, 4 or 8 of them in a row.
-    /// </summary>
     internal sealed class Pattern
     {
         private const int AnyByte = -1;
@@ -16,10 +12,8 @@ namespace Probe
 
         private readonly int[] bytes;
 
-        /// <summary>Where the slot's address starts in the pattern, if it has one.</summary>
         public readonly int SlotOffset;
 
-        /// <summary>The slot address's width: 4, 8, or 0 without one.</summary>
         public readonly int SlotWidth;
 
         public Pattern(string pattern)
@@ -51,30 +45,16 @@ namespace Probe
             }
         }
 
-        /// <summary>The slot's address or the field's offset in a match of the pattern.</summary>
         public ulong Slot(byte[] code, int match) =>
             SlotWidth == 4 ? BitConverter.ToUInt32(code, match + SlotOffset) : BitConverter.ToUInt64(code, match + SlotOffset);
 
-        /// <summary>The pattern in lower case, however it was written.</summary>
         public override string ToString() =>
             string.Join(" ", bytes.Select(b => b == AnyByte ? "??" : b == SlotByte ? "SS" : b.ToString("x2")).ToArray());
     }
 
-    /// <summary>
-    /// How to find a static slot in compiled code. The signature matches the anchor's code once.
-    /// A reference to the slot, an instruction that stores into it or loads from it, follows it,
-    /// at a distance that can depend on the length of the instructions in between: it's the
-    /// earliest match of any reference pattern after the signature, and its SS bytes are the
-    /// slot's address. Earliest, not the first pattern listed, because patterns can overlap: a
-    /// pattern with a 4-byte address can also match inside one with an 8-byte address, when the
-    /// address's fourth byte happens to be the 4-byte form's opcode.
-    /// The store of the root's CodeField, if it has one, comes before the signature: it's the last
-    /// match of its pattern there, and its SS bytes are the field's offset.
-    /// </summary>
     internal sealed class Signature
     {
         public readonly Pattern Code;
-        /// <summary>Null for a root without a CodeField.</summary>
         public readonly Pattern FieldStore;
         public readonly Pattern[] References;
 
@@ -90,7 +70,6 @@ namespace Probe
         }
     }
 
-    /// <summary>Where a static slot's address appears in machine code.</summary>
     internal sealed class SlotReference
     {
         public int Offset;
@@ -101,12 +80,6 @@ namespace Probe
 
     internal static class MachineCode
     {
-        /// <summary>
-        /// Every place the slot's address appears in the code: as a u32, and in 64-bit processes
-        /// also as a u64. For reference when writing reference patterns. On these runtimes it's never
-        /// relative to the instruction: x86 has no RIP-relative addressing, and Mono's JIT writes
-        /// a static's address into the instruction.
-        /// </summary>
         public static List<SlotReference> FindSlotReferences(byte[] code, ulong slot)
         {
             var references = new List<SlotReference>();

@@ -43,7 +43,6 @@
 			"options": {
 				"cwd": "${workspaceFolder}/component"
 			},
-			// The tests run the release build of the wasm module.
 			"dependsOn": "Build Auto Splitter (Release)",
 			"problemMatcher": "$msCompile",
 			"group": "test",

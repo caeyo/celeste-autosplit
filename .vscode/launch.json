@@ -5,8 +5,6 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug Auto Splitter",
-			// Install the asr-debugger with:
-			// cargo install --locked --git https://github.com/LiveSplit/asr-debugger
             "program": "${userHome}${pathSeparator}.cargo${pathSeparator}bin${pathSeparator}asr-debugger",
             "windows": {
                 "program": "${userHome}${pathSeparator}.cargo${pathSeparator}bin${pathSeparator}asr-debugger.exe"
