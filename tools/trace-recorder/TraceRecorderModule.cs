@@ -8,7 +8,6 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace TraceRecorder;
@@ -33,7 +32,6 @@ public class TraceRecorderModule : EverestModule
     private int updatesWithoutTas;
     private ulong lastFrameCounter;
     private readonly Dictionary<string, object?> vanilla = new();
-    private readonly Dictionary<string, object?> everest = new();
     private long? startFileTime;
     private long fileTime;
 
@@ -119,11 +117,6 @@ public class TraceRecorderModule : EverestModule
         {
             line["roots"] = new Dictionary<string, object> { [Root] = vanillaChanges };
         }
-        Dictionary<string, object?> everestChanges = Changes(everest, EverestValues(info));
-        if (everestChanges.Count > 0)
-        {
-            line["everest"] = everestChanges;
-        }
         trace!.WriteLine(JsonSerializer.Serialize(line));
     }
 
@@ -197,24 +190,6 @@ public class TraceRecorderModule : EverestModule
         }
         return changes;
     }
-
-    private static Dictionary<string, object?> EverestValues(in AutoSplitter.CoreAutoSplitterInfo info) => new()
-    {
-        [nameof(info.LevelSetStrPtr)] = Marshal.PtrToStringUTF8(info.LevelSetStrPtr),
-        [nameof(info.ChapterSIDStrPtr)] = Marshal.PtrToStringUTF8(info.ChapterSIDStrPtr),
-        [nameof(info.ChapterID)] = info.ChapterID,
-        [nameof(info.ChapterMode)] = info.ChapterMode,
-        [nameof(info.RoomNameStrPtr)] = Marshal.PtrToStringUTF8(info.RoomNameStrPtr),
-        [nameof(info.ChapterTime)] = info.ChapterTime,
-        [nameof(info.ChapterStrawberries)] = info.ChapterStrawberries,
-        [nameof(info.ChapterFlags)] = (uint) info.ChapterFlags,
-        [nameof(info.FileTime)] = info.FileTime,
-        [nameof(info.FileStrawberries)] = info.FileStrawberries,
-        [nameof(info.FileGoldenStrawberries)] = info.FileGoldenStrawberries,
-        [nameof(info.FileCassettes)] = info.FileCassettes,
-        [nameof(info.FileHearts)] = info.FileHearts,
-        [nameof(info.FileFlags)] = (uint) info.FileFlags,
-    };
 }
 
 [ModImportName("CelesteTAS")]

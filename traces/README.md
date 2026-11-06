@@ -1,11 +1,12 @@
 # traces
 
-Traces of what the auto splitter reads from the real game, update by update, while
-CelesteTAS plays a TAS through it. Each `<name>.jsonl` is recorded from the
-`<name>.tas` next to it, by the [trace recorder](../tools/trace-recorder/). They hold
-values only, nothing from the game's files. The [harness](../harness/) replays the
-game's values in every trace, not Everest's, through the real game, on every vanilla
-flavour, in the Layouts workflow.
+Traces of the real game's `AutoSplitterInfo`, update by update, while CelesteTAS
+plays a TAS through it. That's what the auto splitter reads, but for `TotalDeaths`,
+from `SaveData.Instance`, which they don't record. Each `<name>.jsonl` is recorded
+from the `<name>.tas` next to it, by the [trace recorder](../tools/trace-recorder/).
+They hold values only, nothing from the game's files. The [harness](../harness/)
+replays every trace through the real game, on every vanilla flavour, in the Layouts
+workflow.
 
 | Trace | What it covers |
 |---|---|
@@ -70,18 +71,14 @@ auto splitter reads until the next. It has:
 - `roots`: the game's `AutoSplitterInfo`, every field of it, by root and path as
   the [probe](../tools/probe/README.md#the-manifest) names them: strings, numbers
   and booleans.
-- `everest`: Everest's own values, named after its struct's fields (see
-  [`layouts/everest.rs`](../layouts/everest.rs)): each string pointer's string, or
-  null for none, and its flags as numbers. Its header, which doesn't change, isn't
-  recorded.
 
 Each line only holds the values that changed since the previous line, and the first
 holds them all. A line without changes has only its `frame`:
 
 ```json
 {"frame":430}
-{"frame":431,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.Chapter":0,"AutoSplitterInfo.Mode":0,"AutoSplitterInfo.Level":"0","AutoSplitterInfo.TimerActive":true,"AutoSplitterInfo.ChapterStarted":true}},"everest":{"LevelSetStrPtr":"Celeste","ChapterSIDStrPtr":"Celeste/0-Intro","ChapterID":0,"ChapterMode":0,"RoomNameStrPtr":"0","ChapterFlags":2147483649}}
-{"frame":432,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.FileTime":170000}},"everest":{"FileTime":170000}}
+{"frame":431,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.Chapter":0,"AutoSplitterInfo.Mode":0,"AutoSplitterInfo.Level":"0","AutoSplitterInfo.TimerActive":true,"AutoSplitterInfo.ChapterStarted":true}}}
+{"frame":432,"roots":{"Celeste.Celeste::Instance":{"AutoSplitterInfo.FileTime":170000}}}
 ```
 
 Times are in ticks of 100 ns. The game adds 17 ms, 170,000 ticks, to them each
