@@ -4,6 +4,7 @@ use asr::{
     deep_pointer::DeepPointer, future::retry, signature::Signature, Address, MemoryRangeFlags,
     PointerSize, Process,
 };
+use bytemuck::AnyBitPattern;
 
 use crate::{
     everest,
@@ -41,10 +42,6 @@ pub struct EverestValues {
     pub file_active: bool,
 }
 
-#[expect(
-    clippy::large_enum_variant,
-    reason = "only one exists per attach, so its size doesn't matter"
-)]
 pub enum GameState {
     Vanilla(Vanilla),
     Everest(Everest),
@@ -60,50 +57,93 @@ impl GameState {
 }
 
 pub struct Vanilla {
-    ptr_size: PointerSize,
-    string_len: u64,
-    string_chars: u64,
-    chapter_time: DeepPointer<3>,
-    file_time: DeepPointer<3>,
-    level: DeepPointer<3>,
-    chapter: DeepPointer<3>,
-    mode: DeepPointer<3>,
-    chapter_strawberries: DeepPointer<3>,
-    file_strawberries: DeepPointer<3>,
-    file_cassettes: DeepPointer<3>,
-    file_hearts: DeepPointer<3>,
-    timer_active: DeepPointer<3>,
-    chapter_started: DeepPointer<3>,
-    chapter_complete: DeepPointer<3>,
-    chapter_cassette: DeepPointer<3>,
-    chapter_heart: DeepPointer<3>,
-    total_deaths: DeepPointer<2>,
+    layout: &'static Layout,
+    instance: Address,
+    info: u64,
+    save_data: Address,
 }
 
 impl Vanilla {
     fn read(&self, process: &Process) -> Option<Values> {
-        let flag = |pointer: &DeepPointer<3>| Some(pointer.deref::<u8>(process).ok()? != 0);
-        let level = self.level.deref_offsets(process).ok()?;
-        let level = process.read_pointer(level, self.ptr_size).ok()?.value();
+        let layout = self.layout;
+        let info = process
+            .read_pointer(self.instance, layout.pointer_size)
+            .and_then(|celeste| process.read_pointer(celeste + self.info, layout.pointer_size))
+            .ok()
+            .and_then(|info| self.object(process, info, layout.auto_splitter_info_size))?;
+        let save = process
+            .read_pointer(self.save_data, layout.pointer_size)
+            .ok()
+            .and_then(|save| self.object(process, save, layout.save_data_size));
         Some(Values {
-            chapter: self.chapter.deref(process).ok()?,
-            mode: self.mode.deref(process).ok()?,
-            level: read_dotnet_string(process, level, self.string_len, self.string_chars),
-            timer_active: flag(&self.timer_active)?,
-            chapter_started: flag(&self.chapter_started)?,
-            chapter_complete: flag(&self.chapter_complete)?,
-            chapter_time: self.chapter_time.deref(process).ok()?,
-            chapter_strawberries: self.chapter_strawberries.deref(process).ok()?,
-            chapter_cassette: flag(&self.chapter_cassette)?,
-            chapter_heart: flag(&self.chapter_heart)?,
-            file_time: self.file_time.deref(process).ok()?,
-            file_strawberries: self.file_strawberries.deref(process).ok()?,
-            file_cassettes: self.file_cassettes.deref(process).ok()?,
-            file_hearts: self.file_hearts.deref(process).ok()?,
-            deaths: self.total_deaths.deref(process).ok(),
+            chapter: value(&info, layout.chapter)?,
+            mode: value(&info, layout.mode)?,
+            level: self.string(process, pointer(&info, layout.level, layout.pointer_size)?),
+            timer_active: flag(&info, layout.timer_active)?,
+            chapter_started: flag(&info, layout.chapter_started)?,
+            chapter_complete: flag(&info, layout.chapter_complete)?,
+            chapter_time: value(&info, layout.chapter_time)?,
+            chapter_strawberries: value(&info, layout.chapter_strawberries)?,
+            chapter_cassette: flag(&info, layout.chapter_cassette)?,
+            chapter_heart: flag(&info, layout.chapter_heart)?,
+            file_time: value(&info, layout.file_time)?,
+            file_strawberries: value(&info, layout.file_strawberries)?,
+            file_cassettes: value(&info, layout.file_cassettes)?,
+            file_hearts: value(&info, layout.file_hearts)?,
+            deaths: save.and_then(|save| value(&save, layout.total_deaths)),
             everest: None,
         })
     }
+
+    fn object(&self, process: &Process, object: Address, size: u32) -> Option<Vec<u8>> {
+        let layout = self.layout;
+        let len = size - layout.size_before_object;
+        let bytes = process.read_vec::<u8>(object, len as usize).ok()?;
+        let type_pointer = pointer(&bytes, 0, layout.pointer_size)?;
+        let type_size: u32 = process
+            .read_pointer_path(type_pointer, layout.pointer_size, layout.type_size_path)
+            .ok()?;
+        (type_size == size).then_some(bytes)
+    }
+
+    fn string(&self, process: &Process, string: Address) -> Option<String> {
+        let layout = self.layout;
+        let header = self.object(process, string, layout.string_size)?;
+        let len: i32 = value(&header, layout.string_length)?;
+        if !(0..=512).contains(&len) {
+            return None;
+        }
+        if len == 0 {
+            return Some(String::new());
+        }
+        let mut buf = vec![0u16; len as usize];
+        process
+            .read_into_slice(string + layout.string_chars, &mut buf)
+            .ok()?;
+        String::from_utf16(&buf).ok()
+    }
+}
+
+fn value<T: AnyBitPattern>(object: &[u8], offset: u64) -> Option<T> {
+    let start = offset as usize;
+    object
+        .get(start..start + size_of::<T>())
+        .map(bytemuck::pod_read_unaligned)
+}
+
+fn flag(object: &[u8], offset: u64) -> Option<bool> {
+    Some(value::<u8>(object, offset)? != 0)
+}
+
+fn pointer(object: &[u8], offset: u64, size: PointerSize) -> Option<Address> {
+    let start = offset as usize;
+    object.get(start..start + size as usize).map(address)
+}
+
+fn address(bytes: &[u8]) -> Address {
+    let mut value = [0; 8];
+    value[..bytes.len()].copy_from_slice(bytes);
+    Address::new(u64::from_le_bytes(value))
 }
 
 pub struct Everest {
@@ -149,29 +189,6 @@ impl Everest {
             }),
         })
     }
-}
-
-fn read_dotnet_string(
-    process: &Process,
-    string_obj: u64,
-    string_len: u64,
-    string_chars: u64,
-) -> Option<String> {
-    if string_obj == 0 {
-        return None;
-    }
-    let len: i32 = process.read(string_obj + string_len).ok()?;
-    if !(0..=512).contains(&len) {
-        return None;
-    }
-    if len == 0 {
-        return Some(String::new());
-    }
-    let mut buf = vec![0u16; len as usize];
-    process
-        .read_into_slice(string_obj + string_chars, &mut buf)
-        .ok()?;
-    String::from_utf16(&buf).ok()
 }
 
 fn read_everest_string(process: &Process, ptr: u64) -> Option<String> {
@@ -302,10 +319,6 @@ impl Layout {
         DeepPointer::new(slot, self.pointer_size, &[0, field])
     }
 
-    fn info_field(&self, slot: Address, info: u64, field: u64) -> DeepPointer<3> {
-        DeepPointer::new(slot, self.pointer_size, &[0, info, field])
-    }
-
     fn has_info(&self, process: &Process, slot: Address, info: u64) -> bool {
         let Ok(field) = self.field(slot, info).deref_offsets(process) else {
             return false;
@@ -313,29 +326,6 @@ impl Layout {
         process
             .read_pointer(field, self.pointer_size)
             .is_ok_and(|object| !object.is_null())
-    }
-
-    fn state(&self, slot: Address, info: u64, save: Address) -> GameState {
-        GameState::Vanilla(Vanilla {
-            ptr_size: self.pointer_size,
-            string_len: self.string_length,
-            string_chars: self.string_chars,
-            chapter_time: self.info_field(slot, info, self.chapter_time),
-            file_time: self.info_field(slot, info, self.file_time),
-            level: self.info_field(slot, info, self.level),
-            chapter: self.info_field(slot, info, self.chapter),
-            mode: self.info_field(slot, info, self.mode),
-            chapter_strawberries: self.info_field(slot, info, self.chapter_strawberries),
-            file_strawberries: self.info_field(slot, info, self.file_strawberries),
-            file_cassettes: self.info_field(slot, info, self.file_cassettes),
-            file_hearts: self.info_field(slot, info, self.file_hearts),
-            timer_active: self.info_field(slot, info, self.timer_active),
-            chapter_started: self.info_field(slot, info, self.chapter_started),
-            chapter_complete: self.info_field(slot, info, self.chapter_complete),
-            chapter_cassette: self.info_field(slot, info, self.chapter_cassette),
-            chapter_heart: self.info_field(slot, info, self.chapter_heart),
-            total_deaths: self.field(save, self.total_deaths),
-        })
     }
 }
 
@@ -350,9 +340,7 @@ fn match_pattern(pattern: &Pattern, code: &[u8]) -> Option<Address> {
     if !matches(pattern.before, before) || !matches(pattern.after, after) {
         return None;
     }
-    let mut bytes = [0; 8];
-    bytes[..value.len()].copy_from_slice(value);
-    Some(Address::new(u64::from_le_bytes(bytes)))
+    Some(address(value))
 }
 
 fn scan_executable<T>(
@@ -421,7 +409,12 @@ fn init_vanilla(process: &Process) -> Option<GameState> {
         .find(|runtime| runtime.oses.contains(&os.as_str()))?;
     let (slot, info) = find_instance(process, runtime)?;
     let save = find_save_data(process, runtime)?;
-    Some(runtime.layout.state(slot, info, save))
+    Some(GameState::Vanilla(Vanilla {
+        layout: runtime.layout,
+        instance: slot,
+        info,
+        save_data: save,
+    }))
 }
 
 pub fn init(process: &Process) -> Result<GameState, Failure> {
