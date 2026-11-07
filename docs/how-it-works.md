@@ -1,8 +1,8 @@
 # How it works
 
 The auto splitter is a wasm module that attaches to Celeste, reads its memory
-each tick, publishes what it reads as debug variables, and starts and splits the
-timer as its settings say. The settings' editors, the rest of the component, the
+each tick, publishes what it reads as debug variables, and starts, splits and
+resets the timer as its settings say. The settings' editors, the rest of the component, the
 website and the migration from the legacy component are in the [plan](plan.md).
 
 ## Terms
@@ -327,7 +327,9 @@ threshold is involved, so it holds at any tick rate.
 - `chapter`: `ChapterTime`, or outside a chapter the last read inside one, so a
   Save and Quit doesn't drop it to 0.
 - `file_since_start` and `chapter_since_start`: the same, minus its value on
-  the tick the timer started.
+  the tick the timer started, by the module or, seen on the next tick, by
+  anything else. Both clocks' values are kept, so a change of `timing_method`
+  during a run subtracts the right one.
 
 The tick that starts the timer sets game time from the clock. Every tick after,
 while the run is in progress, sets it, except on a tick where the clock drops
@@ -371,8 +373,8 @@ These deviate from legacy on purpose:
 | `LevelEnter` fires on resuming, in the room resumed in | `room_enter` doesn't, for consistency with `room_exit`, which doesn't fire on the Save and Quit | Runners whose `room_enter` split is the room they saved and quit in, which shouldn't come up. Recorded so a report of it can be traced here. |
 | Room names ignore case | Exact match | Saved names whose case differs from the game's. |
 | Checkpoints fire while in the room | Fire on entering it | Lists whose previous split fired in that room. |
-| Heart and cassette splits fire when the file's count goes up by 1, and in IL or with `FileTimeOffset`, also while the chapter's flag is set | The flag's rising edge, except on a tick the chapter ID changes | Runners on a file that already has the heart, who now get the split outside IL. Counting broke individual levels there, and a flag that stays set double-splits consecutive splits. |
-| Chapter and room changes compare with the values from when splits were last checked, so after a reset, an `AreaOnEnter` or `LevelEnter` split for where the next run starts can fire at once | They compare with the previous tick | Lists with such a split. |
+| Heart and cassette splits fire when the file's count goes up by 1, and in IL or with `FileTimeOffset`, also while the chapter's flag is set | The flag's rising edge, except on a tick the chapter ID changes | Runners on a file that already has the heart, who now get the split outside IL. Counting would break individual levels there, and a flag that stays set double-splits consecutive splits. |
+| Chapter changes compare with the chapter from when a split other than manual was last checked, and room changes with the room from the last tick of a run, so after a reset, an `AreaOnEnter` or `LevelEnter` split for where the next run starts can fire at once | They compare with the previous tick | Lists with such a split. |
 
 The module uses only asr functions every host's auto splitting runtime has.
 
@@ -454,9 +456,10 @@ root, and `Starting New File` 1 exactly when the save's `Time` is 0.
   starts, splits and resets the `Timer` gets, their frames, and their game times
   must be exactly the scenario's, which are written by hand from the trace. A
   split's game time is the split time the run records, a start's the game time
-  once its tick ends, and a reset has none. They're compared to the millisecond: the game's times are whole
-  milliseconds, and while game time isn't paused, livesplit-core runs it on in
-  real time, a few microseconds past what the module set.
+  once its tick ends, and a reset has none. They're compared to the
+  millisecond: the game's times are whole milliseconds, and while game time
+  isn't paused, livesplit-core runs it on in real time, a few microseconds past
+  what the module set.
 
 The live check catches layout mistakes whatever traces there are, and the replay
 adds the values only real play produces, such as empty strings. On all four
@@ -510,9 +513,15 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
   `chapter_enter` and `chapter_exit` with a `side` ignore, since on vanilla
   the side is -1 outside a chapter; a checkpoint's room for the wrong side,
   since neither side's checkpoint rooms appear on the other; a rise of
-  `ChapterStarted` with no last `ChapterTime`, which a scenario can't reach
-  since it attaches outside a chapter; resuming into a checkpoint's room; and a
-  paused timer.
+  `ChapterStarted` with `ChapterTime` above 0 and no last value, as on resuming
+  just after attaching on the map, since every trace starts from the title
+  screen or a fresh load; `ChapterCassette` coming back set on entering a
+  chapter, so nothing checks that `cassette` ignores it there, as the heart's
+  flag shows `heart` does; resuming into a checkpoint's room; and a paused
+  timer.
+- Starts not made by the module, and `timing_method` changing during a run:
+  the harness never starts the timer by hand, and a scenario's map never
+  changes. A reset and start by hand between two ticks isn't seen as a start.
 - Splitting in LiveSplit: the component's tests don't run the game.
 
 ## Known gaps
@@ -524,6 +533,11 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
   `Starting New File` rise.
 - **A file saved before its timer started.** On vanilla, continuing it reads as
   a new file, since its `Time` is still 0.
+- **Resuming read as a start.** Resuming reads as a start when the last
+  `ChapterTime` read inside a chapter isn't the resumed chapter's: after
+  attaching on the map between a Save and Quit and the resume, or after playing
+  another file to a higher `ChapterTime` than the resumed chapter's. Then `chapter_start`
+  and `room_enter` fire, and with `auto_reset`, an IL attempt resets.
 - **Negative game time.** With a `*_since_start` method, a clock below its
   value at the start, as `ChapterTime` after restarting the chapter, makes game
   time negative, as legacy's custom-start case does.
