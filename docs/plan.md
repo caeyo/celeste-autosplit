@@ -193,8 +193,7 @@ defaults, and classify the list exactly as legacy does.
 
 `FileTimeOffset` makes `timing_method` `file_since_start` in every case.
 `reset` is `manual` without `AutoReset`, and its `chapter_exit` has no chapter,
-so it fires on leaving any, where legacy resets on every tick outside one.
-`everest` is false, `high_priority` `SetHighPriority`, and `set_game_time`
+so it fires on leaving any. `everest` is false, `high_priority` `SetHighPriority`, and `set_game_time`
 `SetGameTime`. Every top-level key and every `timing` is written, in the
 schema's order, so a later default can't change a migrated user's behaviour,
 and the output is the same each time. `id(N)` maps a chapter number in a name
@@ -234,8 +233,9 @@ Those of splitting itself are in
 | Unknown types silently manual | `unknown`, flagged | Nobody, timing-wise. |
 | Case C's final split time is absolute | Consistent with the run | Custom-start runners. |
 | `FileTimeOffset` in C and E mixes clocks | `file_since_start` | A rare combination. |
-| No splits: start on any room change, split on room changes | Only the reset is automatic | Users without splits, and single-room timers. |
+| No splits: start on any room change, split on room changes | Nothing automatic but the reset, with `AutoReset` | Users without splits, and single-room timers. |
 | Case C with one segment splits on the next room change | Split by hand | Custom-start single-room timers. |
+| With `AutoReset`, nothing starts or splits outside a chapter, since the reset comes first, so in case C a start that fires there, such as `AreaOnExit,X` or `AreaOnEnter,Menu`, never starts | It starts, and with `AreaOnExit,X`, leaving X during the run resets and starts again | Custom-start runners whose start fires outside a chapter. |
 
 The legacy component becomes easier to add to a layout by mistake: while its DLL
 was the entry's first URL, the layout editor hid it, and once the entry points
@@ -264,8 +264,9 @@ reads flat elements the new format lacks: release notes should say so.
 - In LiveSplit, built with `AutoSplitterFactory.AutoSplittersXmlUrl` pointing at
   a test copy of the list: a fresh install, a legacy user, a legacy component in
   the layout, the layout editor, an update, a deleted wasm, Cancel in the
-  settings dialog, the priority, Game Time, and a reset and start in one tick,
-  which LiveSplit's ASR has to apply in order, without a prompt, as only
+  settings dialog, the priority, Game Time, and the module's resets, alone, as
+  after a run that ended with new bests, and with a start in one tick, which
+  LiveSplit's ASR has to apply without a prompt, the second in order, as only
   livesplit-core is shown to. Those that download nothing can
   use [a copy of LiveSplit](maintaining.md#trying-the-component-in-livesplit).
 - Across hosts: a `.lss` saved on Windows opens in the Druid fork the same, one

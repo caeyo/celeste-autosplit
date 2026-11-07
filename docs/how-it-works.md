@@ -269,7 +269,9 @@ so attaching is never a change.
   timer, which commits the attempt, and checks no split on that tick, as legacy
   gives a reset precedence over a split. The timer then isn't running, so
   `start` can start it again in the same tick: with a `reset` of the same kind
-  as `start`, the new attempt keeps its first frame.
+  as `start`, the new attempt keeps its first frame. The exception is
+  `chapter_complete` with `timing: "chapter_exit"`, whose start arms only while
+  the timer isn't running, so after that reset nothing starts.
 - While the timer isn't running, if `start` fires, it starts the timer and sets
   game time. The tick that starts the timer doesn't check splits.
 - While it's running or paused, it sets game time, then splits if the trigger
@@ -282,7 +284,7 @@ so attaching is never a change.
 | `unknown` | never. Only migration makes it, and editors flag it. |
 | `new_file` | a new save file is started: `Starting New File` rises |
 | `chapter_start` | the chapter's timer starts: `ChapterStarted` rises, unless the chapter is [resuming](#resuming) |
-| `chapter_enter`, `chapter_exit` | the chapter ID changes to or from `chapter`, where -1 is outside a chapter, or without a `chapter`, to or from any chapter but -1. With a `side`, the side changes to or from it too. |
+| `chapter_enter`, `chapter_exit` | the chapter ID changes to or from `chapter`, where -1 is outside a chapter, or to or from any chapter other than -1 when `chapter` is absent. With a `side`, the side changes to or from it too. |
 | `chapter_complete` | the chapter is completed (`timing: "chapter_complete"`, the default), or the game leaves the completed chapter (`timing: "chapter_exit"`) |
 | `checkpoint` | the room becomes the checkpoint's room for the side being played, in `chapter` |
 | `heart`, `cassette` | `ChapterHeart` or `ChapterCassette` rises: the chapter's crystal heart or cassette is collected |
@@ -290,7 +292,7 @@ so attaching is never a change.
 
 `chapter` is the game's chapter ID, not its number: 9 is Core, chapter 8, and
 10 is Farewell, chapter 9. Higher IDs are modded. An absent optional field
-matches anything, but for the `chapter` of `chapter_enter` and `chapter_exit`,
+matches anything, except the `chapter` of `chapter_enter` and `chapter_exit`,
 as above: `{kind: "chapter_complete"}` is any chapter. The chapter and side a
 trigger matches are the current tick's, except that `chapter_exit` matches
 those it left, and `chapter_complete` the side it completed.
@@ -539,7 +541,8 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
   attaching on the map between a Save and Quit and the resume, or after playing
   another file to a higher `ChapterTime` than the resumed chapter's. Then
   `chapter_start`, `room_enter` and `checkpoint` fire, so a `chapter_start`
-  reset resets the attempt.
+  reset resets the attempt, and after a `chapter_exit` reset on the Save and
+  Quit, as the IL preset's, a `chapter_start` start begins a new one.
 - **Negative game time.** With a `*_since_start` method, a clock below its
   value at the start, as `ChapterTime` after restarting the chapter, makes game
   time negative, as legacy's custom-start case does.
