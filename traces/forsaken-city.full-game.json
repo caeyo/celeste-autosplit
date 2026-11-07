@@ -1,0 +1,16 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "new_file" },
+      "timing_method": "file",
+      "auto_reset": true,
+      "splits": [{ "kind": "new_file" }]
+    }
+  },
+  "events": [
+    { "frame": 265, "event": "start", "game_time": 0 },
+    { "frame": 12032, "event": "reset", "game_time": null },
+    { "frame": 12032, "event": "start", "game_time": 0 }
+  ]
+}

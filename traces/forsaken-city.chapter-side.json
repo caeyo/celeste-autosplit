@@ -1,0 +1,18 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "new_file" },
+      "splits": [
+        { "kind": "chapter_enter", "chapter": 1, "side": 1 },
+        { "kind": "chapter_exit", "chapter": 1, "side": 1 }
+      ]
+    }
+  },
+  "segments": 2,
+  "events": [
+    { "frame": 265, "event": "start", "game_time": 0 },
+    { "frame": 7440, "event": "split", "game_time": 929220000 },
+    { "frame": 11534, "event": "split", "game_time": 1590010000 }
+  ]
+}

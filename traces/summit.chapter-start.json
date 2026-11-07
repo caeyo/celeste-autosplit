@@ -1,0 +1,14 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "chapter_start" },
+      "auto_reset": true
+    }
+  },
+  "events": [
+    { "frame": 2, "event": "start", "game_time": 0 },
+    { "frame": 8399, "event": "reset", "game_time": null },
+    { "frame": 8399, "event": "start", "game_time": 1232670000 }
+  ]
+}

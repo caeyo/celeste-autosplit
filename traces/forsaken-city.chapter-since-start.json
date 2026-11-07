@@ -1,0 +1,14 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "checkpoint", "chapter": 1, "checkpoint": 1 },
+      "timing_method": "chapter_since_start",
+      "splits": [{ "kind": "heart", "chapter": 1 }]
+    }
+  },
+  "events": [
+    { "frame": 3586, "event": "start", "game_time": 0 },
+    { "frame": 4776, "event": "split", "game_time": 185980000 }
+  ]
+}
