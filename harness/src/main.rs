@@ -316,7 +316,7 @@ fn timer_events(module: &Module, frame: usize) -> Vec<String> {
 }
 
 fn ticks(time: TimeSpan) -> i64 {
-    (time.to_duration().whole_milliseconds() * 10_000) as i64
+    (time.to_duration().whole_nanoseconds() / 100) as i64
 }
 
 fn describe(frame: u64, event: &str, game_time: Option<i64>) -> String {

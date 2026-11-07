@@ -27,8 +27,7 @@ pub struct Splitter {
     chapter_complete: Watcher<bool>,
     chapter_heart: Watcher<bool>,
     chapter_cassette: Watcher<bool>,
-    file_clock: Watcher<i64>,
-    chapter_clock: Watcher<i64>,
+    clocks: Watcher<Clocks>,
     last_chapter_time: Option<i64>,
     clocks_at_start: Clocks,
     started_by_module: bool,
@@ -44,17 +43,34 @@ struct Clocks {
     chapter: i64,
 }
 
-struct Tick<'a> {
+impl Clocks {
+    fn get(self, method: TimingMethod) -> i64 {
+        match method {
+            TimingMethod::File | TimingMethod::FileSinceStart => self.file,
+            TimingMethod::Chapter | TimingMethod::ChapterSinceStart => self.chapter,
+        }
+    }
+
+    fn offset(self, method: TimingMethod) -> i64 {
+        match method {
+            TimingMethod::File | TimingMethod::Chapter => 0,
+            TimingMethod::FileSinceStart | TimingMethod::ChapterSinceStart => self.get(method),
+        }
+    }
+}
+
+struct Tick {
     new_file: bool,
     chapter: Pair<i32>,
     mode: Pair<i32>,
-    room: &'a Pair<String>,
-    sid: Option<&'a Pair<String>>,
+    room: Pair<String>,
+    sid: Option<Pair<String>>,
     started: Pair<bool>,
     resuming: bool,
     complete: Pair<bool>,
     heart: Pair<bool>,
     cassette: Pair<bool>,
+    clocks: Pair<Clocks>,
 }
 
 impl Splitter {
@@ -73,8 +89,7 @@ impl Splitter {
             chapter_complete: Watcher::new(),
             chapter_heart: Watcher::new(),
             chapter_cassette: Watcher::new(),
-            file_clock: Watcher::new(),
-            chapter_clock: Watcher::new(),
+            clocks: Watcher::new(),
             last_chapter_time: None,
             clocks_at_start: Clocks::default(),
             started_by_module: false,
@@ -98,26 +113,45 @@ impl Splitter {
     }
 
     pub fn update(&mut self, values: Option<&Values>) {
+        let state = self.watch_timer();
+        let split_index = timer::current_split_index();
+        self.disarm(split_index);
+        let Some(values) = values else {
+            return;
+        };
+        let tick = self.read(values);
+        self.note_host_start(&tick);
+        if self.start_fires(state, split_index, &tick) {
+            self.start(state, &tick);
+        } else if matches!(state, TimerState::Running | TimerState::Paused) {
+            self.set_game_time(&tick);
+            self.split(split_index, &tick);
+        }
+    }
+
+    fn watch_timer(&mut self) -> TimerState {
         let state = timer::state();
         let states = *self.timer_state.update_infallible(state);
-        let reset = states.changed_to(&TimerState::NotRunning);
         if states.changed_from(&TimerState::NotRunning) && !self.started_by_module {
             self.started_by_host = true;
         }
         self.started_by_module = false;
         self.ticks_since_load += 1;
-        if reset || self.ticks_since_load >= TICKS_PER_SECOND {
+        if states.changed_to(&TimerState::NotRunning) || self.ticks_since_load >= TICKS_PER_SECOND {
             self.load();
         }
-        let slot = timer::current_split_index();
+        state
+    }
+
+    fn disarm(&mut self, split_index: Option<u64>) {
         for armed in [&mut self.start_armed, &mut self.split_armed] {
-            if armed.is_some_and(|armed| armed != slot) {
+            if armed.is_some_and(|armed| armed != split_index) {
                 *armed = None;
             }
         }
-        let Some(values) = values else {
-            return;
-        };
+    }
+
+    fn read(&mut self, values: &Values) -> Tick {
         let new_file = values.starting_new_file.is_some_and(|starting| {
             let pair = self.starting_new_file.update_infallible(starting);
             pair.check(|&starting| starting)
@@ -141,32 +175,16 @@ impl Splitter {
         if i64::from(values.chapter) != NO_CHAPTER {
             self.last_chapter_time = Some(chapter_time);
         }
-        let file_clock = *self.file_clock.update_infallible(values.file_time);
-        let chapter_clock = *self
-            .chapter_clock
-            .update_infallible(self.last_chapter_time.unwrap_or_default());
         let clocks = Clocks {
-            file: file_clock.current,
-            chapter: chapter_clock.current,
+            file: values.file_time,
+            chapter: self.last_chapter_time.unwrap_or_default(),
         };
-        if self.started_by_host {
-            self.clocks_at_start = clocks;
-            self.started_by_host = false;
-        }
-        let method = self.settings.timing_method;
-        let clock = match method {
-            TimingMethod::File | TimingMethod::FileSinceStart => file_clock,
-            TimingMethod::Chapter | TimingMethod::ChapterSinceStart => chapter_clock,
-        };
-        let tick = Tick {
+        Tick {
             new_file,
             chapter: *self.chapter.update_infallible(values.chapter),
             mode: *self.mode.update_infallible(values.mode),
-            room: self.room.update_infallible(room),
-            sid: match sid {
-                Some(sid) => Some(self.sid.update_infallible(sid)),
-                None => None,
-            },
+            room: self.room.update_infallible(room).clone(),
+            sid: sid.map(|sid| self.sid.update_infallible(sid).clone()),
             started,
             resuming,
             complete: *self
@@ -176,37 +194,64 @@ impl Splitter {
             cassette: *self
                 .chapter_cassette
                 .update_infallible(values.chapter_cassette),
-        };
-        let settings = &self.settings;
-        match state {
-            TimerState::NotRunning => {
-                if fires(&settings.start, slot, &tick, &mut self.start_armed) {
-                    self.clocks_at_start = clocks;
-                    self.started_by_module = true;
-                    start(clock, offset(method, clocks));
-                }
-            }
+            clocks: *self.clocks.update_infallible(clocks),
+        }
+    }
+
+    fn note_host_start(&mut self, tick: &Tick) {
+        if self.started_by_host {
+            self.clocks_at_start = tick.clocks.current;
+            self.started_by_host = false;
+        }
+    }
+
+    fn start_fires(&mut self, state: TimerState, split_index: Option<u64>, tick: &Tick) -> bool {
+        let checked = match state {
+            TimerState::NotRunning => true,
             TimerState::Running | TimerState::Paused | TimerState::Ended => {
-                if settings.auto_reset && fires(&settings.start, slot, &tick, &mut self.start_armed)
-                {
-                    timer::reset();
-                    self.split_armed = None;
-                    self.clocks_at_start = clocks;
-                    start(clock, offset(method, clocks));
-                    return;
-                }
-                if state == TimerState::Ended {
-                    return;
-                }
-                set_game_time(clock, offset(method, self.clocks_at_start));
-                let index = slot.and_then(|index| usize::try_from(index).ok());
-                let trigger = index.and_then(|index| settings.splits.get(index));
-                if trigger.is_some_and(|trigger| fires(trigger, slot, &tick, &mut self.split_armed))
-                {
-                    timer::split();
-                }
+                self.settings.auto_reset
             }
-            _ => {}
+            _ => false,
+        };
+        checked
+            && fires(
+                &self.settings.start,
+                split_index,
+                tick,
+                &mut self.start_armed,
+            )
+    }
+
+    fn start(&mut self, state: TimerState, tick: &Tick) {
+        if state == TimerState::NotRunning {
+            self.started_by_module = true;
+        } else {
+            timer::reset();
+            self.split_armed = None;
+        }
+        self.clocks_at_start = tick.clocks.current;
+        let method = self.settings.timing_method;
+        let clock = self.clocks_at_start.get(method);
+        timer::start();
+        timer::pause_game_time();
+        timer::set_game_time(game_time(clock, self.clocks_at_start.offset(method)));
+    }
+
+    fn set_game_time(&self, tick: &Tick) {
+        let method = self.settings.timing_method;
+        let clock = tick.clocks.map(|clocks| clocks.get(method));
+        timer::pause_game_time();
+        if clock.current > 0 || clock.unchanged() {
+            let offset = self.clocks_at_start.offset(method);
+            timer::set_game_time(game_time(clock.current, offset));
+        }
+    }
+
+    fn split(&mut self, split_index: Option<u64>, tick: &Tick) {
+        let index = split_index.and_then(|index| usize::try_from(index).ok());
+        let trigger = index.and_then(|index| self.settings.splits.get(index));
+        if trigger.is_some_and(|trigger| fires(trigger, split_index, tick, &mut self.split_armed)) {
+            timer::split();
         }
     }
 }
@@ -216,37 +261,8 @@ fn held(watcher: &Watcher<String>, value: Option<&String>) -> String {
     value.or(last).cloned().unwrap_or_default()
 }
 
-fn offset(method: TimingMethod, at_start: Clocks) -> i64 {
-    match method {
-        TimingMethod::File | TimingMethod::Chapter => 0,
-        TimingMethod::FileSinceStart => at_start.file,
-        TimingMethod::ChapterSinceStart => at_start.chapter,
-    }
-}
-
-fn start(clock: Pair<i64>, offset: i64) {
-    timer::start();
-    timer::set_game_time(game_time(clock.current, offset));
-    pause_unless_changed(clock);
-}
-
-fn set_game_time(clock: Pair<i64>, offset: i64) {
-    if clock.current > 0 || clock.unchanged() {
-        timer::set_game_time(game_time(clock.current, offset));
-    }
-    pause_unless_changed(clock);
-}
-
 fn game_time(clock: i64, offset: i64) -> Duration {
     Duration::nanoseconds(clock.saturating_sub(offset).saturating_mul(100))
-}
-
-fn pause_unless_changed(clock: Pair<i64>) {
-    if clock.changed() {
-        timer::resume_game_time();
-    } else {
-        timer::pause_game_time();
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -264,7 +280,7 @@ fn at<T>(pair: &Pair<T>, when: When) -> &T {
 
 fn fires(
     trigger: &Trigger,
-    slot: Option<u64>,
+    split_index: Option<u64>,
     tick: &Tick,
     armed: &mut Option<Option<u64>>,
 ) -> bool {
@@ -277,9 +293,11 @@ fn fires(
         }
         Kind::ChapterEnter => entered && tick.changed_to(trigger, When::Now),
         Kind::ChapterExit => entered && tick.changed_to(trigger, When::Before),
-        Kind::ChapterComplete => chapter_complete(trigger, slot, tick, armed),
+        Kind::ChapterComplete => chapter_complete(trigger, split_index, tick, armed),
         Kind::Checkpoint => {
-            !tick.at_checkpoint(trigger, When::Before) && tick.at_checkpoint(trigger, When::Now)
+            !tick.at_checkpoint(trigger, When::Before)
+                && tick.at_checkpoint(trigger, When::Now)
+                && !tick.resuming
         }
         Kind::Heart => tick.heart.check(|&heart| heart) && !entered && tick.matches(trigger),
         Kind::Cassette => {
@@ -297,10 +315,10 @@ fn fires(
     }
 }
 
-impl Tick<'_> {
+impl Tick {
     fn in_chapter(&self, trigger: &Trigger, when: When) -> bool {
         match &trigger.sid {
-            Some(sid) => self.sid.is_some_and(|pair| at(pair, when) == sid),
+            Some(sid) => self.sid.as_ref().is_some_and(|pair| at(pair, when) == sid),
             None => trigger
                 .chapter
                 .is_none_or(|chapter| chapter == i64::from(*at(&self.chapter, when))),
@@ -331,13 +349,13 @@ impl Tick<'_> {
         let room = mode.and_then(|mode| trigger.checkpoint_rooms.get(mode));
         trigger.chapter == Some(i64::from(*at(&self.chapter, when)))
             && self.on_side(trigger, when)
-            && room.is_some_and(|room| room == at(self.room, when))
+            && room.is_some_and(|room| room == at(&self.room, when))
     }
 }
 
 fn chapter_complete(
     trigger: &Trigger,
-    slot: Option<u64>,
+    split_index: Option<u64>,
     tick: &Tick,
     armed: &mut Option<Option<u64>>,
 ) -> bool {
@@ -346,7 +364,7 @@ fn chapter_complete(
         && tick.in_chapter(trigger, When::Now)
         && !(named && i64::from(tick.chapter.current) == SUMMIT && in_credits(&tick.room.current));
     if rose {
-        *armed = Some(slot);
+        *armed = Some(split_index);
     }
     if armed.is_none() {
         return false;
