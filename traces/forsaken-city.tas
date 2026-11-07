@@ -8,6 +8,27 @@ Read,community/1B,Start
 #Restart
    1,Q
    1,J
-  50
+ 150
+Read,community/LoadAFromB,0,SkipExit
 
-FileTime: 2:39.324(9372)
+#Title menu
+  51
+   1,S
+   1,X
+  42
+   1,X
+  60
+   1,O
+  56
+
+#New file
+   1,D
+   1,O
+  15
+   1,O
+   1,S
+   1,D,J
+  32
+  30
+
+FileTime: 0:00.510(30)

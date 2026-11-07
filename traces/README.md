@@ -11,7 +11,7 @@ see [Maintaining](../docs/maintaining.md#recording-a-trace).
 | Trace | What it covers |
 |---|---|
 | `prologue` | A new file through the Prologue: from the title screen, through starting a new file and the Prologue, to the overworld. |
-| `forsaken-city` | A new file through the Prologue, then Forsaken City as the community's All Hearts route plays it: the A-side through its first checkpoint to its crystal heart, then a Save and Quit back into it, through its second checkpoint to its cassette, then back to the map; the B-side to its end; then a restart of the B-side. A checkpoint's side can't be told wrong here: the A-side's checkpoint rooms, `6` and `9b`, never appear on the B-side, nor the B-side's, `04` and `08`, on the A-side. |
+| `forsaken-city` | A new file through the Prologue, then Forsaken City as the community's All Hearts route plays it: the A-side through its first checkpoint to its crystal heart, then a Save and Quit back into it, through its second checkpoint to its cassette, then back to the map; the B-side to its end; a restart of the B-side; then back to the map, through the menus to a new file in the second slot, and into its Prologue. A checkpoint's side can't be told wrong here: the A-side's checkpoint rooms, `6` and `9b`, never appear on the B-side, nor the B-side's, `04` and `08`, on the A-side. |
 | `summit` | The Summit from its last checkpoint, loaded with `console load`: its end, the credits, and the start of the Epilogue. |
 
 ## TAS files
@@ -155,11 +155,11 @@ the table says otherwise:
 | `newer` | `schema_version` 2 neither starts nor splits. |
 
 `forsaken-city`'s start a new file in frame 265, and split on completing chapter
-1, whose only completion is the B-side's, in frame 11502:
+1, whose only completion is the B-side's, in frame 11501:
 
 | Scenario | Checks |
 |---|---|
-| `b-side` | `side: 1` splits in frame 11502, at that frame's `FileTime`. |
+| `b-side` | `side: 1` splits in frame 11501, at that frame's `FileTime`. |
 | `other-side` | `side: 0` doesn't split. |
 
 `summit`'s start on completing chapter 7, in frame 7960, where `ChapterComplete`
