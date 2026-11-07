@@ -1,0 +1,11 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "checkpoint", "chapter": 7, "checkpoint": 6 }
+    }
+  },
+  "events": [
+    { "frame": 2, "event": "start", "game_time": 0 }
+  ]
+}

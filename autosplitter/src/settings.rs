@@ -1,3 +1,5 @@
+use core::iter;
+
 use asr::settings::{Map, Value};
 
 #[allow(dead_code)]
@@ -5,14 +7,17 @@ mod schema {
     include!(concat!(env!("OUT_DIR"), "/schema.rs"));
 }
 
-use schema::{Field, TimingMethod, CHAPTERS, NO_CHAPTER, SCHEMA_VERSION, SIDE_VALUES};
-pub use schema::{Kind, Timing};
+use schema::{Field, CHAPTERS, SCHEMA_VERSION, SIDE_VALUES};
+pub use schema::{Kind, Timing, TimingMethod, NO_CHAPTER};
 
 pub struct Trigger {
     pub kind: Kind,
     pub chapter: Option<i64>,
+    pub sid: Option<String>,
     pub side: Option<i64>,
     pub timing: Timing,
+    pub room: String,
+    pub checkpoint_rooms: &'static [&'static str],
 }
 
 impl Trigger {
@@ -20,8 +25,11 @@ impl Trigger {
         Self {
             kind,
             chapter: None,
+            sid: None,
             side: None,
             timing: Timing::default(),
+            room: String::new(),
+            checkpoint_rooms: &[],
         }
     }
 }
@@ -29,6 +37,8 @@ impl Trigger {
 pub struct Settings {
     pub start: Trigger,
     pub splits: Vec<Trigger>,
+    pub timing_method: TimingMethod,
+    pub auto_reset: bool,
 }
 
 impl Default for Settings {
@@ -36,59 +46,84 @@ impl Default for Settings {
         Self {
             start: Trigger::of(schema::START),
             splits: Vec::new(),
+            timing_method: TimingMethod::default(),
+            auto_reset: schema::AUTO_RESET,
         }
     }
 }
 
 impl Settings {
     pub fn parse(map: &Map) -> Self {
-        let mut settings = Self::default();
-        if let Some(version) = map.get("schema_version") {
-            match version.get_i64() {
-                Some(SCHEMA_VERSION) => {}
-                Some(newer) if newer > SCHEMA_VERSION => {
-                    asr::print_message(&format!(
-                        "schema_version {newer} is newer than {SCHEMA_VERSION}, so cfg is ignored"
-                    ));
-                    return settings;
+        if !readable(map) {
+            return Self::default();
+        }
+        match map.get("cfg") {
+            None => Self::default(),
+            Some(cfg) => match cfg.get_map() {
+                Some(cfg) => Self::from_cfg(&cfg),
+                None => {
+                    asr::print_message("cfg isn't a map, so it's ignored");
+                    Self::default()
                 }
-                Some(older) => asr::print_message(&format!(
-                    "schema_version {older} is older than {SCHEMA_VERSION}, so it's read as {SCHEMA_VERSION}"
-                )),
-                None => asr::print_message(&format!(
-                    "schema_version {version:?} isn't a number, so it's read as {SCHEMA_VERSION}"
-                )),
-            }
+            },
         }
-        let Some(cfg) = map.get("cfg") else {
-            return settings;
-        };
-        let Some(cfg) = cfg.get_map() else {
-            asr::print_message("cfg isn't a map, so it's ignored");
-            return settings;
-        };
-        let everest = flag(&cfg, "everest", schema::EVEREST);
-        if flag(&cfg, "auto_reset", schema::AUTO_RESET) {
-            asr::print_message("cfg.auto_reset isn't supported yet, so it's off");
-        }
-        timing_method(&cfg);
-        if let Some(start) = cfg.get("start") {
-            settings.start = trigger(&start, everest, "start");
-        }
-        if let Some(splits) = cfg.get("splits") {
-            match splits.get_list() {
-                Some(splits) => {
-                    settings.splits = splits
-                        .iter()
-                        .enumerate()
-                        .map(|(i, split)| trigger(&split, everest, &format!("splits[{i}]")))
-                        .collect();
-                }
-                None => asr::print_message("cfg.splits isn't a list, so there are none"),
-            }
-        }
-        settings
     }
+
+    fn from_cfg(cfg: &Map) -> Self {
+        let everest = flag(cfg, "everest", schema::EVEREST);
+        let auto_reset = flag(cfg, "auto_reset", schema::AUTO_RESET);
+        let timing_method = timing_method(cfg);
+        let start = match cfg.get("start") {
+            Some(start) => trigger(&start, everest, "start"),
+            None => Trigger::of(schema::START),
+        };
+        let splits = match cfg.get("splits").map(|splits| splits.get_list()) {
+            None => Vec::new(),
+            Some(Some(splits)) => splits
+                .iter()
+                .enumerate()
+                .map(|(i, split)| trigger(&split, everest, &format!("splits[{i}]")))
+                .collect(),
+            Some(None) => {
+                asr::print_message("cfg.splits isn't a list, so there are none");
+                Vec::new()
+            }
+        };
+        Self {
+            start,
+            splits,
+            timing_method,
+            auto_reset,
+        }
+    }
+
+    pub fn uses_sid(&self) -> bool {
+        iter::once(&self.start)
+            .chain(&self.splits)
+            .any(|trigger| trigger.sid.is_some())
+    }
+}
+
+fn readable(map: &Map) -> bool {
+    let Some(version) = map.get("schema_version") else {
+        return true;
+    };
+    match version.get_i64() {
+        Some(SCHEMA_VERSION) => {}
+        Some(newer) if newer > SCHEMA_VERSION => {
+            asr::print_message(&format!(
+                "schema_version {newer} is newer than {SCHEMA_VERSION}, so cfg is ignored"
+            ));
+            return false;
+        }
+        Some(older) => asr::print_message(&format!(
+            "schema_version {older} is older than {SCHEMA_VERSION}, so it's read as {SCHEMA_VERSION}"
+        )),
+        None => asr::print_message(&format!(
+            "schema_version {version:?} isn't a number, so it's read as {SCHEMA_VERSION}"
+        )),
+    }
+    true
 }
 
 fn flag(cfg: &Map, key: &str, default: bool) -> bool {
@@ -103,24 +138,21 @@ fn flag(cfg: &Map, key: &str, default: bool) -> bool {
     })
 }
 
-fn timing_method(cfg: &Map) {
+fn timing_method(cfg: &Map) -> TimingMethod {
     let Some(value) = cfg.get("timing_method") else {
-        return;
+        return TimingMethod::default();
     };
-    let file = TimingMethod::default().name();
-    match value
+    let method = value
         .get_string()
-        .and_then(|name| TimingMethod::from_name(&name))
-    {
-        Some(TimingMethod::File) => {}
-        Some(method) => asr::print_message(&format!(
-            "cfg.timing_method {} isn't supported yet, so it's {file}",
-            method.name()
-        )),
-        None => asr::print_message(&format!(
-            "cfg.timing_method {value:?} isn't valid, so it's {file}"
-        )),
-    }
+        .and_then(|name| TimingMethod::from_name(&name));
+    method.unwrap_or_else(|| {
+        let default = TimingMethod::default();
+        asr::print_message(&format!(
+            "cfg.timing_method {value:?} isn't valid, so it's {}",
+            default.name()
+        ));
+        default
+    })
 }
 
 fn trigger(value: &Value, everest: bool, place: &str) -> Trigger {
@@ -163,37 +195,32 @@ fn parse_trigger(value: &Value, everest: bool) -> Result<Trigger, String> {
                 trigger.timing = timing.ok_or_else(invalid)?;
             }
             Field::Checkpoint => checkpoint = Some(value.get_i64().ok_or_else(invalid)?),
-            Field::Room | Field::Sid | Field::Raw => {
+            Field::Room => trigger.room = value.get_string().ok_or_else(invalid)?,
+            Field::Sid => trigger.sid = Some(value.get_string().ok_or_else(invalid)?),
+            Field::Raw => {
                 value.get_string().ok_or_else(invalid)?;
             }
         }
         present.push(field);
+        present.extend(field.replaces());
     }
-    let stands_in = |field| {
-        present
-            .iter()
-            .any(|&other| other == field || other.replaces() == Some(field))
-    };
-    if let Some(missing) = kind.required().iter().find(|&&field| !stands_in(field)) {
+    if let Some(missing) = kind
+        .required()
+        .iter()
+        .find(|field| !present.contains(field))
+    {
         return Err(format!("has no {}", missing.name()));
     }
     if let Some(checkpoint) = checkpoint {
         let chapter = CHAPTERS
             .iter()
             .find(|chapter| Some(chapter.id) == trigger.chapter);
-        let count = chapter.map_or(0, |chapter| chapter.checkpoints.len());
-        if !(1..=count as i64).contains(&checkpoint) {
-            return Err(format!("has an invalid checkpoint, {checkpoint}"));
-        }
-    }
-    if !matches!(
-        kind,
-        Kind::Manual | Kind::Unknown | Kind::NewFile | Kind::ChapterComplete
-    ) {
-        return Err(format!("is {}, which isn't supported yet", kind.name()));
-    }
-    if present.contains(&Field::Sid) {
-        return Err("has a sid, which isn't supported yet".to_owned());
+        let rooms = chapter.and_then(|chapter| {
+            let index = usize::try_from(checkpoint).ok()?.checked_sub(1)?;
+            chapter.checkpoints.get(index)
+        });
+        trigger.checkpoint_rooms =
+            rooms.ok_or_else(|| format!("has an invalid checkpoint, {checkpoint}"))?;
     }
     Ok(trigger)
 }

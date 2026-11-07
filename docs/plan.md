@@ -1,10 +1,10 @@
 # Plan
 
-None of this is built. It's the design for the rest of splitting, the
-component's editor, the website, and the migration from the legacy component,
-written before the code. What is built, the settings map, how the module reads
-it, and its first triggers, is in [How it works](how-it-works.md). Check each part
-against the code before building it.
+None of this is built. It's the design for the component's editor, the website,
+and the migration from the legacy component, written before the code. What is
+built, the settings map, how the module reads it, and splitting, is in
+[How it works](how-it-works.md). Check each part against the code before
+building it.
 
 ## The design
 
@@ -30,36 +30,13 @@ against the code before building it.
 
 ## Settings
 
-The settings map, how the module reads it, and the triggers built so far are in
-[How it works](how-it-works.md#settings). This is what's left.
+The settings map, how the module reads it, and the triggers are in
+[How it works](how-it-works.md#settings). This is what's left, for editors:
 
-In `cfg`:
-
-- `timing_method`: `chapter` is the chapter time, held outside a chapter so that
-  a save and quit doesn't drop it to 0. `*_since_start` subtracts the value when
-  the start trigger fired.
-- `auto_reset`: whenever the start trigger fires while a run is in progress or
-  has ended, reset and start again in the same tick, which commits the attempt.
-  `room_enter` on a room the run passes again would reset mid-run, so editors
-  warn about it.
 - Presets exist only in editors. A configuration matching none is "Custom".
-
-### Triggers
-
-| `kind` | Fires when |
-|---|---|
-| `chapter_start` | the chapter timer starts: `ChapterStarted` rises |
-| `chapter_enter`, `chapter_exit` | the chapter ID changes to or from `chapter` |
-| `checkpoint` | the checkpoint's room for the side is entered |
-| `heart`, `cassette` | the chapter's crystal heart or cassette is collected |
-| `room_enter`, `room_exit` | the room changes to or from `room` |
-
-- `room` matches the game's room name exactly, case included.
-- `sid` is a chapter's SID, such as `Celeste/1-ForsakenCity`. Modded chapters
-  have IDs above 10, which Everest assigns at load time, so they change with the
-  mods installed, while SIDs don't.
-- C-sides have no checkpoints, but legacy checks B-side rooms on C-sides, so the
-  schema's C-side rooms repeat B's.
+- A start that the run passes again, such as a `room_enter`, `checkpoint` or
+  `chapter_enter`, would reset mid-run with `auto_reset`, so editors warn about
+  it.
 
 ### Rules
 
@@ -72,27 +49,14 @@ In `cfg`:
 4. The website labels `high_priority` and `set_game_time` "LiveSplit (Windows)
    only".
 5. Editors flag invalid triggers.
-6. With `everest` on, `sid` replaces `chapter`, and editors hide Everest-only
-   fields while it's off, but keep them. Without Everest, the module logs that,
-   and those triggers don't fire. Later candidates: a level set filter, and a
-   golden-grabbed trigger from Everest's chapter flags.
+6. Editors hide Everest-only fields while `everest` is off, but keep them. Later
+   candidates: a level set filter, and a golden-grabbed trigger from Everest's
+   chapter flags.
 
 ## The module
 
 It registers title widgets only, plain text saying where the website is, with
 a short URL. On Windows they're never shown.
-
-These rules keep parity with the legacy component, so none has a setting:
-
-- `heart` and `cassette` fire on the rising edge of the chapter's flag. Counting
-  breaks individual levels on a file that already has the heart, and a flag that
-  stays set double-splits consecutive splits.
-- `auto_reset` resets and starts in the same tick, so the new attempt keeps its
-  first frame, while running, paused or ended. Splits aren't checked that tick.
-- `checkpoint` fires on entering the room, spawning into it included.
-- `chapter_start` ignores the first 3 s after attaching.
-- `chapter_enter` and `chapter_exit` with a `side` need the side to change too.
-- `room_enter` and `room_exit` fire only inside a chapter.
 
 ## The component
 
@@ -259,18 +223,17 @@ migration must stay pure and deterministic.
 
 ### Deliberate deviations
 
+Those of splitting itself are in
+[How it works](how-it-works.md#splitting). Those of the mapping:
+
 | Legacy | Now | Who notices |
 |---|---|---|
 | Always switches to Game Time | Honours `SetGameTime` | Users who unchecked it. |
-| `AutoReset` resets outside a chapter, and is ignored in full game | Reset and start when the start trigger fires again, in every case | Full-game runners get a reset on a new file. IL attempts are committed when the next starts, not on return to the map. |
 | Unknown types silently manual | `unknown`, flagged | Nobody, timing-wise. |
 | Case C's final split time is absolute | Consistent with the run | Custom-start runners. |
 | `FileTimeOffset` in C and E mixes clocks | `file_since_start` | A rare combination. |
 | No splits: start on any room change, auto reset, split on room changes | Nothing automatic | Users without splits, and single-room timers. |
 | Case C with one segment splits on the next room change | Split by hand | Custom-start single-room timers. |
-| Room names ignore case | Exact match | Saved names whose case differs from the game's. |
-| Heart and cassette splits count, or use the flag in some setups | The flag's rising edge | Nobody, if it works. |
-| Checkpoints fire while in the room | Fire on entering it | Lists whose previous split fired in that room. |
 
 The legacy component becomes easier to add to a layout by mistake: while its DLL
 was the entry's first URL, the layout editor hid it, and once the entry points
@@ -295,12 +258,13 @@ reads flat elements the new format lacks: release notes should say so.
   room values.
 - Round-trip: the component's writer, then ASR's parser and writer, gives the
   same XML, which livesplit-core's `StoredAutoSplitterSettings` also parses.
-- The module: loading the settings again once a second and on a reset, and
-  `sid` with `everest` off and on.
+- The module: loading the settings again once a second and on a reset.
 - In LiveSplit, built with `AutoSplitterFactory.AutoSplittersXmlUrl` pointing at
   a test copy of the list: a fresh install, a legacy user, a legacy component in
   the layout, the layout editor, an update, a deleted wasm, Cancel in the
-  settings dialog, the priority, and Game Time. Those that download nothing can
+  settings dialog, the priority, Game Time, and an auto reset, whose reset and
+  start in one tick LiveSplit's ASR has to apply in order, without a prompt, as
+  only livesplit-core is shown to. Those that download nothing can
   use [a copy of LiveSplit](maintaining.md#trying-the-component-in-livesplit).
 - Across hosts: a `.lss` saved on Windows opens in the Druid fork the same, one
   edited on the website opens on Windows the same, and the Druid fork shows the

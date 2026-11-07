@@ -1,0 +1,18 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "new_file" },
+      "splits": [
+        { "kind": "checkpoint", "chapter": 1, "checkpoint": 1 },
+        { "kind": "checkpoint", "chapter": 1, "checkpoint": 1 }
+      ]
+    }
+  },
+  "segments": 2,
+  "events": [
+    { "frame": 265, "event": "start", "game_time": 0 },
+    { "frame": 3586, "event": "split", "game_time": 410890000 },
+    { "frame": 8483, "event": "split", "game_time": 1101940000 }
+  ]
+}
