@@ -54,50 +54,47 @@ impl Default for Settings {
 
 impl Settings {
     pub fn parse(map: &Map) -> Self {
-        let mut settings = Self::default();
-        if let Some(version) = map.get("schema_version") {
-            match version.get_i64() {
-                Some(SCHEMA_VERSION) => {}
-                Some(newer) if newer > SCHEMA_VERSION => {
-                    asr::print_message(&format!(
-                        "schema_version {newer} is newer than {SCHEMA_VERSION}, so cfg is ignored"
-                    ));
-                    return settings;
+        if !readable(map) {
+            return Self::default();
+        }
+        match map.get("cfg") {
+            None => Self::default(),
+            Some(cfg) => match cfg.get_map() {
+                Some(cfg) => Self::from_cfg(&cfg),
+                None => {
+                    asr::print_message("cfg isn't a map, so it's ignored");
+                    Self::default()
                 }
-                Some(older) => asr::print_message(&format!(
-                    "schema_version {older} is older than {SCHEMA_VERSION}, so it's read as {SCHEMA_VERSION}"
-                )),
-                None => asr::print_message(&format!(
-                    "schema_version {version:?} isn't a number, so it's read as {SCHEMA_VERSION}"
-                )),
-            }
+            },
         }
-        let Some(cfg) = map.get("cfg") else {
-            return settings;
+    }
+
+    fn from_cfg(cfg: &Map) -> Self {
+        let everest = flag(cfg, "everest", schema::EVEREST);
+        let auto_reset = flag(cfg, "auto_reset", schema::AUTO_RESET);
+        let timing_method = timing_method(cfg);
+        let start = match cfg.get("start") {
+            Some(start) => trigger(&start, everest, "start"),
+            None => Trigger::of(schema::START),
         };
-        let Some(cfg) = cfg.get_map() else {
-            asr::print_message("cfg isn't a map, so it's ignored");
-            return settings;
-        };
-        let everest = flag(&cfg, "everest", schema::EVEREST);
-        settings.auto_reset = flag(&cfg, "auto_reset", schema::AUTO_RESET);
-        settings.timing_method = timing_method(&cfg);
-        if let Some(start) = cfg.get("start") {
-            settings.start = trigger(&start, everest, "start");
-        }
-        if let Some(splits) = cfg.get("splits") {
-            match splits.get_list() {
-                Some(splits) => {
-                    settings.splits = splits
-                        .iter()
-                        .enumerate()
-                        .map(|(i, split)| trigger(&split, everest, &format!("splits[{i}]")))
-                        .collect();
-                }
-                None => asr::print_message("cfg.splits isn't a list, so there are none"),
+        let splits = match cfg.get("splits").map(|splits| splits.get_list()) {
+            None => Vec::new(),
+            Some(Some(splits)) => splits
+                .iter()
+                .enumerate()
+                .map(|(i, split)| trigger(&split, everest, &format!("splits[{i}]")))
+                .collect(),
+            Some(None) => {
+                asr::print_message("cfg.splits isn't a list, so there are none");
+                Vec::new()
             }
+        };
+        Self {
+            start,
+            splits,
+            timing_method,
+            auto_reset,
         }
-        settings
     }
 
     pub fn uses_sid(&self) -> bool {
@@ -105,6 +102,28 @@ impl Settings {
             .chain(&self.splits)
             .any(|trigger| trigger.sid.is_some())
     }
+}
+
+fn readable(map: &Map) -> bool {
+    let Some(version) = map.get("schema_version") else {
+        return true;
+    };
+    match version.get_i64() {
+        Some(SCHEMA_VERSION) => {}
+        Some(newer) if newer > SCHEMA_VERSION => {
+            asr::print_message(&format!(
+                "schema_version {newer} is newer than {SCHEMA_VERSION}, so cfg is ignored"
+            ));
+            return false;
+        }
+        Some(older) => asr::print_message(&format!(
+            "schema_version {older} is older than {SCHEMA_VERSION}, so it's read as {SCHEMA_VERSION}"
+        )),
+        None => asr::print_message(&format!(
+            "schema_version {version:?} isn't a number, so it's read as {SCHEMA_VERSION}"
+        )),
+    }
+    true
 }
 
 fn flag(cfg: &Map, key: &str, default: bool) -> bool {
@@ -183,13 +202,13 @@ fn parse_trigger(value: &Value, everest: bool) -> Result<Trigger, String> {
             }
         }
         present.push(field);
+        present.extend(field.replaces());
     }
-    let stands_in = |field| {
-        present
-            .iter()
-            .any(|&other| other == field || other.replaces() == Some(field))
-    };
-    if let Some(missing) = kind.required().iter().find(|&&field| !stands_in(field)) {
+    if let Some(missing) = kind
+        .required()
+        .iter()
+        .find(|field| !present.contains(field))
+    {
         return Err(format!("has no {}", missing.name()));
     }
     if let Some(checkpoint) = checkpoint {
