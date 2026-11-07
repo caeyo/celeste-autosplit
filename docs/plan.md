@@ -34,8 +34,9 @@ The settings map, how the module reads it, and the triggers are in
 [How it works](how-it-works.md#settings). This is what's left, for editors:
 
 - Presets exist only in editors. A configuration matching none is "Custom".
-- `room_enter` as the start, on a room the run passes again, would reset
-  mid-run with `auto_reset`, so editors warn about it.
+- A start that the run passes again, such as a `room_enter`, `checkpoint` or
+  `chapter_enter`, would reset mid-run with `auto_reset`, so editors warn about
+  it.
 
 ### Rules
 
@@ -261,7 +262,9 @@ reads flat elements the new format lacks: release notes should say so.
 - In LiveSplit, built with `AutoSplitterFactory.AutoSplittersXmlUrl` pointing at
   a test copy of the list: a fresh install, a legacy user, a legacy component in
   the layout, the layout editor, an update, a deleted wasm, Cancel in the
-  settings dialog, the priority, and Game Time. Those that download nothing can
+  settings dialog, the priority, Game Time, and an auto reset, whose reset and
+  start in one tick LiveSplit's ASR has to apply in order, without a prompt, as
+  only livesplit-core is shown to. Those that download nothing can
   use [a copy of LiveSplit](maintaining.md#trying-the-component-in-livesplit).
 - Across hosts: a `.lss` saved on Windows opens in the Druid fork the same, one
   edited on the website opens on Windows the same, and the Druid fork shows the
