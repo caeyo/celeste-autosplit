@@ -209,15 +209,19 @@ change a migrated user's behaviour, and the output is the same each time.
 | `HeartGemAny`, `ChapterNHeartGem` | `heart`, the second with chapter `id(N)` |
 | `ChapterNCassette` | `cassette`, chapter `id(N)` |
 | `AreaComplete`, `AreaOnEnter`, `AreaOnExit,V` | `chapter_complete`, `chapter_enter`, `chapter_exit`, with chapter and side from V |
+| `AreaOnEnter`, `AreaOnExit,Menu` | `chapter_exit`, `chapter_enter`, without a chapter |
 | `LevelEnter`, `LevelExit,V` | `room_enter`, `room_exit`, room V as written |
 | anything else, or a value that never fires | `unknown`, with the text as `raw` |
 
 Parse as legacy does: split on commas, keeping fields 0 and 1; parse the type as
 `Enum.TryParse` does, an undefined integer being `unknown`; split an area value
-on `-`, part 0 a chapter name (`Menu` -1, `Prologue`, `ForsakenCity`, ...,
+on `-`, part 0 a chapter name (`Menu`, `Prologue`, `ForsakenCity`, ...,
 `Core`, `Farewell`) or integer, part 1 `ASide`, `BSide`, `CSide` or 0 to 2,
 trimmed and ignoring case. A failure, or side `None` or -1, is `unknown`.
-`legacy` keeps each boolean's text and each split's text, in order.
+`Menu`, -1, isn't a chapter: `AreaOnEnter` and `AreaOnExit` of it map as above,
+and with a side, or on `AreaComplete`, it never fires, since outside a chapter
+the side is -1 and `ChapterComplete` false. `legacy` keeps each boolean's text
+and each split's text, in order.
 
 The result reaches disk only when the user saves the splits, since the component
 doesn't set `Run.HasChanged`. Until then, it migrates again on each load, so
@@ -236,7 +240,8 @@ Those of splitting itself are in
 | `FileTimeOffset` in C and E mixes clocks | `file_since_start` | A rare combination. |
 | No splits: start on any room change, split on room changes | Nothing automatic but the reset, with `AutoReset` | Users without splits, and single-room timers. |
 | Case C with one segment splits on the next room change | Split by hand | Custom-start single-room timers. |
-| With `AutoReset`, nothing starts or splits outside a chapter, since the reset comes first, so in case C a start that fires there, such as `AreaOnExit,X` or `AreaOnEnter,Menu`, never starts | It starts, and with `AreaOnExit,X`, leaving X during the run resets and starts again | Custom-start runners whose start fires outside a chapter. |
+| With `AutoReset`, nothing starts or splits outside a chapter, since the reset comes first, so in case C a start that fires there, such as `AreaOnExit,X` or `AreaOnEnter,Menu`, never starts | It starts, and leaving X, or with `AreaOnEnter,Menu` any chapter, during the run resets and starts again | Custom-start runners whose start fires outside a chapter. |
+| `AreaOnEnter,Menu` and `AreaOnExit,Menu` don't fire when a check sees one chapter change straight to another, as can happen between the Summit and the Epilogue, where the chapter ID is -1 for only 2 updates | Their `chapter_exit` and `chapter_enter` fire | Lists with such a split, when legacy's check would miss the -1. |
 
 The legacy component becomes easier to add to a layout by mistake: while its DLL
 was the entry's first URL, the layout editor hid it, and once the entry points

@@ -251,9 +251,8 @@ writes the map.
 - A trigger that isn't a map, has no `kind` or an unknown one, lacks a required
   field, or has a field of the wrong type or with a value not allowed, behaves
   like `manual`, so an older module treats a newer kind as `manual`. The module
-  logs it. `chapter` takes any ID from 0 up, modded ones included, and `-1`
-  only for the kinds that allow it; `checkpoint` takes the numbers of its
-  chapter's checkpoints.
+  logs it. `chapter` takes any ID from 0 up, modded ones included, and
+  `checkpoint` the numbers of its chapter's checkpoints.
 - Keys the module doesn't know, in `cfg` or in a trigger, are ignored, and so are
   fields a trigger's kind doesn't take. An Everest-only field, `sid`, is ignored
   while `everest` is off.
@@ -284,7 +283,7 @@ so attaching is never a change.
 | `unknown` | never. Only migration makes it, and editors flag it. |
 | `new_file` | a new save file is started: `Starting New File` rises |
 | `chapter_start` | the chapter's timer starts: `ChapterStarted` rises, unless the chapter is [resuming](#resuming) |
-| `chapter_enter`, `chapter_exit` | the chapter ID changes to or from `chapter`, where -1 is outside a chapter, or to or from any chapter other than -1 when `chapter` is absent. With a `side`, the side changes to or from it too. |
+| `chapter_enter`, `chapter_exit` | the chapter ID changes to or from `chapter`, or, when `chapter` is absent, to or from any chapter: anything but -1, which is outside a chapter. With a `side`, the side changes to or from it too. |
 | `chapter_complete` | the chapter is completed (`timing: "chapter_complete"`, the default), or the game leaves the completed chapter (`timing: "chapter_exit"`) |
 | `checkpoint` | the room becomes the checkpoint's room for the side being played, in `chapter` |
 | `heart`, `cassette` | `ChapterHeart` or `ChapterCassette` rises: the chapter's crystal heart or cassette is collected |
