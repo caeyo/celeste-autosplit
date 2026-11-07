@@ -8,6 +8,6 @@
   },
   "events": [
     { "frame": 265, "event": "start", "game_time": 0 },
-    { "frame": 11502, "event": "split", "game_time": 1590010000 }
+    { "frame": 11501, "event": "split", "game_time": 1590010000 }
   ]
 }
