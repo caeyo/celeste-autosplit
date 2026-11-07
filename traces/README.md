@@ -11,7 +11,7 @@ see [Maintaining](../docs/maintaining.md#recording-a-trace).
 | Trace | What it covers |
 |---|---|
 | `prologue` | A new file through the Prologue: from the title screen, through starting a new file and the Prologue, to the overworld. |
-| `forsaken-city` | A new file through the Prologue, then Forsaken City as the community's All Hearts route plays it: the A-side through both checkpoints, its crystal heart, after which the TAS saves and quits and goes on, and its cassette, then back to the map; the B-side to its end; then a restart of the B-side. |
+| `forsaken-city` | A new file through the Prologue, then Forsaken City as the community's All Hearts route plays it: the A-side through its first checkpoint to its crystal heart, then a Save and Quit back into it, through its second checkpoint to its cassette, then back to the map; the B-side to its end; then a restart of the B-side. A checkpoint's side can't be told wrong here: the A-side's checkpoint rooms, `6` and `9b`, never appear on the B-side, nor the B-side's, `04` and `08`, on the A-side. |
 | `summit` | The Summit from its last checkpoint, loaded with `console load`: its end, the credits, and the start of the Epilogue. |
 
 ## TAS files
@@ -164,8 +164,9 @@ the table says otherwise:
 
 `summit`'s start on completing chapter 7, in frame 7960, where `ChapterComplete`
 rises in room `g-03`, at that frame's `FileTime`. It rises again in frame 8376, in
-`credits-summit`. Editors offer `chapter_complete` only for splits, but no other
-start comes between the two, and the timer has one segment:
+`credits-summit`. With one timer segment, only a start can skip `g-03`'s
+completion, so they start with `chapter_complete`, which editors offer only for
+splits:
 
 | Scenario | Checks |
 |---|---|

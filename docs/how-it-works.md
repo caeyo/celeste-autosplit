@@ -402,9 +402,8 @@ one revision in `harness/Cargo.toml`. The scenarios add that the module reads it
 settings from that auto splitting runtime's map, and, in the Prologue, starts on
 a new file and splits on its completion, with both timings, on the frames and at
 the game times the trace gives, and doesn't with an empty, invalid or newer
-`cfg`, or another chapter. On a B-side's completion, a split with `side: 1`
-fires and one with `side: 0` doesn't, and in chapter 7's credits, one with
-`chapter: 7` doesn't and one without a `chapter` does.
+`cfg`, or another chapter. The other traces' scenarios add what
+[their tables](../traces/README.md#scenarios) list.
 
 The [component's tests](livesplit-notes.md#the-components-tests) prove that
 LiveSplit's ASR loads the wasm module and keeps its settings.
