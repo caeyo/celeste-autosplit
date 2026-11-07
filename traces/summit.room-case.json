@@ -1,0 +1,9 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "room_enter", "room": "G-00B" }
+    }
+  },
+  "events": []
+}

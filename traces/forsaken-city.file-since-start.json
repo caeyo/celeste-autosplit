@@ -1,0 +1,14 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "chapter_start", "chapter": 1 },
+      "timing_method": "file_since_start",
+      "splits": [{ "kind": "chapter_complete", "chapter": 1 }]
+    }
+  },
+  "events": [
+    { "frame": 2652, "event": "start", "game_time": 0 },
+    { "frame": 11501, "event": "split", "game_time": 1327700000 }
+  ]
+}

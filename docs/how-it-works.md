@@ -1,9 +1,9 @@
 # How it works
 
 The auto splitter is a wasm module that attaches to Celeste, reads its memory
-each tick, publishes what it reads as debug variables, and starts and splits the
-timer as its settings say. Some triggers and timing methods aren't built yet:
-they, and the settings' editors, are in the [plan](plan.md).
+each tick, publishes what it reads as debug variables, and starts, splits and
+resets the timer as its settings say. The settings' editors, the rest of the component, the
+website and the migration from the legacy component are in the [plan](plan.md).
 
 ## Terms
 
@@ -213,7 +213,10 @@ In `cfg`:
   `asr::timer::current_split_index`, so manual splits, skips and undos keep it
   aligned. Segments past the list's end are split by hand, and extra entries are
   ignored.
-- `timing_method`: `file` is the save file's time. It's the only one built.
+- `timing_method` is the clock game time follows, [below](#game-time).
+- `auto_reset` resets and starts again when `start` fires during a run,
+  [below](#splitting).
+- `everest` lets triggers name their chapter by `sid`, [below](#splitting).
 - `high_priority` and `set_game_time` are the component's alone, and the module
   ignores them.
 - An empty `cfg` does nothing but report game time.
@@ -235,9 +238,9 @@ of schema it doesn't know fails the build, and so does a new field, until
 `settings.rs` reads it.
 
 The module loads the map once attached, then every 120 ticks, about once a
-second, and when the timer resets. It parses `schema_version` and `cfg` only when
-their debug text differs from the last parsed, so each problem is logged once
-per change. It never writes the map.
+second, and when the timer resets, unless the module reset it. It parses
+`schema_version` and `cfg` only when their debug text differs from the last
+parsed, so each problem is logged once per change. It never writes the map.
 
 - A missing key means its default. `gui::add_bool` returns a default without
   writing it, so the map only holds what someone set.
@@ -250,38 +253,92 @@ per change. It never writes the map.
   field, or has a field of the wrong type or with a value not allowed, behaves
   like `manual`, so an older module treats a newer kind as `manual`. The module
   logs it. `chapter` takes any ID from 0 up, modded ones included, and `-1`
-  only for the kinds that allow it; `checkpoint` takes the numbers of its chapter's checkpoints.
+  only for the kinds that allow it; `checkpoint` takes the numbers of its
+  chapter's checkpoints.
 - Keys the module doesn't know, in `cfg` or in a trigger, are ignored, and so are
   fields a trigger's kind doesn't take. An Everest-only field, `sid`, is ignored
   while `everest` is off.
-- Not built yet, and so logged and read as their defaults: a trigger of a kind
-  other than those [below](#splitting), or with a `sid` while `everest` is on,
-  is `manual`; a `timing_method` other than `file` is `file`; `auto_reset` is
-  off.
 
 ## Splitting
 
 [`splitter.rs`](../autosplitter/src/splitter.rs) runs each tick after the
 values are read, and does nothing on a tick that read none. It keeps the
-previous tick's values in asr's watchers.
+previous tick's values in asr's watchers, which take their first value as both,
+so attaching is never a change.
 
 - While the timer isn't running, if `start` fires, it starts the timer and sets
   game time.
-- While it's running or paused, it sets game time, then splits if the trigger
-  for the current split index fires. The tick that starts the timer doesn't
-  check splits.
-- Once the run has ended, it does nothing.
+- While it's running or paused, with `auto_reset` on, if `start` fires, it
+  resets the timer, which commits the attempt, and starts it again in the same
+  tick, so the new attempt keeps its first frame. It checks no split on that
+  tick. Otherwise, it sets game time, then splits if the trigger for the current
+  split index fires. The tick that starts the timer doesn't check splits.
+- Once the run has ended, it only resets and starts again, as above.
 
 | `kind` | Fires when |
 |---|---|
 | `manual` | never |
 | `unknown` | never. Only migration makes it, and editors flag it. |
 | `new_file` | a new save file is started: `Starting New File` rises |
+| `chapter_start` | the chapter's timer starts: `ChapterStarted` rises, unless the chapter is [resuming](#resuming) |
+| `chapter_enter`, `chapter_exit` | the chapter ID changes to or from `chapter`, and with a `side`, the side changes to or from it too |
 | `chapter_complete` | the chapter is completed (`timing: "chapter_complete"`, the default), or the game leaves the completed chapter (`timing: "chapter_exit"`) |
+| `checkpoint` | the room becomes the checkpoint's room for the side being played, in `chapter` |
+| `heart`, `cassette` | `ChapterHeart` or `ChapterCassette` rises: the chapter's crystal heart or cassette is collected |
+| `room_enter`, `room_exit` | inside a chapter, the room changes to or from `room` |
 
 `chapter` is the game's chapter ID, not its number: 9 is Core, chapter 8, and
-10 is Farewell, chapter 9. Higher IDs are modded. An absent optional field matches anything:
-`{kind: "chapter_complete"}` is any chapter.
+10 is Farewell, chapter 9. Higher IDs are modded. An absent optional field
+matches anything: `{kind: "chapter_complete"}` is any chapter. The chapter and
+side a trigger matches are the current tick's, except that `chapter_exit`
+matches those it left, and `chapter_complete` the side it completed.
+
+- `room` matches the game's room name exactly, case included.
+- `checkpoint` is a checkpoint's number in its chapter, from 1, and the schema
+  has its room for each side. C-sides have no checkpoints, but legacy checks
+  B-side rooms on C-sides, so the schema's C-side rooms repeat B's. Spawning
+  into the room counts as entering it, but resuming in it doesn't.
+- With `everest` on, a trigger's `sid`, a chapter's SID such as
+  `Celeste/1-ForsakenCity`, replaces its `chapter`, and is matched against
+  Everest's `Chapter SID`. Modded chapters have IDs above 10, which Everest
+  assigns at load time, so they change with the mods installed, while SIDs
+  don't. Without Everest's struct, the module logs once that triggers with a
+  `sid` don't fire, and they don't.
+
+### Resuming
+
+A chapter is resuming on a tick where `ChapterStarted` rises while
+`ChapterTime` is above 0 and at least the last `ChapterTime` read inside a
+chapter. `ChapterTime` reads 0 outside a chapter, so on every rise the tick
+before read 0. Resuming after a Save and Quit, and the Summit's credits level,
+carry on from the last value read inside the chapter, while a real start reads
+near 0. With no last value, just after attaching, a rise is a start. No
+threshold is involved, so it holds at any tick rate.
+
+- `chapter_start`, `room_enter` and `checkpoint` don't fire on a tick that
+  resumes.
+- `heart` and `cassette` don't fire on a tick the chapter ID changes: on
+  resuming, `ChapterHeart` comes back set without a collection.
+
+### Game time
+
+`timing_method` picks the clock:
+
+- `file`, the default: `FileTime`, the save file's time.
+- `chapter`: `ChapterTime`, or outside a chapter the last read inside one, so a
+  Save and Quit doesn't drop it to 0.
+- `file_since_start` and `chapter_since_start`: the same, minus its value on
+  the tick the timer started, by the module or, seen on the next tick, by
+  anything else. Both clocks' values are kept, so a change of `timing_method`
+  during a run subtracts the right one.
+
+The tick that starts the timer sets game time from the clock. Every tick after,
+while the run is in progress, sets it, except on a tick where the clock drops
+to 0, which keeps the game time before. Game time stays paused through the
+whole run, from the tick it starts, whoever started it, so it only ever holds
+the game's own values and never runs on by itself between ticks.
+
+### Against legacy
 
 These rules keep parity with the legacy component, so none has a setting:
 
@@ -290,13 +347,21 @@ These rules keep parity with the legacy component, so none has a setting:
   `"chapter_exit"`, when `ChapterComplete` falls again, in any chapter, which can
   be on another frame than the chapter ID changing. In chapter 7, it arms only in
   a room whose name isn't empty and doesn't start with `credits`, ignoring case,
-  except without a `chapter`, as legacy does. The side matched is the previous
-  tick's, when it fires. It disarms on every tick the split index differs from
-  the one it armed for, as legacy does on a split, skip, undo or reset.
-- Game time is the file time, `FileTime`, set every tick while the run is in
-  progress, except on a tick where it drops to 0, which keeps the game time
-  before. It's paused whenever `FileTime` hasn't changed since the previous
-  tick, so it runs on between ticks only while the game's timer does.
+  except without a `chapter` or `sid`, as legacy does. The side matched is the
+  previous tick's, when it fires. It disarms on every tick the split index
+  differs from the one it armed for, as legacy does on a split, skip, undo or
+  reset.
+- `chapter_exit` fires on a Save and Quit, and `chapter_enter` on resuming, as
+  `AreaOnExit` and `AreaOnEnter` do. With a `side`, the side has to change too.
+- `room_enter` fires on entering a chapter, where the room changes from none,
+  and `room_exit` never fires on leaving one, as `LevelEnter` and `LevelExit`
+  do.
+- `checkpoint`'s rooms are legacy's, by side.
+- `chapter` game time is held outside a chapter, as the IL case's is, and the
+  `*_since_start` methods subtract the clock's value at the start, as the
+  custom-start case and `FileTimeOffset` do. Game time keeps its value on a drop
+  to 0. Legacy pauses it only while the clock holds still, letting it run on in
+  real time otherwise; paused throughout, it shows the same values.
 
 These deviate from legacy on purpose:
 
@@ -304,6 +369,14 @@ These deviate from legacy on purpose:
 |---|---|---|
 | A chapter split whose side doesn't match when it fires stays armed, so a later chapter's completion can split it | It disarms | Runners with a side on a chapter split, who complete that chapter on another side first. |
 | A new-file start fires whenever `Starting New File` is true, so after a reset it starts again at once while the value stays true | `new_file` fires when it rises | Runners who reset just after starting a new file. |
+| The IL start ignores the first 3 s after attaching | Attaching is never a start, and any rise after it is | Runners whose chapter starts within 3 s of the auto splitter attaching. |
+| The IL start fires whenever `ChapterStarted` rises, so also on resuming after a Save and Quit, and in the Summit's credits | `chapter_start` doesn't fire on resuming | IL runners who save and quit: the attempt carries on. |
+| `AutoReset` resets outside a chapter, and is ignored in full game | Reset and start when the start trigger fires again, in every case | Full-game runners get a reset on a new file. IL attempts are committed when the next starts, not on return to the map. |
+| `LevelEnter` fires on resuming, in the room resumed in | `room_enter` doesn't, for consistency with `room_exit`, which doesn't fire on the Save and Quit | Runners whose `room_enter` split is the room they saved and quit in, which shouldn't come up. Recorded so a report of it can be traced here. |
+| Room names ignore case | Exact match | Saved names whose case differs from the game's. |
+| Checkpoints fire while in the room, so also on resuming in it after a Save and Quit | Fire on entering it, but not on resuming in it, since a checkpoint split marks entering the checkpoint for the first time | Lists whose previous split fired in that room, and runners who save and quit in a checkpoint's room before its split. |
+| Heart and cassette splits fire when the file's count goes up by 1, and in IL or with `FileTimeOffset`, also while the chapter's flag is set | The flag's rising edge, except on a tick the chapter ID changes | Runners on a file that already has the heart, who now get the split outside IL. Counting would break individual levels there, and a flag that stays set double-splits consecutive splits. |
+| Chapter changes compare with the chapter from when a split other than manual was last checked, and room changes with the room from the last tick of a run, so after a reset, an `AreaOnEnter` or `LevelEnter` split for where the next run starts can fire at once | They compare with the previous tick | Lists with such a split. |
 
 The module uses only asr functions every host's auto splitting runtime has.
 
@@ -382,12 +455,13 @@ root, and `Starting New File` 1 exactly when the save's `Time` is 0.
   it, as [traces](../traces/README.md#scenarios) describes. A new auto splitter,
   with the scenario's settings map and a fresh `Timer`, attaches while the game
   holds the trace's first frame, then the trace is replayed through it. The
-  starts and splits the `Timer` gets, their frames, and their game times must be
-  exactly the scenario's, which are written by hand from the trace. A split's
-  game time is the split time the run records, and a start's the game time once
-  its tick ends. They're compared to the millisecond: the game's times are whole
-  milliseconds, and while game time isn't paused, livesplit-core runs it on in
-  real time, a few microseconds past what the module set.
+  starts, splits and resets the `Timer` gets, their frames, and their game times
+  must be exactly the scenario's, which are written by hand from the trace. A
+  split's game time is the split time the run records, a start's the game time
+  once its tick ends, and a reset has none. They're compared exactly, to the
+  tick of 100 ns: game time is paused, so livesplit-core holds exactly what the
+  module set, and game time left running would show as a few microseconds
+  past it.
 
 The live check catches layout mistakes whatever traces there are, and the replay
 adds the values only real play produces, such as empty strings. On all four
@@ -402,7 +476,8 @@ one revision in `harness/Cargo.toml`. The scenarios add that the module reads it
 settings from that auto splitting runtime's map, and, in the Prologue, starts on
 a new file and splits on its completion, with both timings, on the frames and at
 the game times the trace gives, and doesn't with an empty, invalid or newer
-`cfg`, or another chapter. The other traces' scenarios add what
+`cfg`, or another chapter, and that a `sid` is ignored with `everest` off, and
+never fires on vanilla with it on. The other traces' scenarios add what
 [their tables](../traces/README.md#scenarios) list.
 
 The [component's tests](livesplit-notes.md#the-components-tests) prove that
@@ -411,7 +486,14 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
 ### What they don't prove
 
 - Everest: no probe constructs it, and CI doesn't run it. Its offsets rest on
-  the transcription, and nothing checks the 0xff marker.
+  the transcription, and nothing checks the 0xff marker. No trace has its
+  values, so matching a `sid` rests on a hand check on 2026-11-07, on Windows
+  with Everest `stable-1.6623.0`, while `traces/forsaken-city.tas` played:
+  `chapter_start`, `chapter_complete`, `chapter_enter`, `room_enter`, `heart`
+  and `chapter_exit` with the Prologue's or Forsaken City's SID fired on the
+  updates the trace gives, `chapter_enter` on resuming too, a `sid` of another
+  chapter didn't, and with `everest` off, a `sid` was ignored. `Chapter SID`
+  is empty outside a chapter.
 - Vanilla on Everest's FNA, with `--vanilla`: checked once by hand on Windows,
   with Everest `stable-1.4449.0` and `stable-1.6662.0`.
 - Values neither check writes, such as the smallest and largest numbers.
@@ -423,13 +505,22 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
 - Reading at the tick rate: the harness ticks once per line of a trace, once
   per update of the game.
 - Detaching and attaching again after 10 failed searches.
-- Pausing game time: the harness ticks once per update, back to back, and the
-  module sets game time every tick, so whether it runs on between ticks doesn't
-  show.
 - Loading the settings again, once a second and on a reset: a scenario's map
   never changes. Nor what the module logs.
 - What no trace has: disarming when the split index changes or the side
-  doesn't match.
+  doesn't match; the chapter changing while the side doesn't, which
+  `chapter_enter` and `chapter_exit` with a `side` ignore, since on vanilla
+  the side is -1 outside a chapter; a checkpoint's room for the wrong side,
+  since neither side's checkpoint rooms appear on the other; a rise of
+  `ChapterStarted` with `ChapterTime` above 0 and no last value, as on resuming
+  just after attaching on the map, since every trace starts from the title
+  screen or a fresh load; `ChapterCassette` coming back set on entering a
+  chapter, so nothing checks that `cassette` ignores it there, as the heart's
+  flag shows `heart` does; resuming into a checkpoint's room; and a paused
+  timer.
+- Starts not made by the module, and `timing_method` changing during a run:
+  the harness never starts the timer by hand, and a scenario's map never
+  changes. A reset and start by hand between two ticks isn't seen as a start.
 - Splitting in LiveSplit: the component's tests don't run the game.
 
 ## Known gaps
@@ -441,9 +532,17 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
   `Starting New File` rise.
 - **A file saved before its timer started.** On vanilla, continuing it reads as
   a new file, since its `Time` is still 0.
-- **Splitting is partial.** Only the triggers [above](#splitting) and the `file`
-  timing method are built, and nothing resets. The component has no settings
-  editor or migration, and the website is a stub.
+- **Resuming read as a start.** Resuming reads as a start when the last
+  `ChapterTime` read inside a chapter isn't the resumed chapter's: after
+  attaching on the map between a Save and Quit and the resume, or after playing
+  another file to a higher `ChapterTime` than the resumed chapter's. Then
+  `chapter_start`, `room_enter` and `checkpoint` fire, and with `auto_reset`, an
+  IL attempt resets.
+- **Negative game time.** With a `*_since_start` method, a clock below its
+  value at the start, as `ChapterTime` after restarting the chapter, makes game
+  time negative, as legacy's custom-start case does.
+- **No editors.** The component has no settings editor or migration, and the
+  website is a stub.
 
 ## Supported versions
 
