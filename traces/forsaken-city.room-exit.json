@@ -1,0 +1,18 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "new_file" },
+      "splits": [
+        { "kind": "room_exit", "room": "s1" },
+        { "kind": "room_enter", "room": "00" }
+      ]
+    }
+  },
+  "segments": 2,
+  "events": [
+    { "frame": 265, "event": "start", "game_time": 0 },
+    { "frame": 5113, "event": "split", "game_time": 623220000 },
+    { "frame": 7440, "event": "split", "game_time": 929220000 }
+  ]
+}
