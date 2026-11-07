@@ -90,6 +90,7 @@ type Trace = Vec<Changes>;
 struct Scenario {
     file: PathBuf,
     settings: settings::Map,
+    segments: u64,
     events: Vec<String>,
 }
 
@@ -190,7 +191,7 @@ fn check(
         .collect::<Changes>();
     probe.write(&samples)?;
     let mut held = samples.into_values().collect::<Vec<_>>();
-    let module = Module::new(compiled, None)?;
+    let module = Module::new(compiled, None, 1)?;
     let read = match attach(&module) {
         Ok(read) => read,
         Err(problem) => return failed("live check: FAILED", &[problem], &module),
@@ -274,7 +275,8 @@ fn run_scenario(
     let name = scenario.file.display();
     let heading = format!("scenario: FAILED, {name}");
     probe.write(&trace[0])?;
-    let module = Module::new(compiled, Some(scenario.settings.clone()))?;
+    let settings = Some(scenario.settings.clone());
+    let module = Module::new(compiled, settings, scenario.segments)?;
     if let Err(problem) = attach(&module) {
         return failed(&heading, &[problem], &module);
     }
@@ -306,6 +308,7 @@ fn timer_events(module: &Module, frame: usize) -> Vec<String> {
         let (event, time) = match event {
             Event::Start => ("start", after),
             Event::Split(time) => ("split", time),
+            Event::Reset => ("reset", None),
         };
         describe(frame as u64, event, time.map(ticks))
     });
@@ -378,8 +381,12 @@ struct Module {
 }
 
 impl Module {
-    fn new(compiled: &CompiledAutoSplitter, settings: Option<settings::Map>) -> Result<Self> {
-        let timer = HarnessTimer::new();
+    fn new(
+        compiled: &CompiledAutoSplitter,
+        settings: Option<settings::Map>,
+        segments: u64,
+    ) -> Result<Self> {
+        let timer = HarnessTimer::new(segments);
         let auto_splitter = compiled.instantiate(timer.clone(), settings, None)?;
         Ok(Self {
             auto_splitter,
@@ -438,10 +445,17 @@ fn read_scenario(file: &Path) -> Result<Scenario> {
     let text = fs::read_to_string(file)?;
     let scenario: serde_json::Map<String, Value> = serde_json::from_str(&text)?;
     let mut settings = None;
+    let mut segments = 1;
     let mut events = None;
     for (key, value) in &scenario {
         match key.as_str() {
             "settings" => settings = Some(setting(value)?),
+            "segments" => {
+                segments = value
+                    .as_u64()
+                    .filter(|&segments| segments > 0)
+                    .context("segments isn't a whole number above 0")?;
+            }
             "events" => {
                 let list = value.as_array().context("events isn't a list")?;
                 events = Some(
@@ -459,6 +473,7 @@ fn read_scenario(file: &Path) -> Result<Scenario> {
     Ok(Scenario {
         file: file.to_owned(),
         settings,
+        segments,
         events: events.context("no events")?,
     })
 }
@@ -473,8 +488,8 @@ fn expected_event(event: &Value) -> Result<String> {
     let frame = frame.context("an event without a frame")?;
     let name = event.get("event").and_then(Value::as_str);
     let name = name
-        .filter(|name| ["start", "split"].contains(name))
-        .context("an event that isn't start or split")?;
+        .filter(|name| ["start", "split", "reset"].contains(name))
+        .context("an event that isn't start, split or reset")?;
     let time = event
         .get("game_time")
         .context("an event without a game_time")?;
