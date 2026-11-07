@@ -429,7 +429,7 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
 - Loading the settings again, once a second and on a reset: a scenario's map
   never changes. Nor what the module logs.
 - What no trace has: disarming when the split index changes or the side
-  doesn't match, and game time keeping its value when `FileTime` drops to 0.
+  doesn't match.
 - Splitting in LiveSplit: the component's tests don't run the game.
 
 ## Known gaps
