@@ -155,12 +155,14 @@ the table says otherwise:
 | `newer` | `schema_version` 2 neither starts nor splits. |
 
 `forsaken-city`'s start a new file in frame 265, and split on completing chapter
-1, whose only completion is the B-side's, in frame 11501:
+1, whose only completion is the B-side's, in frame 11501, unless the table says
+otherwise:
 
 | Scenario | Checks |
 |---|---|
 | `b-side` | `side: 1` splits in frame 11501, at that frame's `FileTime`. |
 | `other-side` | `side: 0` doesn't split. |
+| `file-time-drop` | `new_file`, which editors offer only for starts, splits in frame 12032, where the second file's save appears and `FileTime` drops to 0, at the previous frame's `FileTime`. No other trigger fires on that frame. |
 
 `summit`'s start on completing chapter 7, in frame 7960, where `ChapterComplete`
 rises in room `g-03`, at that frame's `FileTime`. It rises again in frame 8376, in
