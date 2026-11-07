@@ -13,6 +13,7 @@ pub struct HarnessTimer(Arc<Mutex<Recorded>>);
 pub enum Event {
     Start,
     Split(Option<TimeSpan>),
+    Reset,
 }
 
 struct Recorded {
@@ -23,11 +24,13 @@ struct Recorded {
 }
 
 impl HarnessTimer {
-    pub fn new() -> Self {
+    pub fn new(segments: u64) -> Self {
         let mut run = Run::new();
         run.set_game_name("Celeste");
         run.set_category_name("Harness");
-        run.push_segment(Segment::new("Segment 1"));
+        for segment in 1..=segments {
+            run.push_segment(Segment::new(format!("Segment {segment}")));
+        }
         let timer = Timer::new(run).expect("a run with segments");
         Self(Arc::new(Mutex::new(Recorded {
             timer,
@@ -119,7 +122,10 @@ impl AutoSplitTimer for HarnessTimer {
     }
 
     fn reset(&mut self) {
-        let _ = self.lock().timer.reset(true);
+        let mut recorded = self.lock();
+        if recorded.timer.reset(true).is_ok() {
+            recorded.events.push(Event::Reset);
+        }
     }
 
     fn set_game_time(&mut self, time: time::Duration) {
