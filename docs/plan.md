@@ -295,10 +295,8 @@ reads flat elements the new format lacks: release notes should say so.
   room values.
 - Round-trip: the component's writer, then ASR's parser and writer, gives the
   same XML, which livesplit-core's `StoredAutoSplitterSettings` also parses.
-- The module, once traces have them: the chapter 7 `credits` rule, disarming
-  when the split index changes, a side that doesn't match, game time when
-  `FileTime` drops to 0, loading the settings again once a second and on a
-  reset, and `sid` with `everest` off and on.
+- The module: loading the settings again once a second and on a reset, and
+  `sid` with `everest` off and on.
 - In LiveSplit, built with `AutoSplitterFactory.AutoSplittersXmlUrl` pointing at
   a test copy of the list: a fresh install, a legacy user, a legacy component in
   the layout, the layout editor, an update, a deleted wasm, Cancel in the
