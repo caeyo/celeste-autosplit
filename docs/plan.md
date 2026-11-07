@@ -193,11 +193,12 @@ defaults, and classify the list exactly as legacy does.
 
 `FileTimeOffset` makes `timing_method` `file_since_start` in every case.
 `reset` is `manual` without `AutoReset`, and its `chapter_exit` has no chapter,
-so it fires on leaving any. `everest` is false, `high_priority` `SetHighPriority`, and `set_game_time`
-`SetGameTime`. Every top-level key and every `timing` is written, in the
-schema's order, so a later default can't change a migrated user's behaviour,
-and the output is the same each time. `id(N)` maps a chapter number in a name
-to its ID: 1 to 7 stay, 8 is 9, 9 is 10.
+so it fires on leaving any. `everest` is false, `high_priority`
+`SetHighPriority`, and `set_game_time` `SetGameTime`. Every top-level key and
+every `timing` is written, in the schema's order, so a later default can't
+change a migrated user's behaviour, and the output is the same each time.
+`id(N)` maps a chapter number in a name to its ID: 1 to 7 stay, 8 is 9, 9 is
+10.
 
 | Legacy type | Trigger |
 |---|---|
