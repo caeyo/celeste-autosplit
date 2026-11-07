@@ -336,7 +336,8 @@ impl Tick {
     }
 
     fn changed_to(&self, trigger: &Trigger, when: When) -> bool {
-        self.in_chapter(trigger, when)
+        (trigger.chapter.is_some() || i64::from(*at(&self.chapter, when)) != NO_CHAPTER)
+            && self.in_chapter(trigger, when)
             && (trigger.side.is_none() || self.mode.changed() && self.on_side(trigger, when))
     }
 
