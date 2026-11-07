@@ -66,7 +66,7 @@ Types use the settings map's own names, plus one for triggers:
 | `label` | yes | Display name. |
 | `required` | yes | Field names the trigger must have. |
 | `optional` | yes | Field names the trigger may have. |
-| `offer` | yes | Where editors offer it: any of `"start"` and `"splits"`. Every kind is still valid in both places. An empty list means editors never offer it, as for `unknown`, which only migration makes. |
+| `offer` | yes | Where editors offer it: any of `"start"`, `"reset"` and `"splits"`. Every kind is still valid in all three. An empty list means editors never offer it, as for `unknown`, which only migration makes. |
 | `allow_no_chapter` | no | `true`: `chapter` may also be the `no_chapter` value. |
 
 ### `presets[]`

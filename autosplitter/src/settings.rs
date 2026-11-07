@@ -1,5 +1,3 @@
-use core::iter;
-
 use asr::settings::{Map, Value};
 
 #[allow(dead_code)]
@@ -36,18 +34,18 @@ impl Trigger {
 
 pub struct Settings {
     pub start: Trigger,
+    pub reset: Trigger,
     pub splits: Vec<Trigger>,
     pub timing_method: TimingMethod,
-    pub auto_reset: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             start: Trigger::of(schema::START),
+            reset: Trigger::of(schema::RESET),
             splits: Vec::new(),
             timing_method: TimingMethod::default(),
-            auto_reset: schema::AUTO_RESET,
         }
     }
 }
@@ -71,12 +69,13 @@ impl Settings {
 
     fn from_cfg(cfg: &Map) -> Self {
         let everest = flag(cfg, "everest", schema::EVEREST);
-        let auto_reset = flag(cfg, "auto_reset", schema::AUTO_RESET);
         let timing_method = timing_method(cfg);
-        let start = match cfg.get("start") {
-            Some(start) => trigger(&start, everest, "start"),
-            None => Trigger::of(schema::START),
+        let trigger_setting = |key: &str, default| match cfg.get(key) {
+            Some(value) => trigger(&value, everest, key),
+            None => Trigger::of(default),
         };
+        let start = trigger_setting("start", schema::START);
+        let reset = trigger_setting("reset", schema::RESET);
         let splits = match cfg.get("splits").map(|splits| splits.get_list()) {
             None => Vec::new(),
             Some(Some(splits)) => splits
@@ -91,14 +90,15 @@ impl Settings {
         };
         Self {
             start,
+            reset,
             splits,
             timing_method,
-            auto_reset,
         }
     }
 
     pub fn uses_sid(&self) -> bool {
-        iter::once(&self.start)
+        [&self.start, &self.reset]
+            .into_iter()
             .chain(&self.splits)
             .any(|trigger| trigger.sid.is_some())
     }

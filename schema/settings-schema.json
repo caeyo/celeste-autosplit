@@ -10,6 +10,13 @@
       "description": "What starts the timer."
     },
     {
+      "key": "reset",
+      "type": "trigger",
+      "default": { "kind": "manual" },
+      "label": "Reset",
+      "description": "What resets the timer during a run, including after it has ended. The start trigger can start it again on the same update."
+    },
+    {
       "key": "splits",
       "type": "list",
       "items": "trigger",
@@ -28,13 +35,6 @@
         { "value": "file_since_start", "label": "File time since start" },
         { "value": "chapter_since_start", "label": "Chapter time since start" }
       ]
-    },
-    {
-      "key": "auto_reset",
-      "type": "bool",
-      "default": false,
-      "label": "Auto reset",
-      "description": "Reset and start again whenever the start trigger fires during a run, including after it has ended."
     },
     {
       "key": "everest",
@@ -110,12 +110,12 @@
   },
 
   "triggers": [
-    { "kind": "manual", "label": "Manual", "required": [], "optional": [], "offer": ["start", "splits"] },
+    { "kind": "manual", "label": "Manual", "required": [], "optional": [], "offer": ["start", "reset", "splits"] },
     { "kind": "unknown", "label": "Unrecognised legacy split", "required": ["raw"], "optional": [], "offer": [] },
-    { "kind": "new_file", "label": "New file", "required": [], "optional": [], "offer": ["start"] },
-    { "kind": "chapter_start", "label": "Chapter start", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "splits"] },
+    { "kind": "new_file", "label": "New file", "required": [], "optional": [], "offer": ["start", "reset"] },
+    { "kind": "chapter_start", "label": "Chapter start", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "reset", "splits"] },
     { "kind": "chapter_enter", "label": "Enter chapter", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "splits"], "allow_no_chapter": true },
-    { "kind": "chapter_exit", "label": "Exit chapter", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "splits"], "allow_no_chapter": true },
+    { "kind": "chapter_exit", "label": "Exit chapter", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "reset", "splits"], "allow_no_chapter": true },
     { "kind": "chapter_complete", "label": "Chapter complete", "required": [], "optional": ["chapter", "side", "sid", "timing"], "offer": ["splits"] },
     { "kind": "checkpoint", "label": "Checkpoint", "required": ["chapter", "checkpoint"], "optional": ["side"], "offer": ["start", "splits"] },
     { "kind": "heart", "label": "Crystal heart", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["splits"] },
@@ -128,13 +128,19 @@
     {
       "id": "full_game",
       "label": "Full game",
-      "settings": { "start": { "kind": "new_file" }, "timing_method": "file", "auto_reset": true },
+      "settings": { "start": { "kind": "new_file" }, "reset": { "kind": "new_file" }, "timing_method": "file" },
       "trigger_fields": { "chapter_complete": { "timing": "chapter_exit" } }
     },
     {
       "id": "il",
       "label": "Individual level",
-      "settings": { "start": { "kind": "chapter_start" }, "timing_method": "chapter", "auto_reset": true },
+      "settings": { "start": { "kind": "chapter_start" }, "reset": { "kind": "chapter_exit" }, "timing_method": "chapter" },
+      "trigger_fields": { "chapter_complete": { "timing": "chapter_complete" } }
+    },
+    {
+      "id": "il_save_and_quit",
+      "label": "Individual level with Save and Quit",
+      "settings": { "start": { "kind": "chapter_start" }, "reset": { "kind": "chapter_start" }, "timing_method": "chapter" },
       "trigger_fields": { "chapter_complete": { "timing": "chapter_complete" } }
     }
   ],
