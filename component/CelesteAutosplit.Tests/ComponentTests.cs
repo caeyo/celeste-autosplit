@@ -16,7 +16,7 @@ public sealed class ComponentTests : IDisposable
         "<AutoSplitterSettings><Version>1.0</Version><CustomSettings>" +
         "<Setting id=\"schema_version\" type=\"i64\">1</Setting>" +
         "<Setting id=\"cfg\" type=\"map\">" +
-        "<Setting id=\"auto_reset\" type=\"bool\">True</Setting>" +
+        "<Setting id=\"everest\" type=\"bool\">True</Setting>" +
         "<Setting id=\"mode\" type=\"string\" value=\"full_game\" />" +
         "<Setting id=\"note\" type=\"string\" value=\"a &amp; &quot;b&quot; &lt;c&gt; é\" />" +
         "<Setting id=\"offset\" type=\"f64\">-0.25</Setting>" +
@@ -32,7 +32,7 @@ public sealed class ComponentTests : IDisposable
     private const string OtherSettings =
         "<AutoSplitterSettings><Version>1.0</Version><CustomSettings>" +
         "<Setting id=\"schema_version\" type=\"i64\">1</Setting>" +
-        "<Setting id=\"cfg\" type=\"map\"><Setting id=\"auto_reset\" type=\"bool\">False</Setting></Setting>" +
+        "<Setting id=\"cfg\" type=\"map\"><Setting id=\"everest\" type=\"bool\">False</Setting></Setting>" +
         "</CustomSettings></AutoSplitterSettings>";
 
     private readonly LiveSplitHost host;

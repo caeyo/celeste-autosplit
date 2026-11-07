@@ -34,9 +34,8 @@ The settings map, how the module reads it, and the triggers are in
 [How it works](how-it-works.md#settings). This is what's left, for editors:
 
 - Presets exist only in editors. A configuration matching none is "Custom".
-- A start that the run passes again, such as a `room_enter`, `checkpoint` or
-  `chapter_enter`, would reset mid-run with `auto_reset`, so editors warn about
-  it.
+- Editors warn about a reset the run passes, such as `chapter_exit` in a run
+  through several chapters.
 
 ### Rules
 
@@ -188,15 +187,18 @@ defaults, and classify the list exactly as legacy does.
 | | E | F | I | C |
 |---|---|---|---|---|
 | `start` | `manual` | `new_file` | `chapter_start` | `splits[0]` |
+| `reset` | `chapter_exit` | `manual` | `chapter_exit` | `chapter_exit` |
 | `splits` | none | each, `timing: "chapter_exit"` | each, `timing: "chapter_complete"` | `splits[1..]` |
 | `timing_method` | `file` | `file` | `chapter` | `chapter_since_start` |
 
 `FileTimeOffset` makes `timing_method` `file_since_start` in every case.
-`auto_reset` is `AutoReset`, `everest` false, `high_priority` `SetHighPriority`,
-and `set_game_time` `SetGameTime`. Every top-level key and every `timing` is
-written, in the schema's order, so a later default can't change a migrated
-user's behaviour, and the output is the same each time. `id(N)` maps a chapter
-number in a name to its ID: 1 to 7 stay, 8 is 9, 9 is 10.
+`reset` is `manual` without `AutoReset`, and its `chapter_exit` has no chapter,
+so it fires on leaving any. `everest` is false, `high_priority`
+`SetHighPriority`, and `set_game_time` `SetGameTime`. Every top-level key and
+every `timing` is written, in the schema's order, so a later default can't
+change a migrated user's behaviour, and the output is the same each time.
+`id(N)` maps a chapter number in a name to its ID: 1 to 7 stay, 8 is 9, 9 is
+10.
 
 | Legacy type | Trigger |
 |---|---|
@@ -232,8 +234,9 @@ Those of splitting itself are in
 | Unknown types silently manual | `unknown`, flagged | Nobody, timing-wise. |
 | Case C's final split time is absolute | Consistent with the run | Custom-start runners. |
 | `FileTimeOffset` in C and E mixes clocks | `file_since_start` | A rare combination. |
-| No splits: start on any room change, auto reset, split on room changes | Nothing automatic | Users without splits, and single-room timers. |
+| No splits: start on any room change, split on room changes | Nothing automatic but the reset, with `AutoReset` | Users without splits, and single-room timers. |
 | Case C with one segment splits on the next room change | Split by hand | Custom-start single-room timers. |
+| With `AutoReset`, nothing starts or splits outside a chapter, since the reset comes first, so in case C a start that fires there, such as `AreaOnExit,X` or `AreaOnEnter,Menu`, never starts | It starts, and with `AreaOnExit,X`, leaving X during the run resets and starts again | Custom-start runners whose start fires outside a chapter. |
 
 The legacy component becomes easier to add to a layout by mistake: while its DLL
 was the entry's first URL, the layout editor hid it, and once the entry points
@@ -262,9 +265,10 @@ reads flat elements the new format lacks: release notes should say so.
 - In LiveSplit, built with `AutoSplitterFactory.AutoSplittersXmlUrl` pointing at
   a test copy of the list: a fresh install, a legacy user, a legacy component in
   the layout, the layout editor, an update, a deleted wasm, Cancel in the
-  settings dialog, the priority, Game Time, and an auto reset, whose reset and
-  start in one tick LiveSplit's ASR has to apply in order, without a prompt, as
-  only livesplit-core is shown to. Those that download nothing can
+  settings dialog, the priority, Game Time, and the module's resets, alone, as
+  after a run that ended with new bests, and with a start in one tick, which
+  LiveSplit's ASR has to apply without a prompt, the second in order, as only
+  livesplit-core is shown to. Those that download nothing can
   use [a copy of LiveSplit](maintaining.md#trying-the-component-in-livesplit).
 - Across hosts: a `.lss` saved on Windows opens in the Druid fork the same, one
   edited on the website opens on Windows the same, and the Druid fork shows the

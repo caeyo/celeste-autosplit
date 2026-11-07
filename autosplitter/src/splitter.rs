@@ -33,6 +33,7 @@ pub struct Splitter {
     started_by_module: bool,
     started_by_host: bool,
     start_armed: Option<Option<u64>>,
+    reset_armed: Option<Option<u64>>,
     split_armed: Option<Option<u64>>,
     logged_no_sid: bool,
 }
@@ -95,6 +96,7 @@ impl Splitter {
             started_by_module: false,
             started_by_host: false,
             start_armed: None,
+            reset_armed: None,
             split_armed: None,
             logged_no_sid: false,
         };
@@ -121,11 +123,23 @@ impl Splitter {
         };
         let tick = self.read(values);
         self.note_host_start(&tick);
-        if self.start_fires(state, split_index, &tick) {
-            self.start(state, &tick);
-        } else if matches!(state, TimerState::Running | TimerState::Paused) {
-            self.set_game_time(&tick);
-            self.split(split_index, &tick);
+        let (state, split_index) = if self.reset_fires(state, split_index, &tick) {
+            self.reset();
+            (TimerState::NotRunning, None)
+        } else {
+            (state, split_index)
+        };
+        match state {
+            TimerState::NotRunning => {
+                if self.start_fires(split_index, &tick) {
+                    self.start(&tick);
+                }
+            }
+            TimerState::Running | TimerState::Paused => {
+                self.set_game_time(&tick);
+                self.split(split_index, &tick);
+            }
+            _ => {}
         }
     }
 
@@ -144,7 +158,11 @@ impl Splitter {
     }
 
     fn disarm(&mut self, split_index: Option<u64>) {
-        for armed in [&mut self.start_armed, &mut self.split_armed] {
+        for armed in [
+            &mut self.start_armed,
+            &mut self.reset_armed,
+            &mut self.split_armed,
+        ] {
             if armed.is_some_and(|armed| armed != split_index) {
                 *armed = None;
             }
@@ -205,30 +223,34 @@ impl Splitter {
         }
     }
 
-    fn start_fires(&mut self, state: TimerState, split_index: Option<u64>, tick: &Tick) -> bool {
-        let checked = match state {
-            TimerState::NotRunning => true,
-            TimerState::Running | TimerState::Paused | TimerState::Ended => {
-                self.settings.auto_reset
-            }
-            _ => false,
-        };
-        checked
-            && fires(
-                &self.settings.start,
-                split_index,
-                tick,
-                &mut self.start_armed,
-            )
+    fn reset_fires(&mut self, state: TimerState, split_index: Option<u64>, tick: &Tick) -> bool {
+        matches!(
+            state,
+            TimerState::Running | TimerState::Paused | TimerState::Ended
+        ) && fires(
+            &self.settings.reset,
+            split_index,
+            tick,
+            &mut self.reset_armed,
+        )
     }
 
-    fn start(&mut self, state: TimerState, tick: &Tick) {
-        if state == TimerState::NotRunning {
-            self.started_by_module = true;
-        } else {
-            timer::reset();
-            self.split_armed = None;
-        }
+    fn reset(&mut self) {
+        timer::reset();
+        self.split_armed = None;
+    }
+
+    fn start_fires(&mut self, split_index: Option<u64>, tick: &Tick) -> bool {
+        fires(
+            &self.settings.start,
+            split_index,
+            tick,
+            &mut self.start_armed,
+        )
+    }
+
+    fn start(&mut self, tick: &Tick) {
+        self.started_by_module = true;
         self.clocks_at_start = tick.clocks.current;
         let method = self.settings.timing_method;
         let clock = self.clocks_at_start.get(method);
@@ -336,7 +358,8 @@ impl Tick {
     }
 
     fn changed_to(&self, trigger: &Trigger, when: When) -> bool {
-        self.in_chapter(trigger, when)
+        (trigger.chapter.is_some() || i64::from(*at(&self.chapter, when)) != NO_CHAPTER)
+            && self.in_chapter(trigger, when)
             && (trigger.side.is_none() || self.mode.changed() && self.on_side(trigger, when))
     }
 

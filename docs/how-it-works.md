@@ -208,14 +208,12 @@ describes.
 
 In `cfg`:
 
-- `start` is the trigger that starts the timer, and `splits[i]` the one that
-  ends segment `i`, bound by position to the timer's current split index,
-  `asr::timer::current_split_index`, so manual splits, skips and undos keep it
-  aligned. Segments past the list's end are split by hand, and extra entries are
-  ignored.
+- `start` is the trigger that starts the timer, `reset` the one that resets it,
+  [below](#splitting), and `splits[i]` the one that ends segment `i`, bound by
+  position to the timer's current split index, `asr::timer::current_split_index`,
+  so manual splits, skips and undos keep it aligned. Segments past the list's
+  end are split by hand, and extra entries are ignored.
 - `timing_method` is the clock game time follows, [below](#game-time).
-- `auto_reset` resets and starts again when `start` fires during a run,
-  [below](#splitting).
 - `everest` lets triggers name their chapter by `sid`, [below](#splitting).
 - `high_priority` and `set_game_time` are the component's alone, and the module
   ignores them.
@@ -238,9 +236,10 @@ of schema it doesn't know fails the build, and so does a new field, until
 `settings.rs` reads it.
 
 The module loads the map once attached, then every 120 ticks, about once a
-second, and when the timer resets, unless the module reset it. It parses
-`schema_version` and `cfg` only when their debug text differs from the last
-parsed, so each problem is logged once per change. It never writes the map.
+second, and when it finds the timer reset, unless it has started again by
+then. It parses `schema_version` and `cfg` only when their debug text differs
+from the last parsed, so each problem is logged once per change. It never
+writes the map.
 
 - A missing key means its default. `gui::add_bool` returns a default without
   writing it, so the map only holds what someone set.
@@ -266,14 +265,18 @@ values are read, and does nothing on a tick that read none. It keeps the
 previous tick's values in asr's watchers, which take their first value as both,
 so attaching is never a change.
 
+- While the timer is running, paused or ended, if `reset` fires, it resets the
+  timer, which commits the attempt, and checks no split on that tick, as legacy
+  gives a reset precedence over a split. The timer then isn't running, so
+  `start` can start it again in the same tick: with a `reset` of the same kind
+  as `start`, the new attempt keeps its first frame. The exception is
+  `chapter_complete` with `timing: "chapter_exit"`, whose start arms only while
+  the timer isn't running, so after that reset nothing starts.
 - While the timer isn't running, if `start` fires, it starts the timer and sets
-  game time.
-- While it's running or paused, with `auto_reset` on, if `start` fires, it
-  resets the timer, which commits the attempt, and starts it again in the same
-  tick, so the new attempt keeps its first frame. It checks no split on that
-  tick. Otherwise, it sets game time, then splits if the trigger for the current
-  split index fires. The tick that starts the timer doesn't check splits.
-- Once the run has ended, it only resets and starts again, as above.
+  game time. The tick that starts the timer doesn't check splits.
+- While it's running or paused, it sets game time, then splits if the trigger
+  for the current split index fires.
+- Once the run has ended, only `reset` applies.
 
 | `kind` | Fires when |
 |---|---|
@@ -281,7 +284,7 @@ so attaching is never a change.
 | `unknown` | never. Only migration makes it, and editors flag it. |
 | `new_file` | a new save file is started: `Starting New File` rises |
 | `chapter_start` | the chapter's timer starts: `ChapterStarted` rises, unless the chapter is [resuming](#resuming) |
-| `chapter_enter`, `chapter_exit` | the chapter ID changes to or from `chapter`, and with a `side`, the side changes to or from it too |
+| `chapter_enter`, `chapter_exit` | the chapter ID changes to or from `chapter`, where -1 is outside a chapter, or to or from any chapter other than -1 when `chapter` is absent. With a `side`, the side changes to or from it too. |
 | `chapter_complete` | the chapter is completed (`timing: "chapter_complete"`, the default), or the game leaves the completed chapter (`timing: "chapter_exit"`) |
 | `checkpoint` | the room becomes the checkpoint's room for the side being played, in `chapter` |
 | `heart`, `cassette` | `ChapterHeart` or `ChapterCassette` rises: the chapter's crystal heart or cassette is collected |
@@ -289,9 +292,10 @@ so attaching is never a change.
 
 `chapter` is the game's chapter ID, not its number: 9 is Core, chapter 8, and
 10 is Farewell, chapter 9. Higher IDs are modded. An absent optional field
-matches anything: `{kind: "chapter_complete"}` is any chapter. The chapter and
-side a trigger matches are the current tick's, except that `chapter_exit`
-matches those it left, and `chapter_complete` the side it completed.
+matches anything, except the `chapter` of `chapter_enter` and `chapter_exit`,
+as above: `{kind: "chapter_complete"}` is any chapter. The chapter and side a
+trigger matches are the current tick's, except that `chapter_exit` matches
+those it left, and `chapter_complete` the side it completed.
 
 - `room` matches the game's room name exactly, case included.
 - `checkpoint` is a checkpoint's number in its chapter, from 1, and the schema
@@ -370,8 +374,8 @@ These deviate from legacy on purpose:
 | A chapter split whose side doesn't match when it fires stays armed, so a later chapter's completion can split it | It disarms | Runners with a side on a chapter split, who complete that chapter on another side first. |
 | A new-file start fires whenever `Starting New File` is true, so after a reset it starts again at once while the value stays true | `new_file` fires when it rises | Runners who reset just after starting a new file. |
 | The IL start ignores the first 3 s after attaching | Attaching is never a start, and any rise after it is | Runners whose chapter starts within 3 s of the auto splitter attaching. |
-| The IL start fires whenever `ChapterStarted` rises, so also on resuming after a Save and Quit, and in the Summit's credits | `chapter_start` doesn't fire on resuming | IL runners who save and quit: the attempt carries on. |
-| `AutoReset` resets outside a chapter, and is ignored in full game | Reset and start when the start trigger fires again, in every case | Full-game runners get a reset on a new file. IL attempts are committed when the next starts, not on return to the map. |
+| The IL start fires whenever `ChapterStarted` rises, so also on resuming after a Save and Quit, and in the Summit's credits | `chapter_start` doesn't fire on resuming | IL runners who save and quit: with a `chapter_start` reset, the attempt carries on, and with a `chapter_exit` one, the next attempt doesn't start on resuming. |
+| `AutoReset` resets on every tick the game is outside a chapter, and is ignored in full game | `reset` is a trigger of any kind, such as `chapter_exit`, which fires on one tick, in every case | Runners who start the timer by hand outside a chapter, which legacy resets at once, and full-game runners, who can reset on a new file. |
 | `LevelEnter` fires on resuming, in the room resumed in | `room_enter` doesn't, for consistency with `room_exit`, which doesn't fire on the Save and Quit | Runners whose `room_enter` split is the room they saved and quit in, which shouldn't come up. Recorded so a report of it can be traced here. |
 | Room names ignore case | Exact match | Saved names whose case differs from the game's. |
 | Checkpoints fire while in the room, so also on resuming in it after a Save and Quit | Fire on entering it, but not on resuming in it, since a checkpoint split marks entering the checkpoint for the first time | Lists whose previous split fired in that room, and runners who save and quit in a checkpoint's room before its split. |
@@ -536,8 +540,9 @@ LiveSplit's ASR loads the wasm module and keeps its settings.
   `ChapterTime` read inside a chapter isn't the resumed chapter's: after
   attaching on the map between a Save and Quit and the resume, or after playing
   another file to a higher `ChapterTime` than the resumed chapter's. Then
-  `chapter_start`, `room_enter` and `checkpoint` fire, and with `auto_reset`, an
-  IL attempt resets.
+  `chapter_start`, `room_enter` and `checkpoint` fire, so a `chapter_start`
+  reset resets the attempt, and after a `chapter_exit` reset on the Save and
+  Quit, as the IL preset's, a `chapter_start` start begins a new one.
 - **Negative game time.** With a `*_since_start` method, a clock below its
   value at the start, as `ChapterTime` after restarting the chapter, makes game
   time negative, as legacy's custom-start case does.

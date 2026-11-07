@@ -1,0 +1,22 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "new_file" },
+      "splits": [
+        { "kind": "chapter_exit" },
+        { "kind": "chapter_enter" },
+        { "kind": "chapter_enter" },
+        { "kind": "chapter_exit", "side": 1 }
+      ]
+    }
+  },
+  "segments": 4,
+  "events": [
+    { "frame": 265, "event": "start", "game_time": 0 },
+    { "frame": 1974, "event": "split", "game_time": 262310000 },
+    { "frame": 2652, "event": "split", "game_time": 262310000 },
+    { "frame": 4983, "event": "split", "game_time": 602650000 },
+    { "frame": 11534, "event": "split", "game_time": 1590010000 }
+  ]
+}

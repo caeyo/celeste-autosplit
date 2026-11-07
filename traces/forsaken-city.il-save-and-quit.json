@@ -1,0 +1,23 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "start": { "kind": "chapter_start" },
+      "reset": { "kind": "chapter_start" },
+      "timing_method": "chapter",
+      "splits": [{ "kind": "chapter_complete", "chapter": 1, "side": 1 }]
+    }
+  },
+  "events": [
+    { "frame": 431, "event": "start", "game_time": 0 },
+    { "frame": 2652, "event": "reset", "game_time": null },
+    { "frame": 2652, "event": "start", "game_time": 0 },
+    { "frame": 7440, "event": "reset", "game_time": null },
+    { "frame": 7440, "event": "start", "game_time": 0 },
+    { "frame": 11501, "event": "split", "game_time": 645830000 },
+    { "frame": 11587, "event": "reset", "game_time": null },
+    { "frame": 11587, "event": "start", "game_time": 0 },
+    { "frame": 12193, "event": "reset", "game_time": null },
+    { "frame": 12193, "event": "start", "game_time": 0 }
+  ]
+}

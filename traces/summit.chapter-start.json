@@ -3,7 +3,7 @@
     "schema_version": 1,
     "cfg": {
       "start": { "kind": "chapter_start" },
-      "auto_reset": true
+      "reset": { "kind": "chapter_start" }
     }
   },
   "events": [

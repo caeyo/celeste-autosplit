@@ -3,8 +3,8 @@
     "schema_version": 1,
     "cfg": {
       "start": { "kind": "new_file" },
+      "reset": { "kind": "new_file" },
       "timing_method": "file",
-      "auto_reset": true,
       "splits": [{ "kind": "new_file" }]
     }
   },
