@@ -11,8 +11,6 @@ use crate::{
     vanilla::{Layout, Pattern, CLR32, MONO64, WINDOW},
 };
 
-pub const NO_CHAPTER: i32 = -1;
-
 pub struct Values {
     pub chapter: i32,
     pub mode: i32,

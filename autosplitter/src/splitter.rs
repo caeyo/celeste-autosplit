@@ -6,12 +6,13 @@ use asr::{
 };
 
 use crate::{
-    memory::{Values, NO_CHAPTER},
+    memory::Values,
     settings::{Kind, Settings, Timing, TimingMethod, Trigger},
     TICKS_PER_SECOND,
 };
 
-const SUMMIT: i64 = 7;
+const NO_CHAPTER: i32 = -1;
+const SUMMIT: i32 = 7;
 
 pub struct Splitter {
     settings: Settings,
@@ -385,7 +386,7 @@ fn chapter_complete(
     let named = trigger.chapter.is_some() || trigger.sid.is_some();
     let rose = tick.complete.check(|&complete| complete)
         && tick.in_chapter(trigger, When::Now)
-        && !(named && i64::from(tick.chapter.current) == SUMMIT && in_credits(&tick.room.current));
+        && !(named && tick.chapter.current == SUMMIT && in_credits(&tick.room.current));
     if rose {
         *armed = Some(split_index);
     }
