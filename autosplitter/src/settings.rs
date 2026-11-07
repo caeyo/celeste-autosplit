@@ -7,8 +7,8 @@ mod schema {
     include!(concat!(env!("OUT_DIR"), "/schema.rs"));
 }
 
-use schema::{Field, CHAPTERS, NO_CHAPTER, SCHEMA_VERSION, SIDE_VALUES};
-pub use schema::{Kind, Timing, TimingMethod};
+use schema::{Field, CHAPTERS, SCHEMA_VERSION, SIDE_VALUES};
+pub use schema::{Kind, Timing, TimingMethod, NO_CHAPTER};
 
 pub struct Trigger {
     pub kind: Kind,
