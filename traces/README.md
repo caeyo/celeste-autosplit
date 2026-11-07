@@ -172,7 +172,7 @@ B-side's, in frame 11501:
 | `checkpoint-side` | Chapter 1's second checkpoint with `side: 1` splits in the B-side's `08`, in frame 9524, not the A-side's `9b`, in frame 6174. |
 | `heart` | Two splits on chapter 1's heart split where `ChapterHeart` rises, in frames 4776 and 11501, not in frame 4777, where it's still set, nor in frame 4983, where it comes back set on resuming. |
 | `cassette` | Chapter 1's cassette splits where `ChapterCassette` rises, in frame 6676, not where the heart's flag does. |
-| `save-and-quit` | `chapter_enter` with `chapter: -1` splits on returning to the map after the Prologue, in frame 1974, `chapter_exit` of chapter 1 on the Save and Quit, in frame 4810, and `chapter_enter` of chapter 1 on resuming, in frame 4983. |
+| `save-and-quit` | `chapter_exit` without a `chapter` splits on returning to the map after the Prologue, in frame 1974, `chapter_exit` of chapter 1 on the Save and Quit, in frame 4810, and `chapter_enter` of chapter 1 on resuming, in frame 4983. |
 | `chapter-side` | `chapter_enter` of chapter 1 with `side: 1` splits where the B-side is entered, in frame 7440, not the A-side, and `chapter_exit` with `side: 1` where it's left, in frame 11534, the side then being -1. |
 | `room-exit` | `room_exit` of `s1` doesn't split on the Save and Quit from it, in frame 4810, but on leaving it for `s0`, in frame 5113, and `room_enter` of `00` splits on entering the B-side in it, from no room, in frame 7440. |
 | `room-resume` | `chapter_exit` of chapter 1 splits on the Save and Quit, in frame 4810, and `room_enter` of `s1` then doesn't split on resuming in it, in frame 4983. |
