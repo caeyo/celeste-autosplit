@@ -11,6 +11,8 @@ see [Maintaining](../docs/maintaining.md#recording-a-trace).
 | Trace | What it covers |
 |---|---|
 | `prologue` | A new file through the Prologue: from the title screen, through starting a new file and the Prologue, to the overworld. |
+| `forsaken-city` | A new file through the Prologue, then Forsaken City as the community's All Hearts route plays it: the A-side through its first checkpoint to its crystal heart, then a Save and Quit back into it, through its second checkpoint to its cassette, then back to the map; the B-side to its end; a restart of the B-side; then back to the map, through the menus to a new file in the second slot, and into its Prologue. A checkpoint's side can't be told wrong here: the A-side's checkpoint rooms, `6` and `9b`, never appear on the B-side, nor the B-side's, `04` and `08`, on the A-side. |
+| `summit` | The Summit from its last checkpoint, loaded with `console load`: its end, the credits, and the start of the Epilogue. |
 
 ## TAS files
 
@@ -26,7 +28,15 @@ for what the community's don't play. A TAS file:
   Commit it with the trace: a time that changes on a later recording means the
   TAS played differently;
 - never fast-forwards or pauses: no `***` breakpoints. CelesteTAS doesn't update
-  the auto splitter's values while it fast-forwards.
+  the auto splitter's values while it fast-forwards;
+- starts with `Unsafe` if it leaves a level without `StartFullGameFile`, whose
+  `SelectCampaign` sets it: otherwise CelesteTAS stops it outside a level.
+
+`summit` loads the point the community's `7A.tas` names for its last checkpoint,
+`3000M`, rather than playing the whole chapter. `console load` plays on
+CelesteTAS's own save slot, which it starts with a `Time` of 0, so `new_file`
+fires there. Community files that save and quit, such as `1HC`, play only on a
+real file.
 
 ## The recorder
 
@@ -143,3 +153,24 @@ the table says otherwise:
 | `invalid-type` | `chapter: "0"`, a string, makes the split manual. |
 | `invalid-kind` | `kind: "Chapter_Complete"`, a kind that differs only in case, makes the split manual. |
 | `newer` | `schema_version` 2 neither starts nor splits. |
+
+`forsaken-city`'s start a new file in frame 265, and split on completing chapter
+1, whose only completion is the B-side's, in frame 11501, unless the table says
+otherwise:
+
+| Scenario | Checks |
+|---|---|
+| `b-side` | `side: 1` splits in frame 11501, at that frame's `FileTime`. |
+| `other-side` | `side: 0` doesn't split. |
+| `file-time-drop` | `new_file`, which editors offer only for starts, splits in frame 12032, where the second file's save appears and `FileTime` drops to 0, at the previous frame's `FileTime`. No other trigger fires on that frame. |
+
+`summit`'s start on completing chapter 7, in frame 7960, where `ChapterComplete`
+rises in room `g-03`, at that frame's `FileTime`. It rises again in frame 8376, in
+`credits-summit`. With one timer segment, only a start can skip `g-03`'s
+completion, so they start with `chapter_complete`, which editors offer only for
+splits:
+
+| Scenario | Checks |
+|---|---|
+| `credits` | `chapter_complete` with `chapter: 7` doesn't split in the credits. |
+| `credits-any-chapter` | `chapter_complete` without a `chapter` splits in frame 8376, at that frame's `FileTime`. |
