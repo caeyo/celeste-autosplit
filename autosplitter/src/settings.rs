@@ -6,7 +6,7 @@ mod schema {
 }
 
 use schema::{Field, CHAPTERS, SCHEMA_VERSION, SIDE_VALUES};
-pub use schema::{Kind, Timing, TimingMethod, NO_CHAPTER};
+pub use schema::{Kind, Timing, TimingMethod};
 
 pub struct Trigger {
     pub kind: Kind,
@@ -183,7 +183,7 @@ fn parse_trigger(value: &Value, everest: bool) -> Result<Trigger, String> {
         let invalid = || format!("has an invalid {}, {value:?}", field.name());
         match field {
             Field::Chapter => {
-                let valid = |&id: &i64| id >= 0 || (kind.allow_no_chapter() && id == NO_CHAPTER);
+                let valid = |&id: &i64| id >= 0;
                 trigger.chapter = Some(value.get_i64().filter(valid).ok_or_else(invalid)?);
             }
             Field::Side => {

@@ -50,10 +50,9 @@ Types use the settings map's own names, plus one for triggers:
 | `type` | yes | See the types above. |
 | `label` | yes | Display name. |
 | `description` | no | Help text. |
-| `default` | no | Used when the field is missing. Fields without one are filters that match anything when missing, except `chapter` on `chapter_enter` and `chapter_exit`, which then matches any chapter other than -1. |
+| `default` | no | Used when the field is missing. Fields without one are filters that match anything when missing, except `chapter` on `chapter_enter` and `chapter_exit`, which then matches any chapter, not outside one. |
 | `values` | no | The allowed values, as in `settings`. |
 | `values_from` | no | The allowed values come from `chapters`: `"chapters"` (chapter IDs; the module also takes modded IDs above them) or `"checkpoints"` (checkpoint numbers of the trigger's chapter). |
-| `no_chapter` | no | On `chapter`: the value and label for "not in a chapter". Editors offer it only for triggers with `allow_no_chapter`. |
 | `everest` | no | `true`: Everest-only. Counts only when `cfg.everest` is on; otherwise editors hide it but keep it. |
 | `replaces` | no | When this field is present and counts, it stands in for the named field, including where that field is required. |
 | `read_only` | no | `true`: editors show it but never edit it. |
@@ -67,7 +66,6 @@ Types use the settings map's own names, plus one for triggers:
 | `required` | yes | Field names the trigger must have. |
 | `optional` | yes | Field names the trigger may have. |
 | `offer` | yes | Where editors offer it: any of `"start"`, `"reset"` and `"splits"`. Every kind is still valid in all three. An empty list means editors never offer it, as for `unknown`, which only migration makes. |
-| `allow_no_chapter` | no | `true`: `chapter` may also be the `no_chapter` value. |
 
 ### `presets[]`
 

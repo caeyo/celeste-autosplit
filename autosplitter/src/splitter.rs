@@ -7,11 +7,12 @@ use asr::{
 
 use crate::{
     memory::Values,
-    settings::{Kind, Settings, Timing, TimingMethod, Trigger, NO_CHAPTER},
+    settings::{Kind, Settings, Timing, TimingMethod, Trigger},
     TICKS_PER_SECOND,
 };
 
-const SUMMIT: i64 = 7;
+const NO_CHAPTER: i32 = -1;
+const SUMMIT: i32 = 7;
 
 pub struct Splitter {
     settings: Settings,
@@ -190,7 +191,7 @@ impl Splitter {
             && self
                 .last_chapter_time
                 .is_some_and(|last| chapter_time >= last);
-        if i64::from(values.chapter) != NO_CHAPTER {
+        if values.chapter != NO_CHAPTER {
             self.last_chapter_time = Some(chapter_time);
         }
         let clocks = Clocks {
@@ -358,13 +359,13 @@ impl Tick {
     }
 
     fn changed_to(&self, trigger: &Trigger, when: When) -> bool {
-        (trigger.chapter.is_some() || i64::from(*at(&self.chapter, when)) != NO_CHAPTER)
+        *at(&self.chapter, when) != NO_CHAPTER
             && self.in_chapter(trigger, when)
             && (trigger.side.is_none() || self.mode.changed() && self.on_side(trigger, when))
     }
 
     fn room_changed(&self) -> bool {
-        i64::from(self.chapter.current) != NO_CHAPTER && self.room.changed()
+        self.chapter.current != NO_CHAPTER && self.room.changed()
     }
 
     fn at_checkpoint(&self, trigger: &Trigger, when: When) -> bool {
@@ -385,7 +386,7 @@ fn chapter_complete(
     let named = trigger.chapter.is_some() || trigger.sid.is_some();
     let rose = tick.complete.check(|&complete| complete)
         && tick.in_chapter(trigger, When::Now)
-        && !(named && i64::from(tick.chapter.current) == SUMMIT && in_credits(&tick.room.current));
+        && !(named && tick.chapter.current == SUMMIT && in_credits(&tick.room.current));
     if rose {
         *armed = Some(split_index);
     }

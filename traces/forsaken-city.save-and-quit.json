@@ -4,7 +4,7 @@
     "cfg": {
       "start": { "kind": "new_file" },
       "splits": [
-        { "kind": "chapter_enter", "chapter": -1 },
+        { "kind": "chapter_exit" },
         { "kind": "chapter_exit", "chapter": 1 },
         { "kind": "chapter_enter", "chapter": 1 }
       ]

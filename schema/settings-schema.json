@@ -65,8 +65,7 @@
     "chapter": {
       "type": "i64",
       "label": "Chapter",
-      "values_from": "chapters",
-      "no_chapter": { "value": -1, "label": "Not in a chapter" }
+      "values_from": "chapters"
     },
     "side": {
       "type": "i64",
@@ -114,8 +113,8 @@
     { "kind": "unknown", "label": "Unrecognised legacy split", "required": ["raw"], "optional": [], "offer": [] },
     { "kind": "new_file", "label": "New file", "required": [], "optional": [], "offer": ["start", "reset"] },
     { "kind": "chapter_start", "label": "Chapter start", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "reset", "splits"] },
-    { "kind": "chapter_enter", "label": "Enter chapter", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "splits"], "allow_no_chapter": true },
-    { "kind": "chapter_exit", "label": "Exit chapter", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "reset", "splits"], "allow_no_chapter": true },
+    { "kind": "chapter_enter", "label": "Enter chapter", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "splits"] },
+    { "kind": "chapter_exit", "label": "Exit chapter", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "reset", "splits"] },
     { "kind": "chapter_complete", "label": "Chapter complete", "required": [], "optional": ["chapter", "side", "sid", "timing"], "offer": ["splits"] },
     { "kind": "checkpoint", "label": "Checkpoint", "required": ["chapter", "checkpoint"], "optional": ["side"], "offer": ["start", "splits"] },
     { "kind": "heart", "label": "Crystal heart", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["splits"] },

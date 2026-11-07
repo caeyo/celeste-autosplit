@@ -88,10 +88,6 @@ fn fields(out: &mut String, fields: &Map<String, Value>) {
             }
             (other, _, _) => panic!("{name} has the type {other}, or both values and values_from"),
         }
-        if let Some(no_chapter) = field.get("no_chapter") {
-            let value = int(&no_chapter["value"]);
-            writeln!(out, "pub const NO_{}: i64 = {value};", upper(name)).unwrap();
-        }
         if field.get("everest").and_then(Value::as_bool) == Some(true) {
             everest.push(name.as_str());
         }
@@ -141,17 +137,7 @@ fn triggers(out: &mut String, triggers: &Value) {
         }
         out.push_str("        }\n    }\n");
     }
-    let allowed = triggers
-        .iter()
-        .filter(|trigger| trigger.get("allow_no_chapter").and_then(Value::as_bool) == Some(true))
-        .map(|trigger| string(&trigger["kind"]))
-        .collect::<Vec<_>>();
-    let allowed = any_of(&allowed);
-    writeln!(
-        out,
-        "    pub fn allow_no_chapter(self) -> bool {{\n        {allowed}\n    }}\n}}"
-    )
-    .unwrap();
+    out.push_str("}\n");
 }
 
 fn chapters(out: &mut String, chapters: &Value) {
