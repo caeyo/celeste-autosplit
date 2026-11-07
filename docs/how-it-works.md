@@ -220,7 +220,7 @@ In `cfg`:
 - An empty `cfg` does nothing but report game time.
 
 A new optional key, trigger kind or field doesn't bump `schema_version`.
-Renames, removals and changes of meaning do.
+Renames, removals and changes of meaning do, once a release has the layout.
 
 ### Reading them
 
