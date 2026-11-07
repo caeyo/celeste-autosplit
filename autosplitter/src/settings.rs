@@ -1,3 +1,5 @@
+use core::iter;
+
 use asr::settings::{Map, Value};
 
 #[allow(dead_code)]
@@ -5,14 +7,17 @@ mod schema {
     include!(concat!(env!("OUT_DIR"), "/schema.rs"));
 }
 
-use schema::{Field, TimingMethod, CHAPTERS, NO_CHAPTER, SCHEMA_VERSION, SIDE_VALUES};
-pub use schema::{Kind, Timing};
+use schema::{Field, CHAPTERS, NO_CHAPTER, SCHEMA_VERSION, SIDE_VALUES};
+pub use schema::{Kind, Timing, TimingMethod};
 
 pub struct Trigger {
     pub kind: Kind,
     pub chapter: Option<i64>,
+    pub sid: Option<String>,
     pub side: Option<i64>,
     pub timing: Timing,
+    pub room: String,
+    pub checkpoint_rooms: &'static [&'static str],
 }
 
 impl Trigger {
@@ -20,8 +25,11 @@ impl Trigger {
         Self {
             kind,
             chapter: None,
+            sid: None,
             side: None,
             timing: Timing::default(),
+            room: String::new(),
+            checkpoint_rooms: &[],
         }
     }
 }
@@ -29,6 +37,8 @@ impl Trigger {
 pub struct Settings {
     pub start: Trigger,
     pub splits: Vec<Trigger>,
+    pub timing_method: TimingMethod,
+    pub auto_reset: bool,
 }
 
 impl Default for Settings {
@@ -36,6 +46,8 @@ impl Default for Settings {
         Self {
             start: Trigger::of(schema::START),
             splits: Vec::new(),
+            timing_method: TimingMethod::default(),
+            auto_reset: schema::AUTO_RESET,
         }
     }
 }
@@ -68,10 +80,8 @@ impl Settings {
             return settings;
         };
         let everest = flag(&cfg, "everest", schema::EVEREST);
-        if flag(&cfg, "auto_reset", schema::AUTO_RESET) {
-            asr::print_message("cfg.auto_reset isn't supported yet, so it's off");
-        }
-        timing_method(&cfg);
+        settings.auto_reset = flag(&cfg, "auto_reset", schema::AUTO_RESET);
+        settings.timing_method = timing_method(&cfg);
         if let Some(start) = cfg.get("start") {
             settings.start = trigger(&start, everest, "start");
         }
@@ -89,6 +99,12 @@ impl Settings {
         }
         settings
     }
+
+    pub fn uses_sid(&self) -> bool {
+        iter::once(&self.start)
+            .chain(&self.splits)
+            .any(|trigger| trigger.sid.is_some())
+    }
 }
 
 fn flag(cfg: &Map, key: &str, default: bool) -> bool {
@@ -103,24 +119,21 @@ fn flag(cfg: &Map, key: &str, default: bool) -> bool {
     })
 }
 
-fn timing_method(cfg: &Map) {
+fn timing_method(cfg: &Map) -> TimingMethod {
     let Some(value) = cfg.get("timing_method") else {
-        return;
+        return TimingMethod::default();
     };
-    let file = TimingMethod::default().name();
-    match value
+    let method = value
         .get_string()
-        .and_then(|name| TimingMethod::from_name(&name))
-    {
-        Some(TimingMethod::File) => {}
-        Some(method) => asr::print_message(&format!(
-            "cfg.timing_method {} isn't supported yet, so it's {file}",
-            method.name()
-        )),
-        None => asr::print_message(&format!(
-            "cfg.timing_method {value:?} isn't valid, so it's {file}"
-        )),
-    }
+        .and_then(|name| TimingMethod::from_name(&name));
+    method.unwrap_or_else(|| {
+        let default = TimingMethod::default();
+        asr::print_message(&format!(
+            "cfg.timing_method {value:?} isn't valid, so it's {}",
+            default.name()
+        ));
+        default
+    })
 }
 
 fn trigger(value: &Value, everest: bool, place: &str) -> Trigger {
@@ -163,7 +176,9 @@ fn parse_trigger(value: &Value, everest: bool) -> Result<Trigger, String> {
                 trigger.timing = timing.ok_or_else(invalid)?;
             }
             Field::Checkpoint => checkpoint = Some(value.get_i64().ok_or_else(invalid)?),
-            Field::Room | Field::Sid | Field::Raw => {
+            Field::Room => trigger.room = value.get_string().ok_or_else(invalid)?,
+            Field::Sid => trigger.sid = Some(value.get_string().ok_or_else(invalid)?),
+            Field::Raw => {
                 value.get_string().ok_or_else(invalid)?;
             }
         }
@@ -181,19 +196,12 @@ fn parse_trigger(value: &Value, everest: bool) -> Result<Trigger, String> {
         let chapter = CHAPTERS
             .iter()
             .find(|chapter| Some(chapter.id) == trigger.chapter);
-        let count = chapter.map_or(0, |chapter| chapter.checkpoints.len());
-        if !(1..=count as i64).contains(&checkpoint) {
-            return Err(format!("has an invalid checkpoint, {checkpoint}"));
-        }
-    }
-    if !matches!(
-        kind,
-        Kind::Manual | Kind::Unknown | Kind::NewFile | Kind::ChapterComplete
-    ) {
-        return Err(format!("is {}, which isn't supported yet", kind.name()));
-    }
-    if present.contains(&Field::Sid) {
-        return Err("has a sid, which isn't supported yet".to_owned());
+        let rooms = chapter.and_then(|chapter| {
+            let index = usize::try_from(checkpoint).ok()?.checked_sub(1)?;
+            chapter.checkpoints.get(index)
+        });
+        trigger.checkpoint_rooms =
+            rooms.ok_or_else(|| format!("has an invalid checkpoint, {checkpoint}"))?;
     }
     Ok(trigger)
 }
