@@ -1,0 +1,41 @@
+<AutoSplitterSettings>
+  <Version>1.0</Version>
+  <CustomSettings>
+    <Setting id="schema_version" type="i64">1</Setting>
+    <Setting id="cfg" type="map">
+      <Setting id="start" type="map"><Setting id="kind" type="string" value="room_exit" /><Setting id="room" type="string" value="6" /></Setting>
+      <Setting id="reset" type="map"><Setting id="kind" type="string" value="chapter_exit" /></Setting>
+      <Setting id="splits" type="list">
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="6a" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="6b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="6c" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="7" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="8" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="8b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="9" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="9b" /></Setting>
+      </Setting>
+      <Setting id="timing_method" type="string" value="chapter_since_start" />
+      <Setting id="everest" type="bool">False</Setting>
+      <Setting id="high_priority" type="bool">True</Setting>
+      <Setting id="set_game_time" type="bool">True</Setting>
+    </Setting>
+    <Setting id="legacy" type="map">
+      <Setting id="AutoReset" type="string" value="True" />
+      <Setting id="SetHighPriority" type="string" value="True" />
+      <Setting id="SetGameTime" type="string" value="True" />
+      <Setting id="FileTimeOffset" type="string" value="False" />
+      <Setting id="Splits" type="list">
+        <Setting type="string" value="LevelExit,6" />
+        <Setting type="string" value="LevelEnter,6a" />
+        <Setting type="string" value="LevelEnter,6b" />
+        <Setting type="string" value="LevelEnter,6c" />
+        <Setting type="string" value="LevelEnter,7" />
+        <Setting type="string" value="LevelEnter,8" />
+        <Setting type="string" value="LevelEnter,8b" />
+        <Setting type="string" value="LevelEnter,9" />
+        <Setting type="string" value="LevelEnter,9b" />
+      </Setting>
+    </Setting>
+  </CustomSettings>
+</AutoSplitterSettings>

@@ -1,0 +1,62 @@
+<AutoSplitterSettings>
+  <Version>1.0</Version>
+  <CustomSettings>
+    <Setting id="schema_version" type="i64">1</Setting>
+    <Setting id="cfg" type="map">
+      <Setting id="start" type="map"><Setting id="kind" type="string" value="chapter_start" /></Setting>
+      <Setting id="reset" type="map"><Setting id="kind" type="string" value="chapter_exit" /></Setting>
+      <Setting id="splits" type="list">
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="2" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="3" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="4" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="3b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="5" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="6" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="6a" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="6b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="6c" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="7" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="8" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="8b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="9" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="9b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="10a" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="11" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="12" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="12a" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="end" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="chapter_complete" /><Setting id="chapter" type="i64">1</Setting><Setting id="timing" type="string" value="chapter_complete" /></Setting>
+      </Setting>
+      <Setting id="timing_method" type="string" value="chapter" />
+      <Setting id="everest" type="bool">False</Setting>
+      <Setting id="high_priority" type="bool">True</Setting>
+      <Setting id="set_game_time" type="bool">True</Setting>
+    </Setting>
+    <Setting id="legacy" type="map">
+      <Setting id="AutoReset" type="string" value="True" />
+      <Setting id="SetHighPriority" type="string" value="True" />
+      <Setting id="Splits" type="list">
+        <Setting type="string" value="LevelEnter,2" />
+        <Setting type="string" value="LevelEnter,3" />
+        <Setting type="string" value="LevelEnter,4" />
+        <Setting type="string" value="LevelEnter,3b" />
+        <Setting type="string" value="LevelEnter,5" />
+        <Setting type="string" value="LevelEnter,6" />
+        <Setting type="string" value="LevelEnter,6a" />
+        <Setting type="string" value="LevelEnter,6b" />
+        <Setting type="string" value="LevelEnter,6c" />
+        <Setting type="string" value="LevelEnter,7" />
+        <Setting type="string" value="LevelEnter,8" />
+        <Setting type="string" value="LevelEnter,8b" />
+        <Setting type="string" value="LevelEnter,9" />
+        <Setting type="string" value="LevelEnter,9b" />
+        <Setting type="string" value="LevelEnter,10a" />
+        <Setting type="string" value="LevelEnter,11" />
+        <Setting type="string" value="LevelEnter,12" />
+        <Setting type="string" value="LevelEnter,12a" />
+        <Setting type="string" value="LevelEnter,end" />
+        <Setting type="string" value="Chapter1" />
+      </Setting>
+    </Setting>
+  </CustomSettings>
+</AutoSplitterSettings>
