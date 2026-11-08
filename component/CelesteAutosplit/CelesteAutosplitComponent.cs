@@ -115,7 +115,7 @@ public class CelesteAutosplitComponent : LogicComponent
     {
         if (inner != null)
         {
-            inner.SetSettings(settings);
+            inner.SetSettings(LegacyMigration.Migrate(settings));
         }
         else
         {

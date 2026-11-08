@@ -67,6 +67,30 @@ public sealed class ComponentTests : IDisposable
         Assert.Equal(Parse(Settings).InnerXml, GetSettings(component));
     }
 
+    [Theory]
+    [MemberData(nameof(LegacyFiles.Names), MemberType = typeof(LegacyFiles))]
+    public void A_migrated_community_file_round_trips_exactly_through_the_runtime(string name)
+    {
+        IComponent component = Create();
+
+        host.OnUiThread(() => component.SetSettings(LegacyFiles.Settings(name)));
+
+        Assert.Equal(LegacyFiles.Expected(name).InnerXml, GetSettings(component));
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("corrupt")]
+    public void Legacy_settings_are_kept_as_they_are_without_an_ASR_to_run_the_module(string kind)
+    {
+        IComponent component = Create(kind == "missing" ? host.MissingWasmBasePath : host.CorruptWasmBasePath);
+        XmlElement legacy = LegacyFiles.Settings("1a-rooms");
+
+        host.OnUiThread(() => component.SetSettings(legacy));
+
+        Assert.Equal(legacy.InnerXml, GetSettings(component));
+    }
+
     [Fact]
     public void A_missing_wasm_module_is_reported_and_settings_are_kept()
     {
