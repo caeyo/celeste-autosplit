@@ -201,8 +201,8 @@ describes.
 
 | Top-level key | Type | Written by | Purpose |
 |---|---|---|---|
-| `schema_version` | i64 | editors; the module when migrating | The version of `cfg`'s layout. |
-| `cfg` | map | editors | Every real setting. |
+| `schema_version` | i64 | editors; the component, when migrating | The version of `cfg`'s layout. |
+| `cfg` | map | editors; the component, when migrating | Every real setting. |
 | `legacy` | map | the component, when migrating | The legacy settings, verbatim, for migrating again and debugging: each boolean's text under its legacy name, only when the node has it, then `Splits`, a list of each split's text, in order. |
 | `_ui_*` | title widgets | the module | Reserved for the module's own widgets, since widget keys and map keys share one namespace. |
 
@@ -455,8 +455,8 @@ replaces.
 
 A node is legacy when `CustomSettings` is absent and `Splits` or `AutoReset`
 present; anything else passes through. The node is the only input, never the run.
-Parse the booleans as `bool.Parse` does, trimmed, falling back to legacy's
-defaults, and classify the list exactly as legacy does.
+The booleans parse as `bool.Parse` does, trimmed, falling back to legacy's
+defaults, and the list is classified exactly as legacy classifies it.
 
 | | E | F | I | C |
 |---|---|---|---|---|
@@ -487,10 +487,10 @@ change a migrated user's behaviour, and the output is the same each time.
 | `LevelEnter`, `LevelExit,V` | `room_enter`, `room_exit`, room V as written |
 | anything else, or a value that never fires | `unknown`, with the text as `raw` |
 
-Parse as legacy does: split on commas, keeping fields 0 and 1; parse the type as
-`Enum.TryParse` does, an undefined integer being `unknown`; split an area value
-on `-`, part 0 a chapter name (`Menu`, `Prologue`, `ForsakenCity`, ...,
-`Core`, `Farewell`) or integer, part 1 `ASide`, `BSide`, `CSide` or 0 to 2,
+A split parses as legacy's does: on commas, keeping fields 0 and 1, with the
+type as `Enum.TryParse` reads it, an undefined integer being `unknown`. An area
+value splits on `-`, part 0 a chapter name (`Menu`, `Prologue`, `ForsakenCity`,
+..., `Core`, `Farewell`) or integer, part 1 `ASide`, `BSide`, `CSide` or 0 to 2,
 trimmed and ignoring case. A failure, or a side outside `ASide` to `CSide`, is
 `unknown`, and an integer can't be negative, since the value is split on `-`
 first. `Menu`, -1, isn't a chapter: `AreaOnEnter` and `AreaOnExit` of it map as
@@ -505,8 +505,8 @@ Those of splitting itself are [above](#splitting). Those of the mapping:
 
 | Legacy | Now | Who notices |
 |---|---|---|
-| Always switches to Game Time | Honours `SetGameTime` | Users who unchecked it. |
-| Unknown types silently manual | `unknown`, flagged | Nobody, timing-wise. |
+| Always switches to Game Time | `set_game_time` keeps `SetGameTime`, for the [planned](plan.md#the-component) switch to honour | Users who unchecked it. |
+| Unknown types silently manual | `unknown`, for editors to flag | Nobody, timing-wise. |
 | Case C's final split time is absolute | Consistent with the run | Custom-start runners. |
 | `FileTimeOffset` in C and E mixes clocks | `file_since_start` | A rare combination. |
 | No splits: start on any room change, split on room changes | Nothing automatic but the reset, with `AutoReset` | Users without splits, and single-room timers. |
@@ -514,6 +514,8 @@ Those of splitting itself are [above](#splitting). Those of the mapping:
 | With `AutoReset`, nothing starts or splits outside a chapter, since the reset comes first, so in case C a start that fires there, such as `AreaOnExit,X` or `AreaOnEnter,Menu`, never starts | It starts, and during the run, leaving X with `AreaOnExit,X`, or any chapter with `AreaOnEnter,Menu`, resets and starts again | Custom-start runners whose start fires outside a chapter. |
 | `AreaOnEnter,Menu` and `AreaOnExit,Menu` don't fire when a check sees one chapter change straight to another, as can happen between the Summit and the Epilogue, where the chapter ID is -1 for only 2 updates | Their `chapter_exit` and `chapter_enter` fire | Lists with such a split, when legacy's check would miss the -1. |
 | `AreaOnEnter,Menu-None` and `AreaOnExit,Menu-None` fire on leaving and entering a chapter, since the side is -1 outside one | `unknown`, like any side of `Menu` | Nobody on purpose: legacy's value is typed by hand, and no list we've seen has one. |
+| `LevelExit,` with an empty value fires on entering a chapter, since the room reads empty at the map | `unknown`, like any empty value | Nobody: only editing the `.lss` by hand writes one. |
+| A boolean that doesn't parse throws from `SetSettings` | Its default | Nobody: only editing the `.lss` by hand writes one. |
 
 ## The probe
 
@@ -616,11 +618,10 @@ never fires on vanilla with it on. The other traces' scenarios add what
 [their tables](../traces/README.md#scenarios) list.
 
 The [component's tests](livesplit-notes.md#the-components-tests) prove that
-LiveSplit's ASR loads the wasm module and keeps its settings, and that a legacy
-node migrates to what each community file's expected XML says, written by hand
-from the file, and round-trips through ASR unchanged. The harness's test, `cargo
-test`, reads each expected XML through livesplit-core's
-`StoredAutoSplitterSettings` and gets the same XML back.
+LiveSplit's ASR loads the wasm module and keeps its settings, and that legacy
+settings migrate to hand-written XML, which round-trips through ASR unchanged.
+The harness's test, `cargo test`, reads the same XML through livesplit-core's
+`StoredAutoSplitterSettings` and gets it back.
 
 ### What they don't prove
 

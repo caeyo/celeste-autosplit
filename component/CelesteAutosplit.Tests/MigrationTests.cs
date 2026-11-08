@@ -11,14 +11,14 @@ public class MigrationTests
 {
     [Theory]
     [MemberData(nameof(LegacyFiles.Names), MemberType = typeof(LegacyFiles))]
-    public void Community_files_migrate_to_their_expected_settings(string name)
+    public void Legacy_files_migrate_to_their_expected_settings(string name)
     {
         Assert.Equal(LegacyFiles.Expected(name).InnerXml, LegacyMigration.Migrate(LegacyFiles.Settings(name)).InnerXml);
     }
 
     [Theory]
     [MemberData(nameof(LegacyFiles.Names), MemberType = typeof(LegacyFiles))]
-    public void Migrating_a_community_file_twice_gives_the_same_output(string name)
+    public void Migrating_a_legacy_file_twice_gives_the_same_output(string name)
     {
         XmlNode settings = LegacyFiles.Settings(name);
 
@@ -218,7 +218,7 @@ public class MigrationTests
     [InlineData("FALSE", "False")]
     [InlineData("yes", "True")]
     [InlineData("", "True")]
-    public void Booleans_parse_as_legacy_parses_them(string text, string expected)
+    public void Booleans_parse_trimmed_and_fall_back_to_legacy_defaults(string text, string expected)
     {
         XmlNode cfg = Cfg(Legacy([], ("SetHighPriority", text)));
 

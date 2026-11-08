@@ -69,7 +69,7 @@ public sealed class ComponentTests : IDisposable
 
     [Theory]
     [MemberData(nameof(LegacyFiles.Names), MemberType = typeof(LegacyFiles))]
-    public void A_migrated_community_file_round_trips_exactly_through_the_runtime(string name)
+    public void A_migrated_legacy_file_round_trips_exactly_through_the_runtime(string name)
     {
         IComponent component = Create();
 
