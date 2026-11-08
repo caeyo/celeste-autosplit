@@ -14,7 +14,6 @@ internal sealed class SettingsEditor : UserControl
 {
     private const string Flag = "[!] ";
     private const string CustomPreset = "Custom";
-    private const string ResetPassed = "The run passes this reset, so it would reset the timer during the run.";
     private const int CaptionWidth = 104;
     private const int InputWidth = 340;
     private const int FullWidth = CaptionWidth + InputWidth;
@@ -512,11 +511,11 @@ internal sealed class SettingsEditor : UserControl
     private string RowText(Row row)
     {
         XmlElement trigger = TriggerOf(row);
-        string flag = RowProblem(row, trigger) != null ? Flag : "";
+        string flag = RowProblem(trigger) != null ? Flag : "";
         return $"{flag}{row.Name}: {Summary(row, trigger)}";
     }
 
-    private string RowProblem(Row row, XmlElement trigger)
+    private string RowProblem(XmlElement trigger)
     {
         if (trigger == null)
         {
@@ -533,11 +532,6 @@ internal sealed class SettingsEditor : UserControl
         {
             string raw = SettingsXml.Value(SettingsXml.Find(trigger, "raw")) as string;
             return $"This legacy split wasn't recognised, so it never fires: {raw}";
-        }
-
-        if (row.Setting.Key == "reset" && RunPasses(trigger))
-        {
-            return ResetPassed;
         }
 
         return null;
@@ -615,56 +609,6 @@ internal sealed class SettingsEditor : UserControl
         }).ToList();
     }
 
-    private bool RunPasses(XmlElement reset)
-    {
-        string kindName = KindName(reset);
-        if (kindName != "chapter_exit" && kindName != "chapter_start" && kindName != "chapter_enter")
-        {
-            return false;
-        }
-
-        var chapters = new List<string>();
-        foreach (XmlElement trigger in SettingsXml.Items(SplitsList()))
-        {
-            string key = ChapterKey(trigger);
-            if (key == null && KindName(trigger) == "chapter_complete")
-            {
-                key = "any" + chapters.Count;
-            }
-
-            if (key != null && !chapters.Contains(key))
-            {
-                chapters.Add(key);
-            }
-        }
-
-        if (chapters.Count < 2)
-        {
-            return false;
-        }
-
-        string resetChapter = ChapterKey(reset);
-        if (resetChapter == null)
-        {
-            return true;
-        }
-
-        int position = chapters.IndexOf(resetChapter);
-        return kindName == "chapter_exit" ? position >= 0 && position < chapters.Count - 1 : position > 0;
-    }
-
-    private string ChapterKey(XmlElement trigger)
-    {
-        if (Everest && SettingsXml.Value(SettingsXml.Find(trigger, "sid")) is string { Length: > 0 } sid)
-        {
-            return "sid:" + sid;
-        }
-
-        return SettingsXml.Value(SettingsXml.Find(trigger, "chapter")) is long chapter
-            ? "id:" + chapter.ToString(CultureInfo.InvariantCulture)
-            : null;
-    }
-
     private void RenderWarnings()
     {
         var lines = new List<string>();
@@ -679,14 +623,7 @@ internal sealed class SettingsEditor : UserControl
             lines.Add("These settings were saved by a newer version of the autosplitter, so they are read-only here. Update the component to edit them.");
         }
 
-        Row resetRow = rows.FirstOrDefault(row => row.Setting.Key == "reset");
-        XmlElement reset = resetRow == null ? null : TriggerOf(resetRow);
-        if (resetRow != null && RowProblem(resetRow, reset) == ResetPassed)
-        {
-            lines.Add(ResetPassed);
-        }
-
-        if (rows.Any(row => RowProblem(row, TriggerOf(row)) is { } message && message != ResetPassed))
+        if (rows.Any(row => RowProblem(TriggerOf(row)) != null))
         {
             lines.Add("Triggers marked [!] are invalid or never fire.");
         }
@@ -752,7 +689,7 @@ internal sealed class SettingsEditor : UserControl
                 input.Input.Enabled = !readOnly && !IsReplaced(input.Field, known, trigger);
             }
 
-            string message = trigger == null ? null : RowProblem(row, trigger);
+            string message = RowProblem(trigger);
             problem.Text = message ?? "";
             problem.Visible = message != null;
         });

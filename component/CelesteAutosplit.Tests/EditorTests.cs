@@ -191,51 +191,6 @@ public sealed class EditorTests : IDisposable
         Assert.Equal("", OnUi(() => Find<Label>(editor, "problem").Text));
     }
 
-    [Theory]
-    [InlineData("chapter_exit", null, true)]
-    [InlineData("chapter_exit", 1L, true)]
-    [InlineData("chapter_exit", 2L, false)]
-    [InlineData("chapter_start", null, true)]
-    [InlineData("chapter_start", 1L, false)]
-    [InlineData("chapter_start", 2L, true)]
-    [InlineData("new_file", null, false)]
-    [InlineData("manual", null, false)]
-    public void A_reset_the_run_passes_is_warned_about(string kind, long? chapter, bool warns)
-    {
-        IComponent component = Create();
-        string chapterSetting = chapter == null ? "" : $"<Setting id=\"chapter\" type=\"i64\">{chapter}</Setting>";
-        SetCfg(
-            component,
-            $"<Setting id=\"reset\" type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"{kind}\" />{chapterSetting}</Setting>"
-            + $"<Setting id=\"splits\" type=\"list\">{Row1}{Row2}</Setting>");
-
-        Control editor = Open(component);
-
-        string text = OnUi(() => Find<Label>(editor, "warnings").Text);
-        if (warns)
-        {
-            Assert.Contains("passes this reset", text);
-        }
-        else
-        {
-            Assert.Equal("", text);
-        }
-    }
-
-    [Fact]
-    public void A_reset_in_a_run_through_one_chapter_is_not_warned_about()
-    {
-        IComponent component = Create();
-        SetCfg(
-            component,
-            "<Setting id=\"reset\" type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"chapter_exit\" /></Setting>"
-            + $"<Setting id=\"splits\" type=\"list\">{Row1}</Setting>");
-
-        Control editor = Open(component);
-
-        Assert.Equal("", OnUi(() => Find<Label>(editor, "warnings").Text));
-    }
-
     [Fact]
     public void Everest_only_fields_are_kept_while_everest_is_off()
     {
@@ -408,10 +363,39 @@ public sealed class EditorTests : IDisposable
     }
 
     [Fact]
-    public void Cancelling_the_dialog_is_not_the_first_settings_for_game_time()
+    public void A_run_with_no_settings_switches_to_game_time_on_the_first_update_only()
     {
         LiveSplitState state = OnUi(() => host.NewState());
         IComponent component = Create(state);
+        Assert.Equal(TimingMethod.RealTime, OnUi(() => state.CurrentTimingMethod));
+
+        OnUi(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
+        Assert.Equal(TimingMethod.GameTime, OnUi(() => state.CurrentTimingMethod));
+
+        OnUi(() => state.CurrentTimingMethod = TimingMethod.RealTime);
+        OnUi(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
+        Assert.Equal(TimingMethod.RealTime, OnUi(() => state.CurrentTimingMethod));
+    }
+
+    [Fact]
+    public void Settings_given_before_the_first_update_decide_game_time_and_the_update_changes_nothing()
+    {
+        LiveSplitState state = OnUi(() => host.NewState());
+        IComponent component = Create(state);
+
+        SetCfg(component, "<Setting id=\"set_game_time\" type=\"bool\">False</Setting>");
+        OnUi(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
+
+        Assert.Equal(TimingMethod.RealTime, OnUi(() => state.CurrentTimingMethod));
+    }
+
+    [Fact]
+    public void Cancelling_the_dialog_after_the_first_update_does_not_switch_to_game_time()
+    {
+        LiveSplitState state = OnUi(() => host.NewState());
+        IComponent component = Create(state);
+        OnUi(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
+        OnUi(() => state.CurrentTimingMethod = TimingMethod.RealTime);
         Open(component);
         XmlNode snapshot = OnUi(() => component.GetSettings(new XmlDocument()));
 

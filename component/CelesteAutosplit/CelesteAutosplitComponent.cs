@@ -130,6 +130,12 @@ public class CelesteAutosplitComponent : LogicComponent
             return;
         }
 
+        if (!gameTimeSettled)
+        {
+            ApplyHostSettings(true);
+            gameTimeSettled = true;
+        }
+
         priority.Update();
 
         int now = Environment.TickCount;
@@ -291,7 +297,6 @@ public class CelesteAutosplitComponent : LogicComponent
 
     public override Control GetSettingsControl(LayoutMode mode)
     {
-        gameTimeSettled = true;
         if (inner != null && schema != null)
         {
             try

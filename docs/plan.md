@@ -34,8 +34,6 @@ The settings map, how the module reads it, and the triggers are in
 [How it works](how-it-works.md#settings). This is what's left, for editors:
 
 - Presets exist only in editors. A configuration matching none is "Custom".
-- Editors warn about a reset the run passes, such as `chapter_exit` in a run
-  through several chapters.
 
 ### Rules
 

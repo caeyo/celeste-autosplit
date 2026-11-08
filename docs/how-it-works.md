@@ -544,14 +544,9 @@ the run's segments reads `(no segment)`.
 - **Kinds** are offered per each kind's `offer`, plus the current one. Changing
   it drops the old kind's fields the new one doesn't take, but keeps unknown keys.
   Editing a row past the end of `splits` fills the rows before it with `manual`.
-- **Flags**: a row is marked `[!]` for what the module reads as invalid, for
-  `unknown`, and, on Reset, for a reset the run passes. The checks are the
-  module's, as [Reading them](#reading-them) describes.
-- **A reset the run passes**: a `chapter_start`, `chapter_enter` or
-  `chapter_exit` reset in a run whose splits name at least two chapters by `sid`
-  or `chapter`, a `chapter_complete` without a chapter counting as one each. With
-  a chapter on the reset, it has to be a chapter before the last one for
-  `chapter_exit`, and after the first for the others.
+- **Flags**: a row is marked `[!]` for what the module reads as invalid, and
+  for `unknown`. The checks are the module's, as
+  [Reading them](#reading-them) describes.
 - **Everest-only fields** are hidden while `everest` is off, and kept.
 - A `schema_version` above the schema's opens read-only and is never written.
 
@@ -560,11 +555,11 @@ the run's segments reads `(no segment)`.
 The two behaviours outside the module, each from `cfg`, a key's default when
 missing, and neither under a newer `schema_version`:
 
-- **Game Time**: the first `SetSettings` after activation sets
-  `state.CurrentTimingMethod` to Game Time if `set_game_time` is on. Opening the
-  settings settles this, so a Cancel, which also calls `SetSettings`, never
-  switches anything, and neither does a splits file with no settings, which never
-  gets a `SetSettings`.
+- **Game Time**: once per activation, `state.CurrentTimingMethod` is set to Game
+  Time if `set_game_time` is on: on the first `SetSettings`, or, for a run with no
+  settings for this game, which never gets one, on the first `Update`, where
+  the key's default applies. That also keeps a Cancel in the settings, which calls
+  `SetSettings` much later, from switching anything.
 - **Priority**: [`GamePriority.cs`](../component/CelesteAutosplit/GamePriority.cs)
   scans for `Celeste` processes on a background task, at most every 2 s, from
   `Update`, and sets High once per process, or again after the setting goes off

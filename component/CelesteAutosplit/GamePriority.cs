@@ -15,7 +15,7 @@ internal sealed class GamePriority : IDisposable
     private readonly object gate = new();
     private readonly HashSet<int> handled = [];
     private readonly HashSet<int> raised = [];
-    private int lastScan;
+    private int lastScan = Environment.TickCount;
     private bool scanning;
     private bool disposed;
 
