@@ -11,7 +11,12 @@
   <ItemGroup>
     <Reference Include="LiveSplit.Core" HintPath="$(LiveSplitDir)LiveSplit.Core.dll" Private="false" />
     <Reference Include="UpdateManager" HintPath="$(LiveSplitDir)UpdateManager.dll" Private="false" />
+    <Reference Include="System.Web.Extensions" />
     <Reference Include="LiveSplit.AutoSplittingRuntime" HintPath="$(LiveSplitDir)Components/LiveSplit.AutoSplittingRuntime.dll" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CelesteAutosplit.Tests" />
   </ItemGroup>
 
   <ItemGroup>

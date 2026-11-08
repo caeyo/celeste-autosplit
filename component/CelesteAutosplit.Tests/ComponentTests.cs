@@ -4,6 +4,7 @@ using LiveSplit.UI.Components;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Windows.Forms;
 using System.Xml;
 using Xunit;
 
@@ -97,6 +98,8 @@ public sealed class ComponentTests : IDisposable
         IComponent component = Create(host.MissingWasmBasePath);
 
         Assert.Contains("missing", Status(component));
+        Assert.Contains("delete celeste-autosplit.dll", Status(component));
+        Assert.Contains("https://github.com/caeyo/celeste-autosplit/releases/latest", Status(component));
         SetSettings(component, Settings);
         Assert.Equal(Parse(Settings).InnerXml, GetSettings(component));
     }
@@ -189,7 +192,11 @@ public sealed class ComponentTests : IDisposable
 
     private string Status(IComponent component)
     {
-        return host.OnUiThread(() => component.GetSettingsControl(LayoutMode.Vertical).Text);
+        return host.OnUiThread(() =>
+        {
+            Control control = component.GetSettingsControl(LayoutMode.Vertical);
+            return control is Label ? control.Text : control.Controls.Find("status", true)[0].Text;
+        });
     }
 
     private void SetSettings(IComponent component, string xml)

@@ -192,7 +192,8 @@ take over the `.lss` and `.lsl` file associations. Copy `celeste-autosplit.dll`
 into `Components\` as `LiveSplit.Celeste.dll`, with `celeste_autosplit.wasm`.
 LiveSplit takes that name from the first URL of the official list's Celeste
 entry, finds it present, and activates the component for any Celeste splits. Its
-settings show its status, and DebugView shows the log.
+settings are the editor, or a status if ASR couldn't run the module, and
+DebugView shows the log.
 
 ## CI
 

@@ -47,7 +47,8 @@ component builds against LiveSplit 1.8.37, `LiveSplitVersion` in
 - LiveSplit calls `Dispose` when it deactivates the auto splitter or the game
   changes. Without forwarding it, ASR's timer would keep running the old module.
 - `GetSettingsControl` must not return null, or LiveSplit disables the Settings
-  button. The component's shows its status for now.
+  button. The run editor calls it just to enable that button, and the settings
+  dialog calls it each time it opens, before snapshotting `GetSettings`.
 
 ## ASR
 
@@ -87,7 +88,10 @@ writes no `<ScriptPath>`, which livesplit-core ignores anyway.
 LiveSplit's settings dialog snapshots `GetSettings()` when it opens. On OK, the
 splits editor stores `GetSettings()` as `Run.AutoSplitterSettings`. On Cancel,
 it calls `SetSettings` with the snapshot. So the two have to round-trip exactly,
-and an editor has to pass on each change at once.
+and an editor has to pass on each change at once. Closing the dialog with its X
+restores nothing, as with any component that applies changes at once. Whatever
+is active is written by `XMLRunSaver`, from `GetSettings`, whenever the splits
+are saved.
 
 ## The auto splitter list
 
@@ -140,7 +144,11 @@ stands in for LiveSplit's, with ASR's native library and the wasm module in
 `Components\`, and a hidden form on an STA thread for LiveSplit's UI thread. They
 check that ASR loads the module, that settings round-trip exactly, and that a
 missing wasm, one ASR can't load, and a LiveSplit without ASR are reported, with
-the settings kept. For migration, they check each `.lss` in
+the settings kept. For the editor, they drive its real controls on the real
+component, without showing them, and check what reaches ASR against hand-written
+XML, that it's read again each time it opens, read-only, flags, presets, Cancel,
+the first settings switching to Game Time, and the import, from a stand-in
+holding a community file's settings. For migration, they check each `.lss` in
 `CelesteAutosplit.Tests/LegacySplits/`, community files and `odd-values.lss`,
 against its hand-written `.expected.xml`, that ASR writes the migrated XML back
 the same, all 71 types, integers and

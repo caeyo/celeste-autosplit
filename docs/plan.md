@@ -1,8 +1,8 @@
 # Plan
 
-None of this is built. It's the design for the component's editor and the
-website, written before the code. What is built, the settings map, how the
-module reads it, splitting and the migration from the legacy component, is in
+What's left is the website and the list entry, written before the code. What
+is built, the settings map, how the module reads it, splitting, the migration
+from the legacy component and the component, is in
 [How it works](how-it-works.md). Check each part against the code before
 building it.
 
@@ -56,32 +56,6 @@ The settings map, how the module reads it, and the triggers are in
 
 It registers title widgets only, plain text saying where the website is, with
 a short URL. On Windows they're never shown.
-
-## The component
-
-It runs the wasm module in ASR, and reports a 32-bit LiveSplit, a missing wasm,
-and ASR failing to be created or to load the module, keeping the settings. To
-add:
-
-- **The editor**: when it opens, it parses `inner.GetSettings`'s
-  `CustomSettings` and renders from the schema. On every change, it writes the
-  map in ASR's format and calls `inner.SetSettings`, because of
-  [LiveSplit's settings dialog](livesplit-notes.md#settings-in-the-lss). It reads
-  again each time it opens, so it sees a migration the module ran.
-- **Process priority**, `cfg.high_priority`, on by default: at most every 2 s,
-  from `Update`, find `Process.GetProcessesByName("Celeste")`, and set High once
-  per process ID, and again when the setting changes. Set Normal only if it
-  raised it, when the setting goes off or on `Dispose`. Log and carry on after
-  `Win32Exception`, `InvalidOperationException` or access denied, dispose each
-  `Process`, and never block the UI thread.
-- **Game Time**, `cfg.set_game_time`, on by default: on the first `SetSettings`,
-  when the real settings are first known, set `state.CurrentTimingMethod` to
-  Game Time if it's on. Neither ASR nor asr can.
-- **A legacy component in the layout**: look for `LiveSplit.Celeste.dll` in
-  `state.Layout.LayoutComponents`, warn to remove it, to avoid double splits,
-  and offer to import its settings through the migration if the `.lss` has none.
-- **A missing wasm**: download it again from the latest release, or keep saying
-  how to repair it, since LiveSplit never will.
 
 ## The website
 
