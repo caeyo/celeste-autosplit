@@ -111,6 +111,26 @@ jobs:
           path: component/CelesteAutosplit/bin/Release/net4.8.1/celeste-autosplit.dll
           if-no-files-found: error
 
+  harness-test:
+    name: Test the harness
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Commit
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: rustup toolchain install --profile minimal --no-self-update
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          workspaces: harness
+
+      - name: Run the harness's tests
+        working-directory: harness
+        run: cargo test --locked
+
   recorder:
     name: Build the trace recorder
     if: github.ref_type != 'tag'

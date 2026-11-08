@@ -1165,6 +1165,7 @@ name = "livesplit-core"
 version = "0.13.0"
 source = "git+https://github.com/LiveSplit/livesplit-core?rev=8cd6ed361adff03ae517a7c2633cefea77f3c752#8cd6ed361adff03ae517a7c2633cefea77f3c752"
 dependencies = [
+ "arc-swap",
  "base64-simd",
  "bytemuck",
  "bytemuck_derive",
@@ -1176,8 +1177,10 @@ dependencies = [
  "itoa",
  "libc",
  "libm",
+ "livesplit-auto-splitting",
  "livesplit-hotkey",
  "livesplit-title-abbreviations",
+ "log",
  "memchr",
  "serde",
  "serde_derive",
