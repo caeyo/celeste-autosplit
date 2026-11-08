@@ -111,13 +111,7 @@ reads flat elements the new format lacks: release notes should say so.
 
 - The module: loading the settings again once a second and on a reset.
 - In LiveSplit, built with `AutoSplitterFactory.AutoSplittersXmlUrl` pointing at
-  a test copy of the list: a fresh install, a legacy user, a legacy component in
-  the layout, the layout editor, an update, a deleted wasm, Cancel in the
-  settings dialog, the priority, Game Time, and the module's resets, alone, as
-  after a run that ended with new bests, and with a start in one tick, which
-  LiveSplit's ASR has to apply without a prompt, the second in order, as only
-  livesplit-core is shown to. Those that download nothing can
-  use [a copy of LiveSplit](maintaining.md#trying-the-component-in-livesplit).
+  a test copy of the list: a fresh install, a legacy user, and an update.
 - Across hosts: a `.lss` saved on Windows opens in the Druid fork the same, one
   edited on the website opens on Windows the same, and the Druid fork shows the
   module's widgets.

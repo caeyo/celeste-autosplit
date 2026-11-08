@@ -565,6 +565,11 @@ missing, and neither under a newer `schema_version`:
   `Update`, and sets High once per process, or again after the setting goes off
   and on. It sets Normal only for processes it raised and that are still High,
   when the setting goes off or on `Dispose`. Failures are logged and skipped.
+  On the development machine, something outside the game saves a `Celeste.exe`
+  process's priority and sets Normal when it gains the foreground, and restores
+  it when it loses it; the game's own code doesn't, and the game renamed isn't
+  affected. The cause is inferred to be Windows' game recognition, not
+  confirmed. So a single set, like legacy's, may not hold during play.
 
 ### The legacy component in the layout
 
@@ -687,7 +692,11 @@ LiveSplit's ASR loads the wasm module and keeps its settings, that legacy
 settings migrate to hand-written XML, which round-trips through ASR unchanged,
 and that the editor's changes reach ASR as hand-written XML. The process
 priority and the warning for a legacy component in the layout have no test: they
-rest on a hand check.
+rest on a hand check in a copy of LiveSplit 1.8.37 on 2026-11-08. It also
+covered the settings dialog and Cancel, Game Time, a deleted wasm module, the
+layout editor, a real legacy component, v1.4.6.0, and, in the real game, the
+module's resets, alone, after a run that ended with new bests, and with a start
+in one tick, none showing a prompt.
 The harness's test, `cargo test`, reads the same XML through livesplit-core's
 `StoredAutoSplitterSettings` and gets it back.
 
