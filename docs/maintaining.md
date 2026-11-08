@@ -198,7 +198,7 @@ settings show its status, and DebugView shows the log.
 
 | Workflow | Runs |
 |---|---|
-| `ci.yml` | clippy and fmt on both crates, failing on any warning; on Windows, builds the wasm module and the component, and runs the component's tests; on Linux, builds the trace recorder. On changes to `autosplitter/`, `harness/`, `component/`, `schema/`, `tools/trace-recorder/`, `rust-toolchain.toml` or `global.json`. |
+| `ci.yml` | clippy and fmt on both crates, failing on any warning; on Windows, builds the wasm module and the component, and runs the component's tests; on Linux, runs the harness's tests and builds the trace recorder. On changes to `autosplitter/`, `harness/`, `component/`, `schema/`, `tools/trace-recorder/`, `rust-toolchain.toml` or `global.json`. |
 | `live-check.yml` | on each vanilla flavour: the live check, the replay of every trace with its scenarios, then the dump. On changes to `autosplitter/`, `harness/`, `schema/`, `tools/probe/`, `traces/`, `rust-toolchain.toml` or `global.json`, and on dispatch. |
 | `release.yml` | on a `v*` tag: both of the above, then the release. |
 | `site.yml` | on pushes to `master` that change `site/` or `schema/`, and on dispatch: deploys `site/`, with the schema, to GitHub Pages. |

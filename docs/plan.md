@@ -1,8 +1,8 @@
 # Plan
 
-None of this is built. It's the design for the component's editor, the website,
-and the migration from the legacy component, written before the code. What is
-built, the settings map, how the module reads it, and splitting, is in
+None of this is built. It's the design for the component's editor and the
+website, written before the code. What is built, the settings map, how the
+module reads it, splitting and the migration from the legacy component, is in
 [How it works](how-it-works.md). Check each part against the code before
 building it.
 
@@ -68,7 +68,6 @@ add:
   map in ASR's format and calls `inner.SetSettings`, because of
   [LiveSplit's settings dialog](livesplit-notes.md#settings-in-the-lss). It reads
   again each time it opens, so it sees a migration the module ran.
-- **Migration**, in `SetSettings`, before anything reaches ASR, below.
 - **Process priority**, `cfg.high_priority`, on by default: at most every 2 s,
   from `Update`, find `Process.GetProcessesByName("Celeste")`, and set High once
   per process ID, and again when the setting changes. Set Normal only if it
@@ -93,9 +92,9 @@ add:
   `<AutoSplitterSettings>` replaced.
 - It tells users to close the splits in their host first, or the host
   overwrites the edit.
-- It imports legacy settings with the component's mapping, for runners taking
-  old Windows `.lss` files to other hosts, since livesplit-core reads only
-  `CustomSettings`.
+- It imports legacy settings with [the component's mapping](how-it-works.md#migration-from-livesplitceleste),
+  compiling the same source file, for runners taking old Windows `.lss` files to
+  other hosts, since livesplit-core reads only `CustomSettings`.
 - It links the latest `celeste_autosplit.wasm`, with steps for hosts that don't
   read the list: AlexKnauth's livesplit-one-druid, which takes a path and
   renders title, bool, choice and file-select widgets, and CryZe's older desktop
@@ -121,128 +120,6 @@ would find `LiveSplit.Celeste.dll` and download nothing. The old DLL stays in
 legacy component's updates was rejected: it needs push access to its repository,
 and reaches only users with update checks on.
 
-## Migration from `LiveSplit.Celeste`
-
-### The legacy component
-
-Audited at [ShootMe/LiveSplit.Celeste `5c5bcb2`](https://github.com/ShootMe/LiveSplit.Celeste/tree/5c5bcb2c1456ee04a241575608febb9d35f69084),
-v1.4.6, the last release. It saves flat children of `<AutoSplitterSettings>`:
-`AutoReset`, `SetHighPriority`, `SetGameTime` and `FileTimeOffset`, each found
-as the first descendant with its name and parsed with `bool.Parse`, all true by
-default but `FileTimeOffset`; and `<Splits>`, with a `<Split>` each, `Type[,Value]`,
-where `Type` is one of the 71 `SplitType` names and `Value` is optional.
-
-It infers its mode from the list, counting names: chapter, any 8 characters long
-(`Prologue`, `Epilogue`, `ChapterA`, `Chapter1` to `Chapter9`); heart, any
-containing `HeartGem`; area, `AreaComplete`; cassette, any containing
-`Cassette`. `ILSplits` is no splits or every count at most 1, and
-`ChapterSplits` any count above 0:
-
-| Case | When | Start | Segment `i` split by | Game time | Chapter splits | `AutoReset` |
-|---|---|---|---|---|---|---|
-| E: empty | no splits | any room change | one segment: the next room change, unless the start room is entered again within 2.5 s, which moves the start | chapter time since start | none | applies |
-| F: full game | `ChapterSplits && !ILSplits` | new file | `splits[i]` | file time | when the flag falls | ignored |
-| I: IL | `ChapterSplits && ILSplits` | chapter started | `splits[i]` | chapter time, held in the menu | when the flag rises | applies |
-| C: custom start | splits, none counted | `splits[0]` | `splits[i+1]`; with only `splits[0]`, the next room change | chapter time since start | none | applies |
-
-`FileTimeOffset` makes game time the file time since start, and lets heart and
-cassette splits use the chapter's flag, as otherwise only IL does. When
-`AutoReset` applies, the timer resets whenever the game is outside a chapter.
-
-| Legacy types | Fire when |
-|---|---|
-| `Prologue`, `Chapter1` to `Chapter9`, `Epilogue` | `ChapterComplete` rises in that chapter, any side, or in case F, falls again. Chapter 7 also needs a room not starting with `credits`. |
-| `ChapterA` | the same, any chapter, without the `credits` check |
-| `AreaComplete,<chapter>[-<side>]` | the same, for that chapter and side |
-| `AreaOnEnter`, `AreaOnExit,<chapter>[-<side>]` | the chapter ID changes to or from it, and the side too if given |
-| `ChapterNCheckpointK` | in chapter N, whenever the room is the checkpoint's for the side |
-| `HeartGemAny`, `ChapterNHeartGem`, `ChapterNCassette` | the file's count goes up by 1, or in IL or with `FileTimeOffset`, the chapter's flag is set. No "any cassette". |
-| `LevelEnter`, `LevelExit,<room>` | inside a chapter, the room changes to or from `<room>`, ignoring case |
-
-Its defects:
-
-1. `SetGameTime` never worked: read in the constructor, before LiveSplit calls
-   `SetSettings`, it was always true, and every user was switched to Game Time.
-2. Unknown types silently become `Manual`: `Enum.TryParse` is case-sensitive and
-   falls back to the default. It takes integers, so `5` is `HeartGemAny`, and
-   `200` never fires.
-3. Case C's final split gets the absolute chapter time.
-4. `FileTimeOffset` in cases C and E mixes clocks: the file time since start,
-   minus the chapter time at start.
-5. `Value` stops at the first comma.
-6. A `LevelEnter` or `LevelExit` without a room, or an `Area*` value that doesn't
-   parse, never fires, and an `Area*` split with no value throws in `Update`.
-7. Turning high priority off forces Normal, even if it didn't raise it.
-
-Its other Windows-only behaviour is a debug log, `_Celeste.txt`, which ASR's log
-replaces.
-
-### Mapping
-
-A node is legacy when `CustomSettings` is absent and `Splits` or `AutoReset`
-present; anything else passes through. The node is the only input, never the run.
-Parse the booleans as `bool.Parse` does, trimmed, falling back to legacy's
-defaults, and classify the list exactly as legacy does.
-
-| | E | F | I | C |
-|---|---|---|---|---|
-| `start` | `manual` | `new_file` | `chapter_start` | `splits[0]` |
-| `reset` | `chapter_exit` | `manual` | `chapter_exit` | `chapter_exit` |
-| `splits` | none | each, `timing: "chapter_exit"` | each, `timing: "chapter_complete"` | `splits[1..]` |
-| `timing_method` | `file` | `file` | `chapter` | `chapter_since_start` |
-
-`FileTimeOffset` makes `timing_method` `file_since_start` in every case.
-`reset` is `manual` without `AutoReset`, and its `chapter_exit` has no chapter,
-so it fires on leaving any. `everest` is false, `high_priority`
-`SetHighPriority`, and `set_game_time` `SetGameTime`. Every top-level key and
-every `timing` is written, in the schema's order, so a later default can't
-change a migrated user's behaviour, and the output is the same each time.
-`id(N)` maps a chapter number in a name to its ID: 1 to 7 stay, 8 is 9, 9 is
-10.
-
-| Legacy type | Trigger |
-|---|---|
-| `Manual` | `manual` |
-| `ChapterA` | `chapter_complete` |
-| `Prologue`, `ChapterN`, `Epilogue` | `chapter_complete`, chapter 0, `id(N)` and 8 |
-| `ChapterNCheckpointK`, 36 of them | `checkpoint`, chapter `id(N)`, checkpoint K |
-| `HeartGemAny`, `ChapterNHeartGem` | `heart`, the second with chapter `id(N)` |
-| `ChapterNCassette` | `cassette`, chapter `id(N)` |
-| `AreaComplete`, `AreaOnEnter`, `AreaOnExit,V` | `chapter_complete`, `chapter_enter`, `chapter_exit`, with chapter and side from V |
-| `AreaOnEnter`, `AreaOnExit,Menu`, without a side | `chapter_exit`, `chapter_enter`, without a chapter |
-| `LevelEnter`, `LevelExit,V` | `room_enter`, `room_exit`, room V as written |
-| anything else, or a value that never fires | `unknown`, with the text as `raw` |
-
-Parse as legacy does: split on commas, keeping fields 0 and 1; parse the type as
-`Enum.TryParse` does, an undefined integer being `unknown`; split an area value
-on `-`, part 0 a chapter name (`Menu`, `Prologue`, `ForsakenCity`, ...,
-`Core`, `Farewell`) or integer, part 1 `ASide`, `BSide`, `CSide` or 0 to 2,
-trimmed and ignoring case. A failure, or side `None` or -1, is `unknown`.
-`Menu`, -1, isn't a chapter: `AreaOnEnter` and `AreaOnExit` of it map as above,
-and with a side, or on `AreaComplete`, it never fires, since outside a chapter
-the side is -1 and `ChapterComplete` false. `legacy` keeps each boolean's text
-and each split's text, in order.
-
-The result reaches disk only when the user saves the splits, since the component
-doesn't set `Run.HasChanged`. Until then, it migrates again on each load, so
-migration must stay pure and deterministic.
-
-### Deliberate deviations
-
-Those of splitting itself are in
-[How it works](how-it-works.md#splitting). Those of the mapping:
-
-| Legacy | Now | Who notices |
-|---|---|---|
-| Always switches to Game Time | Honours `SetGameTime` | Users who unchecked it. |
-| Unknown types silently manual | `unknown`, flagged | Nobody, timing-wise. |
-| Case C's final split time is absolute | Consistent with the run | Custom-start runners. |
-| `FileTimeOffset` in C and E mixes clocks | `file_since_start` | A rare combination. |
-| No splits: start on any room change, split on room changes | Nothing automatic but the reset, with `AutoReset` | Users without splits, and single-room timers. |
-| Case C with one segment splits on the next room change | Split by hand | Custom-start single-room timers. |
-| With `AutoReset`, nothing starts or splits outside a chapter, since the reset comes first, so in case C a start that fires there, such as `AreaOnExit,X` or `AreaOnEnter,Menu`, never starts | It starts, and during the run, leaving X with `AreaOnExit,X`, or any chapter with `AreaOnEnter,Menu`, resets and starts again | Custom-start runners whose start fires outside a chapter. |
-| `AreaOnEnter,Menu` and `AreaOnExit,Menu` don't fire when a check sees one chapter change straight to another, as can happen between the Summit and the Epilogue, where the chapter ID is -1 for only 2 updates | Their `chapter_exit` and `chapter_enter` fire | Lists with such a split, when legacy's check would miss the -1. |
-
 The legacy component becomes easier to add to a layout by mistake: while its DLL
 was the entry's first URL, the layout editor hid it, and once the entry points
 elsewhere, it's listed. Downgrading isn't supported, since the legacy component
@@ -260,12 +137,6 @@ reads flat elements the new format lacks: release notes should say so.
 
 ## Tests to add
 
-- Migration: real community `.lss` files, snapshotted and checked by hand; one
-  input twice giving the same output; all 71 types, integers and garbage, one by
-  one; each case, crossed with `FileTimeOffset` and `AutoReset`; odd area and
-  room values.
-- Round-trip: the component's writer, then ASR's parser and writer, gives the
-  same XML, which livesplit-core's `StoredAutoSplitterSettings` also parses.
 - The module: loading the settings again once a second and on a reset.
 - In LiveSplit, built with `AutoSplitterFactory.AutoSplittersXmlUrl` pointing at
   a test copy of the list: a fresh install, a legacy user, a legacy component in
