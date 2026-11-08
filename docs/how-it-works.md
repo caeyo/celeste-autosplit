@@ -661,6 +661,8 @@ test`, reads each expected XML through livesplit-core's
   the harness never starts the timer by hand, and a scenario's map never
   changes. A reset and start by hand between two ticks isn't seen as a start.
 - Splitting in LiveSplit: the component's tests don't run the game.
+- That a migrated list splits as legacy did: the mapping's expectations are
+  hand-written from the audit of legacy's source, and no test runs legacy.
 
 ## Known gaps
 
