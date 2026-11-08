@@ -1,0 +1,223 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<Run version="1.7.0">
+  <GameIcon />
+  <GameName>Celeste</GameName>
+  <CategoryName>100%</CategoryName>
+  <Metadata>
+    <Run id="" />
+    <Platform usesEmulator="False">
+    </Platform>
+    <Region>
+    </Region>
+    <Variables />
+  </Metadata>
+  <Offset>00:00:00</Offset>
+  <AttemptCount>8</AttemptCount>
+  <AttemptHistory>
+    <Attempt id="1" started="04/02/2020 02:14:02" isStartedSynced="True" ended="04/02/2020 04:26:33" isEndedSynced="True">
+      <RealTime>02:12:30.9460000</RealTime>
+      <GameTime>01:59:02.0910000</GameTime>
+    </Attempt>
+    <Attempt id="2" started="04/02/2020 04:35:13" isStartedSynced="True" ended="04/02/2020 04:35:16" isEndedSynced="True" />
+    <Attempt id="3" started="04/03/2020 00:04:36" isStartedSynced="True" ended="04/03/2020 00:06:44" isEndedSynced="True" />
+    <Attempt id="4" started="04/03/2020 00:06:51" isStartedSynced="True" ended="04/03/2020 02:17:06" isEndedSynced="True">
+      <RealTime>02:10:14.5190000</RealTime>
+      <GameTime>01:59:17.2210000</GameTime>
+    </Attempt>
+    <Attempt id="5" started="04/03/2020 07:27:37" isStartedSynced="True" ended="04/03/2020 07:28:39" isEndedSynced="True" />
+    <Attempt id="6" started="04/03/2020 07:28:42" isStartedSynced="True" ended="04/03/2020 07:31:07" isEndedSynced="True" />
+    <Attempt id="7" started="04/03/2020 07:31:13" isStartedSynced="True" ended="04/03/2020 09:05:34" isEndedSynced="True" />
+    <Attempt id="8" started="04/03/2020 23:29:04" isStartedSynced="True" ended="04/04/2020 01:42:54" isEndedSynced="True">
+      <RealTime>02:13:50.0060000</RealTime>
+      <GameTime>01:54:03.9280000</GameTime>
+    </Attempt>
+  </AttemptHistory>
+  <Segments>
+    <Segment>
+      <Name>1A</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>2A</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>3A</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>4A</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>5A</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>6A</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>7A</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>8A</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>Farewell</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>1B</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>2B</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>3B</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>4B</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>5B</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>6B</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>7B</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>8B</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>C-Sides</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+  </Segments>
+  <AutoSplitterSettings>
+    <AutoReset>False</AutoReset>
+    <SetHighPriority>False</SetHighPriority>
+    <Splits>
+      <Split>Chapter1</Split>
+      <Split>Chapter2</Split>
+      <Split>Chapter3</Split>
+      <Split>Chapter4</Split>
+      <Split>Chapter5</Split>
+      <Split>Chapter6</Split>
+      <Split>Chapter7</Split>
+      <Split>Chapter8</Split>
+      <Split>Chapter9</Split>
+      <Split>Chapter1</Split>
+      <Split>Chapter2</Split>
+      <Split>Chapter3</Split>
+      <Split>Chapter4</Split>
+      <Split>Chapter5</Split>
+      <Split>Chapter6</Split>
+      <Split>Chapter7</Split>
+      <Split>Chapter8</Split>
+      <Split>Chapter8</Split>
+    </Splits>
+  </AutoSplitterSettings>
+</Run>
