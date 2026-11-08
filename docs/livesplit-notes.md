@@ -140,7 +140,12 @@ stands in for LiveSplit's, with ASR's native library and the wasm module in
 `Components\`, and a hidden form on an STA thread for LiveSplit's UI thread. They
 check that ASR loads the module, that settings round-trip exactly, and that a
 missing wasm, one ASR can't load, and a LiveSplit without ASR are reported, with
-the settings kept.
+the settings kept. For migration, they check each `.lss` in
+`CelesteAutosplit.Tests/LegacySplits/`, community files and `odd-values.lss`,
+against its hand-written `.expected.xml`, that ASR writes the migrated XML back
+the same, all 71 types, integers and
+garbage, each case crossed with `FileTimeOffset` and `AutoReset`, odd area and
+room values, and pass-through.
 
 - The test host is 64-bit, since ASR's native library only runs in 64-bit.
 - The build copies the wasm module only if it exists: after building it the first

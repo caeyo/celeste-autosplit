@@ -6,6 +6,6 @@ publish = false
 
 [dependencies]
 anyhow = "1.0.100"
-livesplit-core = { git = "https://github.com/LiveSplit/livesplit-core", rev = "8cd6ed361adff03ae517a7c2633cefea77f3c752", default-features = false, features = ["std"] }
+livesplit-core = { git = "https://github.com/LiveSplit/livesplit-core", rev = "8cd6ed361adff03ae517a7c2633cefea77f3c752", default-features = false, features = ["std", "auto-splitting"] }
 livesplit-auto-splitting = { git = "https://github.com/LiveSplit/livesplit-core", rev = "8cd6ed361adff03ae517a7c2633cefea77f3c752" }
 serde_json = "1.0.145"

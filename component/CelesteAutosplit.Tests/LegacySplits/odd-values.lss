@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Run version="1.7.0">
+  <AutoSplitterSettings>
+    <AutoReset></AutoReset>
+    <Splits>
+      <Split>Manual</Split>
+      <Split>Foo&lt;&amp;&gt;</Split>
+      <Split></Split>
+      <Split>LevelEnter,a&amp;b"c</Split>
+    </Splits>
+  </AutoSplitterSettings>
+</Run>

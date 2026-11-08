@@ -635,3 +635,40 @@ fn failed(heading: &str, problems: &[String], module: &Module) -> Result<bool> {
     }
     Ok(false)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::Path};
+
+    use livesplit_core::StoredAutoSplitterSettings;
+
+    use crate::HARNESS_DIR;
+
+    #[test]
+    fn livesplit_core_reads_the_migrated_settings_back_the_same() {
+        let dir = Path::new(HARNESS_DIR).join("../component/CelesteAutosplit.Tests/LegacySplits");
+        let mut checked = 0;
+        for entry in fs::read_dir(dir).unwrap() {
+            let file = entry.unwrap().path();
+            if !file.to_string_lossy().ends_with(".expected.xml") {
+                continue;
+            }
+            let text = fs::read_to_string(&file).unwrap();
+            let xml = text.lines().map(str::trim).collect::<String>();
+            let inner = xml
+                .strip_prefix("<AutoSplitterSettings>")
+                .and_then(|xml| xml.strip_suffix("</AutoSplitterSettings>"))
+                .unwrap();
+            let parsed = StoredAutoSplitterSettings::parse(inner)
+                .unwrap_or_else(|e| panic!("{}: {e:?}", file.display()));
+            assert_eq!(
+                parsed.to_xml_string().replace("\"></Setting>", "\"/>"),
+                inner.replace(" />", "/>"),
+                "{}",
+                file.display()
+            );
+            checked += 1;
+        }
+        assert!(checked > 0);
+    }
+}

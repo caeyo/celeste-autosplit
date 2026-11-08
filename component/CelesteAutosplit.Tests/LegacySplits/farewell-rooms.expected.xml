@@ -1,0 +1,214 @@
+<AutoSplitterSettings>
+  <Version>1.0</Version>
+  <CustomSettings>
+    <Setting id="schema_version" type="i64">1</Setting>
+    <Setting id="cfg" type="map">
+      <Setting id="start" type="map"><Setting id="kind" type="string" value="chapter_start" /></Setting>
+      <Setting id="reset" type="map"><Setting id="kind" type="string" value="chapter_exit" /></Setting>
+      <Setting id="splits" type="list">
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="intro-03-space" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="a-00" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="a-01" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="a-02" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="a-03" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="a-04" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="a-05" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="b-00" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="b-01" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="b-02" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="b-03" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="b-04" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="b-05" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="b-06" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="b-07" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="c-00" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="c-alt-00" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="c-alt-01" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="c-03" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="d-00" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="d-05" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-00y" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-00yb" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-00z" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-00" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-00b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-01" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-02" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-03" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-04" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-05" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-05b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-05c" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-06" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-07" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="e-08" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="f-door" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="f-00" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="f-01" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="f-02" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="f-03" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="f-04" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="f-05" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="f-06" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="f-07" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="f-08" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="f-09" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="g-00" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="g-01" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="g-03" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="g-02" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="g-04" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="g-05" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="g-06" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-00b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-00" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-01" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-02" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-03" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-03b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-04" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-05" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-06" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-06b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-07" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-08" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-09" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="h-10" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="i-00" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="i-00b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="i-01" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="i-02" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="i-03" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="i-04" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="i-05" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-00" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-00b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-01" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-02" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-03" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-04" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-05" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-06" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-07" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-08" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-09" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-10" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-11" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-12" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-13" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-14" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-14b" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-15" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="j-16" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="chapter_complete" /><Setting id="chapter" type="i64">10</Setting><Setting id="timing" type="string" value="chapter_complete" /></Setting>
+      </Setting>
+      <Setting id="timing_method" type="string" value="chapter" />
+      <Setting id="everest" type="bool">False</Setting>
+      <Setting id="high_priority" type="bool">True</Setting>
+      <Setting id="set_game_time" type="bool">True</Setting>
+    </Setting>
+    <Setting id="legacy" type="map">
+      <Setting id="AutoReset" type="string" value="True" />
+      <Setting id="SetHighPriority" type="string" value="True" />
+      <Setting id="SetGameTime" type="string" value="True" />
+      <Setting id="FileTimeOffset" type="string" value="False" />
+      <Setting id="Splits" type="list">
+        <Setting type="string" value="LevelEnter,intro-03-space" />
+        <Setting type="string" value="LevelEnter,a-00" />
+        <Setting type="string" value="LevelEnter,a-01" />
+        <Setting type="string" value="LevelEnter,a-02" />
+        <Setting type="string" value="LevelEnter,a-03" />
+        <Setting type="string" value="LevelEnter,a-04" />
+        <Setting type="string" value="LevelEnter,a-05" />
+        <Setting type="string" value="LevelEnter,b-00" />
+        <Setting type="string" value="LevelEnter,b-01" />
+        <Setting type="string" value="LevelEnter,b-02" />
+        <Setting type="string" value="LevelEnter,b-03" />
+        <Setting type="string" value="LevelEnter,b-04" />
+        <Setting type="string" value="LevelEnter,b-05" />
+        <Setting type="string" value="LevelEnter,b-06" />
+        <Setting type="string" value="LevelEnter,b-07" />
+        <Setting type="string" value="LevelEnter,c-00" />
+        <Setting type="string" value="LevelEnter,c-alt-00" />
+        <Setting type="string" value="LevelEnter,c-alt-01" />
+        <Setting type="string" value="LevelEnter,c-03" />
+        <Setting type="string" value="LevelEnter,d-00" />
+        <Setting type="string" value="LevelEnter,d-05" />
+        <Setting type="string" value="LevelEnter,e-00y" />
+        <Setting type="string" value="LevelEnter,e-00yb" />
+        <Setting type="string" value="LevelEnter,e-00z" />
+        <Setting type="string" value="LevelEnter,e-00" />
+        <Setting type="string" value="LevelEnter,e-00b" />
+        <Setting type="string" value="LevelEnter,e-01" />
+        <Setting type="string" value="LevelEnter,e-02" />
+        <Setting type="string" value="LevelEnter,e-03" />
+        <Setting type="string" value="LevelEnter,e-04" />
+        <Setting type="string" value="LevelEnter,e-05" />
+        <Setting type="string" value="LevelEnter,e-05b" />
+        <Setting type="string" value="LevelEnter,e-05c" />
+        <Setting type="string" value="LevelEnter,e-06" />
+        <Setting type="string" value="LevelEnter,e-07" />
+        <Setting type="string" value="LevelEnter,e-08" />
+        <Setting type="string" value="LevelEnter,f-door" />
+        <Setting type="string" value="LevelEnter,f-00" />
+        <Setting type="string" value="LevelEnter,f-01" />
+        <Setting type="string" value="LevelEnter,f-02" />
+        <Setting type="string" value="LevelEnter,f-03" />
+        <Setting type="string" value="LevelEnter,f-04" />
+        <Setting type="string" value="LevelEnter,f-05" />
+        <Setting type="string" value="LevelEnter,f-06" />
+        <Setting type="string" value="LevelEnter,f-07" />
+        <Setting type="string" value="LevelEnter,f-08" />
+        <Setting type="string" value="LevelEnter,f-09" />
+        <Setting type="string" value="LevelEnter,g-00" />
+        <Setting type="string" value="LevelEnter,g-01" />
+        <Setting type="string" value="LevelEnter,g-03" />
+        <Setting type="string" value="LevelEnter,g-02" />
+        <Setting type="string" value="LevelEnter,g-04" />
+        <Setting type="string" value="LevelEnter,g-05" />
+        <Setting type="string" value="LevelEnter,g-06" />
+        <Setting type="string" value="LevelEnter,h-00b" />
+        <Setting type="string" value="LevelEnter,h-00" />
+        <Setting type="string" value="LevelEnter,h-01" />
+        <Setting type="string" value="LevelEnter,h-02" />
+        <Setting type="string" value="LevelEnter,h-03" />
+        <Setting type="string" value="LevelEnter,h-03b" />
+        <Setting type="string" value="LevelEnter,h-04" />
+        <Setting type="string" value="LevelEnter,h-05" />
+        <Setting type="string" value="LevelEnter,h-06" />
+        <Setting type="string" value="LevelEnter,h-06b" />
+        <Setting type="string" value="LevelEnter,h-07" />
+        <Setting type="string" value="LevelEnter,h-08" />
+        <Setting type="string" value="LevelEnter,h-09" />
+        <Setting type="string" value="LevelEnter,h-10" />
+        <Setting type="string" value="LevelEnter,i-00" />
+        <Setting type="string" value="LevelEnter,i-00b" />
+        <Setting type="string" value="LevelEnter,i-01" />
+        <Setting type="string" value="LevelEnter,i-02" />
+        <Setting type="string" value="LevelEnter,i-03" />
+        <Setting type="string" value="LevelEnter,i-04" />
+        <Setting type="string" value="LevelEnter,i-05" />
+        <Setting type="string" value="LevelEnter,j-00" />
+        <Setting type="string" value="LevelEnter,j-00b" />
+        <Setting type="string" value="LevelEnter,j-01" />
+        <Setting type="string" value="LevelEnter,j-02" />
+        <Setting type="string" value="LevelEnter,j-03" />
+        <Setting type="string" value="LevelEnter,j-04" />
+        <Setting type="string" value="LevelEnter,j-05" />
+        <Setting type="string" value="LevelEnter,j-06" />
+        <Setting type="string" value="LevelEnter,j-07" />
+        <Setting type="string" value="LevelEnter,j-08" />
+        <Setting type="string" value="LevelEnter,j-09" />
+        <Setting type="string" value="LevelEnter,j-10" />
+        <Setting type="string" value="LevelEnter,j-11" />
+        <Setting type="string" value="LevelEnter,j-12" />
+        <Setting type="string" value="LevelEnter,j-13" />
+        <Setting type="string" value="LevelEnter,j-14" />
+        <Setting type="string" value="LevelEnter,j-14b" />
+        <Setting type="string" value="LevelEnter,j-15" />
+        <Setting type="string" value="LevelEnter,j-16" />
+        <Setting type="string" value="Chapter9" />
+      </Setting>
+    </Setting>
+  </CustomSettings>
+</AutoSplitterSettings>

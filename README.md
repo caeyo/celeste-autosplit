@@ -11,7 +11,7 @@ settings' editors are in the [plan](docs/plan.md).
 | Folder | What |
 |---|---|
 | [`autosplitter/`](autosplitter/) | The auto splitter, in Rust, built to `celeste_autosplit.wasm`. `vanilla.rs` holds the layouts it reads vanilla with, kept by hand from the probe's dump, `everest.rs` Everest's struct, transcribed from Everest's source, and `memory.rs` the reading. `settings.rs` reads the settings, with the types `build.rs` generates from the schema, and `splitter.rs` starts, splits and resets. |
-| [`component/`](component/) | `celeste-autosplit.dll`, the LiveSplit component, in C#, which runs the wasm module in LiveSplit's auto splitting runtime, and its tests. Its settings editor is planned. |
+| [`component/`](component/) | `celeste-autosplit.dll`, the LiveSplit component, in C#, which runs the wasm module in LiveSplit's auto splitting runtime and migrates `LiveSplit.Celeste` settings, and its tests. Its settings editor is planned. |
 | [`tools/probe/`](tools/probe/) | Poses as the game, in the game's own runtime: `host` holds the real game for the harness, and `dump` prints the offsets and machine code the layouts are kept from. C#. |
 | [`harness/`](harness/) | The live check, the replay and the scenarios, which run the wasm module against the real game, held by the probe. Rust. |
 | [`traces/`](traces/) | The game's values, update by update, while a TAS plays, the TAS files, and the scenarios. |
@@ -34,6 +34,7 @@ installs the pinned Rust on first use.
 | `dotnet build component` | the component, in `component/CelesteAutosplit/bin/Debug/net4.8.1/`, and its tests, which copy the wasm module, so build that first |
 | `dotnet test component` | the component's tests, which run the wasm module in LiveSplit's ASR |
 | `(cd harness && cargo build --release)` | the harness, in `harness/target/release/` |
+| `(cd harness && cargo test)` | the harness's test, that livesplit-core reads the migrated settings back the same |
 | `dotnet build tools/probe -c Release` | the probe, in `tools/probe/bin/Release/net45/` |
 | `dotnet build tools/trace-recorder` | the trace recorder |
 | `node site/serve.mjs` | serves the site at http://localhost:8000 |

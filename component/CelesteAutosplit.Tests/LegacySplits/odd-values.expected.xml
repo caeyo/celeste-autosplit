@@ -1,0 +1,28 @@
+<AutoSplitterSettings>
+  <Version>1.0</Version>
+  <CustomSettings>
+    <Setting id="schema_version" type="i64">1</Setting>
+    <Setting id="cfg" type="map">
+      <Setting id="start" type="map"><Setting id="kind" type="string" value="manual" /></Setting>
+      <Setting id="reset" type="map"><Setting id="kind" type="string" value="chapter_exit" /></Setting>
+      <Setting id="splits" type="list">
+        <Setting type="map"><Setting id="kind" type="string" value="unknown" /><Setting id="raw" type="string" value="Foo&lt;&amp;&gt;" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="unknown" /><Setting id="raw" type="string" value="" /></Setting>
+        <Setting type="map"><Setting id="kind" type="string" value="room_enter" /><Setting id="room" type="string" value="a&amp;b&quot;c" /></Setting>
+      </Setting>
+      <Setting id="timing_method" type="string" value="chapter_since_start" />
+      <Setting id="everest" type="bool">False</Setting>
+      <Setting id="high_priority" type="bool">True</Setting>
+      <Setting id="set_game_time" type="bool">True</Setting>
+    </Setting>
+    <Setting id="legacy" type="map">
+      <Setting id="AutoReset" type="string" value="" />
+      <Setting id="Splits" type="list">
+        <Setting type="string" value="Manual" />
+        <Setting type="string" value="Foo&lt;&amp;&gt;" />
+        <Setting type="string" value="" />
+        <Setting type="string" value="LevelEnter,a&amp;b&quot;c" />
+      </Setting>
+    </Setting>
+  </CustomSettings>
+</AutoSplitterSettings>
