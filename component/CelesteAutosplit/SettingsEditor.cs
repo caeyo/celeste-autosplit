@@ -601,11 +601,11 @@ internal sealed class SettingsEditor : UserControl
             return [];
         }
 
-        int sideIndex = side is long sideValue && sideValue is 1 or 2 ? 1 : 0;
-        return chapter.Checkpoints.Select((checkpoint, index) =>
+        int sideIndex = side is long sideValue ? (int)sideValue : 0;
+        return chapter.Checkpoints.Select((checkpoint, index) => new Choice
         {
-            string name = sideIndex < checkpoint.Names.Count ? checkpoint.Names[sideIndex] : checkpoint.Names[0];
-            return new Choice { Label = name, Value = (long)(index + 1) };
+            Label = checkpoint.Names.ElementAtOrDefault(sideIndex) ?? $"Checkpoint {index + 1}",
+            Value = (long)(index + 1),
         }).ToList();
     }
 
@@ -698,7 +698,6 @@ internal sealed class SettingsEditor : UserControl
     private bool IsReplaced(SchemaField field, SchemaTrigger known, XmlElement trigger)
     {
         return schema.Fields.Any(other => other.Replaces == field.Name
-            && other.Name != field.Name
             && known != null
             && known.Fields.Contains(other.Name)
             && (!other.Everest || Everest)
@@ -714,7 +713,7 @@ internal sealed class SettingsEditor : UserControl
             .ToList();
         if (schema.Trigger(kindName) == null)
         {
-            string label = trigger == null || kindName != null ? $"Unknown: {kindName}" : "(invalid)";
+            string label = kindName != null ? $"Unknown: {kindName}" : "(invalid)";
             items.Add(new Choice { Label = label, Value = kindName ?? Keep });
         }
 
@@ -982,6 +981,12 @@ internal sealed class SettingsEditor : UserControl
                 problem.Visible = true;
                 return;
             }
+
+            if (value == Keep)
+            {
+                RenderDetail(source);
+                return;
+            }
         }
         else
         {
@@ -997,6 +1002,7 @@ internal sealed class SettingsEditor : UserControl
         XmlElement existing = SettingsXml.Find(TriggerOf(row), field.Name);
         if (Equals(existing == null ? null : SettingsXml.Value(existing), value))
         {
+            RenderDetail(source);
             return;
         }
 
@@ -1009,7 +1015,25 @@ internal sealed class SettingsEditor : UserControl
 
         SettingsXml.Set(trigger, field.Name, value, TriggerOrder(known));
         Commit();
+        if (source is ComboBox changed)
+        {
+            DropStaleChoices(changed);
+        }
+
         RenderDetail(source);
+    }
+
+    private void DropStaleChoices(ComboBox combo)
+    {
+        WithoutEvents(() =>
+        {
+            foreach (Choice stale in combo.Items.Cast<Choice>().Where(IsStale).ToList())
+            {
+                combo.Items.Remove(stale);
+            }
+        });
+
+        bool IsStale(Choice choice) => choice.Value == Keep || (combo == kind && schema.Trigger((string)choice.Value) == null);
     }
 
     private bool TryParseChapter(ComboBox combo, out object value)
@@ -1024,7 +1048,7 @@ internal sealed class SettingsEditor : UserControl
         Choice match = combo.Items.Cast<Choice>().FirstOrDefault(choice => string.Equals(choice.Label, text, StringComparison.OrdinalIgnoreCase));
         if (match != null)
         {
-            value = match.Value == Keep ? value : match.Value;
+            value = match.Value;
             return true;
         }
 
@@ -1046,34 +1070,31 @@ internal sealed class SettingsEditor : UserControl
         }
 
         var newKind = (string)choice.Value;
-        XmlElement trigger = EnsureTrigger(row);
-        if (KindName(trigger) == newKind)
+        XmlElement before = TriggerOf(row);
+        if ((before == null ? DefaultKind(row.Setting) : KindName(before)) == newKind)
         {
             return;
         }
 
+        XmlElement trigger = EnsureTrigger(row);
         SchemaTrigger known = schema.Trigger(newKind);
-        if (known != null)
+        foreach (SchemaField field in schema.Fields)
         {
-            foreach (SchemaField field in schema.Fields)
+            if (!known.Fields.Contains(field.Name))
             {
-                if (!known.Fields.Contains(field.Name))
-                {
-                    SettingsXml.Remove(trigger, field.Name);
-                }
+                SettingsXml.Remove(trigger, field.Name);
             }
-
-            SettingsXml.Set(trigger, "kind", newKind, TriggerOrder(known));
         }
 
+        SettingsXml.Set(trigger, "kind", newKind, TriggerOrder(known));
         Commit();
+        DropStaleChoices(kind);
         RenderDetail(kind);
     }
 
-    private XmlElement EnsureCfg()
+    private void EnsureCfg()
     {
         cfg ??= SettingsXml.SetContainer(map, "cfg", "map", TopLevelOrder);
-        return cfg;
     }
 
     private XmlElement EnsureTrigger(Row row)

@@ -13,11 +13,12 @@ internal sealed class GamePriority : IDisposable
     private const int ScanIntervalMs = 2000;
 
     private readonly object gate = new();
+    private readonly object scanGate = new();
     private readonly HashSet<int> handled = [];
     private readonly HashSet<int> raised = [];
     private int lastScan = Environment.TickCount;
     private bool scanning;
-    private bool disposed;
+    private volatile bool disposed;
 
     public volatile bool Enabled;
 
@@ -42,7 +43,7 @@ internal sealed class GamePriority : IDisposable
     {
         try
         {
-            lock (gate)
+            lock (scanGate)
             {
                 if (disposed)
                 {
@@ -135,9 +136,9 @@ internal sealed class GamePriority : IDisposable
 
     public void Dispose()
     {
-        lock (gate)
+        disposed = true;
+        lock (scanGate)
         {
-            disposed = true;
             LowerRaised();
         }
     }

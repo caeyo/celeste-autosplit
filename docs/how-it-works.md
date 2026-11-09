@@ -521,7 +521,8 @@ Those of splitting itself are [above](#splitting). Those of the mapping:
 
 [`CelesteAutosplitComponent`](../component/CelesteAutosplit/CelesteAutosplitComponent.cs)
 runs the wasm module in ASR. Without an ASR to run it, its settings show only a
-status and it keeps the settings it was given, so nothing below applies.
+status and it keeps the settings it was given, so of what's below, only
+[a missing wasm module](#a-missing-wasm-module) applies.
 
 ### The settings editor
 
@@ -691,8 +692,8 @@ The [component's tests](livesplit-notes.md#the-components-tests) prove that
 LiveSplit's ASR loads the wasm module and keeps its settings, that legacy
 settings migrate to hand-written XML, which round-trips through ASR unchanged,
 and that the editor's changes reach ASR as hand-written XML. The process
-priority and the warning for a legacy component in the layout have no test: they
-rest on a hand check in a copy of LiveSplit 1.8.37 on 2026-11-08. It also
+priority and the message box for a legacy component in the layout have no test:
+they rest on a hand check in a copy of LiveSplit 1.8.37 on 2026-11-08. It also
 covered the settings dialog and Cancel, Game Time, a deleted wasm module, the
 layout editor, a real legacy component, v1.4.6.0, and, in the real game, the
 module's resets, alone, after a run that ended with new bests, and with a start

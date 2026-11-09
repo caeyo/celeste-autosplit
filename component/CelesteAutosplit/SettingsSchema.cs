@@ -12,19 +12,16 @@ internal sealed class SchemaChoice
 {
     public object Value;
     public string Label;
-    public string Description;
 }
 
 internal sealed class SchemaSetting
 {
     public string Key;
     public string Type;
-    public string Items;
     public object Default;
     public string Label;
     public string Description;
     public List<SchemaChoice> Values;
-    public string Host;
 }
 
 internal sealed class SchemaField
@@ -54,7 +51,6 @@ internal sealed class SchemaTrigger
 
 internal sealed class SchemaPreset
 {
-    public string Id;
     public string Label;
     public Dictionary<string, object> Settings;
     public Dictionary<string, Dictionary<string, object>> TriggerFields;
@@ -91,7 +87,7 @@ internal sealed class SettingsSchema
     {
         using Stream stream = typeof(SettingsSchema).Assembly.GetManifestResourceStream("CelesteAutosplit.settings-schema.json");
         using var reader = new StreamReader(stream);
-        var serializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+        var serializer = new JavaScriptSerializer();
         var root = (Dictionary<string, object>)Normalize(serializer.DeserializeObject(reader.ReadToEnd()));
 
         return new SettingsSchema
@@ -140,7 +136,6 @@ internal sealed class SettingsSchema
         {
             Value = choice["value"],
             Label = String(choice, "label"),
-            Description = String(choice, "description"),
         }).ToList();
     }
 
@@ -151,12 +146,10 @@ internal sealed class SettingsSchema
         {
             Key = String(map, "key"),
             Type = String(map, "type"),
-            Items = String(map, "items"),
             Default = map["default"],
             Label = String(map, "label"),
             Description = String(map, "description"),
             Values = Choices(map, "values"),
-            Host = String(map, "host"),
         };
     }
 
@@ -195,7 +188,6 @@ internal sealed class SettingsSchema
         var map = (Dictionary<string, object>)value;
         return new SchemaPreset
         {
-            Id = String(map, "id"),
             Label = String(map, "label"),
             Settings = (Dictionary<string, object>)map["settings"],
             TriggerFields = ((Dictionary<string, object>)map["trigger_fields"])

@@ -236,6 +236,78 @@ public sealed class EditorTests : IDisposable
     }
 
     [Fact]
+    public void A_chapter_message_clears_when_the_text_is_the_saved_chapter_again()
+    {
+        IComponent component = Create();
+        SetCfg(component, "<Setting id=\"splits\" type=\"list\"><Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"chapter_complete\" /><Setting id=\"chapter\" type=\"i64\">12</Setting></Setting></Setting>");
+        Control editor = Open(component);
+
+        OnUi(() =>
+        {
+            SelectRow(editor, 2);
+            Find<ComboBox>(editor, "field.chapter").Text = "12x";
+        });
+        Assert.Contains("isn't a chapter", OnUi(() => Find<Label>(editor, "problem").Text));
+
+        OnUi(() => Find<ComboBox>(editor, "field.chapter").Text = "12");
+
+        Assert.Equal("", OnUi(() => Find<Label>(editor, "problem").Text));
+    }
+
+    [Fact]
+    public void Picking_a_kind_on_an_invalid_row_is_written()
+    {
+        IComponent component = Create();
+        SetCfg(component, "<Setting id=\"splits\" type=\"list\"><Setting type=\"string\" value=\"not a map\" /></Setting>");
+        Control editor = Open(component);
+
+        OnUi(() =>
+        {
+            SelectRow(editor, 2);
+            Select(Find<ComboBox>(editor, "kind"), "Manual");
+        });
+
+        Assert.Contains("<Setting id=\"splits\" type=\"list\"><Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"manual\" /></Setting></Setting>", GetSettings(component));
+        Assert.Equal("", OnUi(() => Find<Label>(editor, "problem").Text));
+    }
+
+    [Fact]
+    public void An_invalid_chapter_is_kept_until_replaced_and_then_no_longer_offered()
+    {
+        IComponent component = Create();
+        SetCfg(component, "<Setting id=\"splits\" type=\"list\"><Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"chapter_complete\" /><Setting id=\"chapter\" type=\"i64\">-5</Setting></Setting></Setting>");
+        Control editor = Open(component);
+
+        OnUi(() =>
+        {
+            SelectRow(editor, 2);
+            ComboBox chapter = Find<ComboBox>(editor, "field.chapter");
+            chapter.Text = "abc";
+            Select(chapter, "-5 (invalid)");
+        });
+        Assert.Contains("<Setting id=\"chapter\" type=\"i64\">-5</Setting>", GetSettings(component));
+
+        OnUi(() => Select(Find<ComboBox>(editor, "field.chapter"), "Old Site"));
+
+        Assert.Contains("<Setting id=\"chapter\" type=\"i64\">2</Setting>", GetSettings(component));
+        Assert.DoesNotContain("-5 (invalid)", OnUi(() => Find<ComboBox>(editor, "field.chapter").Items.Cast<object>().Select(item => item.ToString()).ToList()));
+    }
+
+    [Theory]
+    [InlineData(1, "Scrap Pit")]
+    [InlineData(2, "Checkpoint 2")]
+    public void A_checkpoint_is_named_for_its_side_or_numbered_when_the_side_has_no_name(long side, string expected)
+    {
+        IComponent component = Create();
+        SetCfg(component, $"<Setting id=\"splits\" type=\"list\"><Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"checkpoint\" /><Setting id=\"chapter\" type=\"i64\">1</Setting><Setting id=\"side\" type=\"i64\">{side}</Setting><Setting id=\"checkpoint\" type=\"i64\">2</Setting></Setting></Setting>");
+        Control editor = Open(component);
+
+        OnUi(() => SelectRow(editor, 2));
+
+        Assert.Equal(expected, OnUi(() => Find<ComboBox>(editor, "field.checkpoint").Text));
+    }
+
+    [Fact]
     public void The_checkpoint_list_follows_the_chosen_chapter()
     {
         IComponent component = Create();
