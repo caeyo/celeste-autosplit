@@ -7,14 +7,14 @@
       "type": "trigger",
       "default": { "kind": "manual" },
       "label": "Start",
-      "description": "What starts the timer."
+      "description": "What starts the timer. Reset and Start can be the same trigger - the timer will first reset then immediately start."
     },
     {
       "key": "reset",
       "type": "trigger",
       "default": { "kind": "manual" },
       "label": "Reset",
-      "description": "What resets the timer during a run, including after it has ended. The start trigger can start it again on the same update."
+      "description": "What resets the timer. Reset and Start can be the same trigger - the timer will first reset then immediately start."
     },
     {
       "key": "splits",
@@ -30,10 +30,10 @@
       "default": "file",
       "label": "Timing method",
       "values": [
-        { "value": "file", "label": "File time" },
-        { "value": "chapter", "label": "Chapter time" },
-        { "value": "file_since_start", "label": "File time since start" },
-        { "value": "chapter_since_start", "label": "Chapter time since start" }
+        { "value": "file", "label": "File" },
+        { "value": "chapter", "label": "Chapter" },
+        { "value": "file_since_start", "label": "File since start" },
+        { "value": "chapter_since_start", "label": "Chapter since start" }
       ]
     },
     {
@@ -79,6 +79,7 @@
     "timing": {
       "type": "string",
       "label": "Split on",
+      "description": "When to split. Chapter complete occurs as soon as the chapter timer ends, Chapter exit occurs when you exit to the endscreen",
       "default": "chapter_complete",
       "values": [
         { "value": "chapter_complete", "label": "Chapter complete" },

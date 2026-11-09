@@ -77,7 +77,6 @@ public class CelesteAutosplitComponent : LogicComponent
         switch (hasRuntime)
         {
             case true:
-                status = $"Running {wasmPath}";
                 Log.Info($"[{ComponentName}] Running {wasmPath}");
                 break;
             case false:
@@ -104,7 +103,7 @@ public class CelesteAutosplitComponent : LogicComponent
         }
         catch (Exception ex)
         {
-            status += $"\n\nThe settings editor is unavailable: {ex.GetType().Name}: {ex.Message}";
+            status = EditorUnavailable(ex);
             Log.Error($"[{ComponentName}] Could not load the settings schema");
             Log.Error(ex);
         }
@@ -240,11 +239,17 @@ public class CelesteAutosplitComponent : LogicComponent
                 Log.Error($"[{ComponentName}] Could not open the settings editor");
                 Log.Error(ex);
                 editor = null;
-                return StatusLabel($"{status}\n\nThe settings editor is unavailable: {ex.GetType().Name}: {ex.Message}");
+                return StatusLabel(EditorUnavailable(ex));
             }
         }
 
         return StatusLabel(status);
+    }
+
+    private string EditorUnavailable(Exception ex)
+    {
+        string message = $"The settings editor is unavailable: {ex.GetType().Name}: {ex.Message}";
+        return status == null ? message : $"{status}\n\n{message}";
     }
 
     private Control StatusLabel(string text)

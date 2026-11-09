@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Xml;
 
@@ -12,14 +13,22 @@ namespace CelesteAutosplit;
 
 internal sealed class SettingsEditor : UserControl
 {
-    private const string Flag = "[!] ";
-    private const string CustomPreset = "Custom";
-    private const int CaptionWidth = 104;
-    private const int InputWidth = 340;
-    private const int FullWidth = CaptionWidth + InputWidth;
+    private const int ContentWidth = 454;
+    private const int KindWidth = 180;
+    private const int TextFieldWidth = 110;
+    private const int ComboChrome = 24;
+    private const int RowHeight = 21;
+    private const int RowGap = 6;
+    private const int EmSetCueBanner = 0x1501;
+    private const int CbSetCueBanner = 0x1703;
 
     private static readonly object Keep = new();
     private static readonly string[] TopLevelOrder = ["schema_version", "cfg"];
+    private static readonly string[] FlagSettings = ["set_game_time", "high_priority", "everest"];
+    private static readonly string[] TriggerSettings = ["reset", "start"];
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, string lParam);
 
     private sealed class Choice
     {
@@ -32,17 +41,47 @@ internal sealed class SettingsEditor : UserControl
     private sealed class FieldInput
     {
         public SchemaField Field;
-        public Label Caption;
         public Control Input;
     }
 
-    private sealed class Row
+    private sealed class TriggerRow
     {
-        public string Name;
+        public string Id;
         public SchemaSetting Setting;
         public int Index;
+        public FlowLayoutPanel Panel;
+        public ComboBox Kind;
+        public FlowLayoutPanel Fields;
+        public Label Problem;
+        public List<FieldInput> Inputs = [];
 
         public bool IsSplit => Setting.Type == "list";
+    }
+
+    private sealed class Combo : ComboBox
+    {
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            if (DroppedDown)
+            {
+                base.OnMouseWheel(e);
+                return;
+            }
+
+            if (e is HandledMouseEventArgs handled)
+            {
+                handled.Handled = true;
+            }
+
+            for (Control parent = Parent; parent != null; parent = parent.Parent)
+            {
+                if (parent is ScrollableControl { AutoScroll: true } scroller)
+                {
+                    scroller.AutoScrollPosition = new Point(0, -scroller.AutoScrollPosition.Y - e.Delta);
+                    return;
+                }
+            }
+        }
     }
 
     private readonly LiveSplitState state;
@@ -52,29 +91,22 @@ internal sealed class SettingsEditor : UserControl
     private readonly List<string> cfgOrder;
     private readonly SchemaSetting splitsSetting;
     private readonly SchemaSetting everestSetting;
+    private readonly Dictionary<SchemaField, int> fieldWidths;
 
-    private readonly TableLayoutPanel table;
     private readonly ToolTip tips = new();
     private readonly Label status;
     private readonly Label warnings;
-    private readonly ComboBox preset;
-    private readonly ListBox triggers;
-    private readonly Button insertButton;
-    private readonly Button removeButton;
-    private readonly Button upButton;
-    private readonly Button downButton;
-    private readonly ComboBox kind;
-    private readonly Label problem;
-    private readonly List<FieldInput> fieldInputs = [];
+    private readonly FlowLayoutPanel presets;
+    private readonly FlowLayoutPanel segments;
     private readonly Dictionary<SchemaSetting, Control> settingInputs = [];
-    private readonly List<Row> rows = [];
+    private readonly List<TriggerRow> rows = [];
 
+    private List<string> segmentNames = [];
     private XmlElement settings;
     private XmlElement map;
     private XmlElement cfg;
     private bool readOnly;
     private bool loading;
-    private int rowIndex;
 
     public SettingsEditor(LiveSplitState state, SettingsSchema schema, string statusText, Func<XmlElement> read, Action<XmlElement> write)
     {
@@ -85,75 +117,97 @@ internal sealed class SettingsEditor : UserControl
         cfgOrder = schema.Settings.Select(setting => setting.Key).ToList();
         splitsSetting = schema.Settings.First(setting => setting.Type == "list");
         everestSetting = schema.Setting("everest");
+        fieldWidths = schema.Fields.ToDictionary(field => field, MeasureField);
 
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
         Name = "settingsEditor";
 
-        table = new TableLayoutPanel
-        {
-            ColumnCount = 2,
-            Location = new Point(0, 0),
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            Padding = new Padding(3),
-        };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, CaptionWidth));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, InputWidth));
-        Controls.Add(table);
+        FlowLayoutPanel column = NewLine(FlowDirection.TopDown);
+        column.Padding = new Padding(3);
+        Controls.Add(column);
 
         status = NewWrappedLabel("status", SystemColors.ControlText);
         status.Text = statusText;
-        AddSpanning(status);
+        status.Visible = statusText != null;
+        column.Controls.Add(status);
 
         warnings = NewWrappedLabel("warnings", Color.DarkRed);
         warnings.Visible = false;
-        AddSpanning(warnings);
+        column.Controls.Add(warnings);
 
-        preset = NewCombo("preset", ComboBoxStyle.DropDownList);
-        preset.SelectedIndexChanged += (_, _) => Guard(PresetChanged);
-        AddRow(NewCaption("Preset", null), preset);
-
-        foreach (SchemaSetting setting in schema.Settings)
+        FlowLayoutPanel flags = NewLine(FlowDirection.LeftToRight);
+        flags.Margin = new Padding(0, 0, 0, RowGap);
+        foreach (string key in FlagSettings)
         {
-            AddSettingInput(setting);
+            flags.Controls.Add(NewCheckBox(schema.Setting(key)));
         }
 
-        triggers = new ListBox
-        {
-            Name = "triggers",
-            Width = FullWidth,
-            Height = 128,
-            IntegralHeight = false,
-            HorizontalScrollbar = true,
-        };
-        triggers.SelectedIndexChanged += (_, _) => Guard(RowSelected);
-        AddSpanning(triggers);
+        column.Controls.Add(flags);
 
-        var buttons = new FlowLayoutPanel
+        presets = NewLine(FlowDirection.LeftToRight);
+        presets.Margin = new Padding(0, 0, 0, RowGap);
+        presets.Controls.Add(new Label
         {
+            Text = "Apply preset",
+            AutoSize = true,
+            MinimumSize = new Size(0, RowHeight),
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(0, 1, 3, 0),
+        });
+        for (int i = 0; i < schema.Presets.Count; i++)
+        {
+            presets.Controls.Add(NewPresetButton(i));
+        }
+
+        column.Controls.Add(presets);
+
+        foreach (SchemaSetting setting in schema.Settings.Where(setting => setting.Type == "string" && setting.Values != null))
+        {
+            column.Controls.Add(NewRadioButtons(setting));
+        }
+
+        foreach (string key in TriggerSettings)
+        {
+            SchemaSetting setting = schema.Setting(key);
+            TriggerRow row = NewRow(key, setting.Label, setting.Description, setting, 0);
+            rows.Add(row);
+            column.Controls.Add(NewRule());
+            column.Controls.Add(row.Panel);
+        }
+
+        column.Controls.Add(NewRule());
+        column.Controls.Add(new Label
+        {
+            Text = "Segments",
+            AutoSize = true,
+            Margin = new Padding(0, 0, 0, RowGap),
+        });
+        segments = NewLine(FlowDirection.TopDown);
+        column.Controls.Add(segments);
+    }
+
+    private static FlowLayoutPanel NewLine(FlowDirection direction)
+    {
+        return new FlowLayoutPanel
+        {
+            FlowDirection = direction,
+            WrapContents = false,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Margin = new Padding(0),
         };
-        insertButton = NewButton("insert", "Insert", InsertSplit, buttons);
-        removeButton = NewButton("remove", "Remove", RemoveSplit, buttons);
-        upButton = NewButton("up", "Move up", () => MoveSplit(-1), buttons);
-        downButton = NewButton("down", "Move down", () => MoveSplit(1), buttons);
-        AddSpanning(buttons);
+    }
 
-        kind = NewCombo("kind", ComboBoxStyle.DropDownList);
-        kind.SelectedIndexChanged += (_, _) => Guard(KindChanged);
-        AddRow(NewCaption("Kind", null), kind);
-
-        foreach (SchemaField field in schema.Fields)
+    private static Label NewRule()
+    {
+        return new Label
         {
-            AddFieldInput(field);
-        }
-
-        problem = NewWrappedLabel("problem", Color.DarkRed);
-        problem.Visible = false;
-        AddSpanning(problem);
+            AutoSize = false,
+            Size = new Size(ContentWidth, 2),
+            BorderStyle = BorderStyle.Fixed3D,
+            Margin = new Padding(0, RowGap, 0, RowGap + 2),
+        };
     }
 
     private static Label NewWrappedLabel(string name, Color color)
@@ -163,151 +217,197 @@ internal sealed class SettingsEditor : UserControl
             Name = name,
             ForeColor = color,
             AutoSize = true,
-            MaximumSize = new Size(FullWidth, 0),
+            MaximumSize = new Size(ContentWidth, 0),
+            Margin = new Padding(0, 0, 0, RowGap),
         };
     }
 
-    private Label NewCaption(string text, string description)
+    private static Combo NewCombo(string name, ComboBoxStyle style, int width)
     {
-        var caption = new Label
-        {
-            Text = text,
-            AutoSize = false,
-            Size = new Size(CaptionWidth - 6, 21),
-            TextAlign = ContentAlignment.MiddleLeft,
-        };
-        if (description != null)
-        {
-            tips.SetToolTip(caption, description);
-        }
-
-        return caption;
-    }
-
-    private ComboBox NewCombo(string name, ComboBoxStyle style)
-    {
-        return new ComboBox
+        return new Combo
         {
             Name = name,
             DropDownStyle = style,
-            Width = InputWidth - 6,
+            Width = width,
+            Margin = new Padding(0, 0, 3, 0),
         };
     }
 
-    private Button NewButton(string name, string text, Action action, Control parent)
+    private static void SetCue(Control input, string text)
     {
+        int message = input is ComboBox ? CbSetCueBanner : EmSetCueBanner;
+        IntPtr showWhenFocused = input is ComboBox ? IntPtr.Zero : (IntPtr)1;
+        input.HandleCreated += (_, _) => SendMessage(input.Handle, message, showWhenFocused, text);
+    }
+
+    private static string AnyLabel(SchemaField field) => $"Any {field.Label.ToLowerInvariant()}";
+
+    private int MeasureField(SchemaField field)
+    {
+        IEnumerable<string> labels = field.ValuesFrom switch
+        {
+            "chapters" => schema.Chapters.Select(chapter => chapter.Name),
+            "checkpoints" => schema.Chapters.SelectMany(chapter => chapter.Checkpoints).SelectMany(checkpoint => checkpoint.Names),
+            _ => field.Values?.Select(choice => choice.Label),
+        };
+        if (labels == null)
+        {
+            return TextFieldWidth;
+        }
+
+        return labels.Append(AnyLabel(field)).Max(label => TextRenderer.MeasureText(label, Font).Width) + ComboChrome;
+    }
+
+    private CheckBox NewCheckBox(SchemaSetting setting)
+    {
+        var box = new CheckBox
+        {
+            Name = "setting." + setting.Key,
+            Text = setting.Label,
+            AutoSize = true,
+            Margin = new Padding(0, 0, 12, 0),
+        };
+        if (setting.Description != null)
+        {
+            tips.SetToolTip(box, setting.Description);
+        }
+
+        box.CheckedChanged += (_, _) => Guard(() => SettingChanged(setting, box.Checked));
+        settingInputs[setting] = box;
+        return box;
+    }
+
+    private Button NewPresetButton(int index)
+    {
+        SchemaPreset entry = schema.Presets[index];
         var button = new Button
         {
-            Name = name,
-            Text = text,
+            Name = $"preset.{index}",
+            Text = entry.Label,
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Margin = new Padding(0, 0, 3, 0),
         };
-        button.Click += (_, _) => Guard(action);
-        parent.Controls.Add(button);
+        button.Click += (_, _) => Guard(() => ApplyPreset(entry));
         return button;
     }
 
-    private void AddRow(Control caption, Control input)
+    private FlowLayoutPanel NewRadioButtons(SchemaSetting setting)
     {
-        int row = table.RowCount;
-        table.RowCount = row + 1;
-        table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        table.Controls.Add(caption, 0, row);
-        table.Controls.Add(input, 1, row);
-    }
-
-    private void AddSpanning(Control control)
-    {
-        int row = table.RowCount;
-        table.RowCount = row + 1;
-        table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        table.Controls.Add(control, 0, row);
-        table.SetColumnSpan(control, 2);
-    }
-
-    private void AddSettingInput(SchemaSetting setting)
-    {
-        if (setting.Type == "bool")
+        FlowLayoutPanel group = NewLine(FlowDirection.LeftToRight);
+        group.Controls.Add(new Label
         {
-            var box = new CheckBox
+            Text = setting.Label,
+            AutoSize = true,
+            Margin = new Padding(0, 2, 6, 0),
+        });
+        foreach (SchemaChoice choice in setting.Values)
+        {
+            var radio = new RadioButton
             {
-                Name = "setting." + setting.Key,
-                Text = setting.Label,
+                Name = $"setting.{setting.Key}.{choice.Value}",
+                Text = choice.Label,
+                Tag = choice.Value,
                 AutoSize = true,
+                Margin = new Padding(0, 0, 6, 0),
             };
-            if (setting.Description != null)
+            radio.CheckedChanged += (_, _) => Guard(() =>
             {
-                tips.SetToolTip(box, setting.Description);
-            }
-
-            box.CheckedChanged += (_, _) => Guard(() => SettingChanged(setting, box.Checked));
-            settingInputs[setting] = box;
-            AddSpanning(box);
-        }
-        else if (setting.Type == "string" && setting.Values != null)
-        {
-            ComboBox combo = NewCombo("setting." + setting.Key, ComboBoxStyle.DropDownList);
-            combo.SelectedIndexChanged += (_, _) => Guard(() =>
-            {
-                if (combo.SelectedItem is Choice { Value: not null } choice && choice.Value != Keep)
+                if (radio.Checked)
                 {
-                    SettingChanged(setting, choice.Value);
+                    SettingChanged(setting, radio.Tag);
                 }
             });
-            settingInputs[setting] = combo;
-            AddRow(NewCaption(setting.Label, setting.Description), combo);
+            group.Controls.Add(radio);
         }
+
+        settingInputs[setting] = group;
+        return group;
     }
 
-    private void AddFieldInput(SchemaField field)
+    private TriggerRow NewRow(string id, string label, string description, SchemaSetting setting, int index)
     {
+        var row = new TriggerRow
+        {
+            Id = id,
+            Setting = setting,
+            Index = index,
+            Panel = NewLine(FlowDirection.TopDown),
+            Kind = NewCombo($"{id}.kind", ComboBoxStyle.DropDownList, KindWidth),
+            Fields = NewLine(FlowDirection.LeftToRight),
+            Problem = NewWrappedLabel($"{id}.problem", Color.DarkRed),
+        };
+        row.Panel.Margin = new Padding(0, 0, 0, RowGap + 4);
+        row.Kind.SelectedIndexChanged += (_, _) => Guard(() => KindChanged(row));
+        row.Fields.Margin = new Padding(0, RowGap, 0, 0);
+        row.Fields.Visible = false;
+        row.Problem.Margin = new Padding(0, RowGap, 0, 0);
+        row.Problem.Visible = false;
+
+        var caption = new Label
+        {
+            Text = label,
+            AutoSize = false,
+            AutoEllipsis = true,
+            Size = new Size(ContentWidth - KindWidth - 3, RowHeight),
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(0),
+        };
+        tips.SetToolTip(caption, description ?? label);
+
+        FlowLayoutPanel header = NewLine(FlowDirection.LeftToRight);
+        header.Controls.Add(caption);
+        header.Controls.Add(row.Kind);
+        row.Panel.Controls.Add(header);
+        row.Panel.Controls.Add(row.Fields);
+        row.Panel.Controls.Add(row.Problem);
+        return row;
+    }
+
+    private FieldInput NewFieldInput(TriggerRow row, SchemaField field)
+    {
+        string name = $"{row.Id}.field.{field.Name}";
+        int width = fieldWidths[field];
         Control input;
         if (field.ReadOnly)
         {
             input = new Label
             {
-                Name = "field." + field.Name,
+                Name = name,
                 AutoSize = true,
-                MaximumSize = new Size(InputWidth - 6, 0),
+                MaximumSize = new Size(ContentWidth, 0),
             };
         }
         else if (field.ValuesFrom == "chapters")
         {
-            ComboBox combo = NewCombo("field." + field.Name, ComboBoxStyle.DropDown);
-            combo.SelectedIndexChanged += (_, _) => Guard(() => FieldChanged(field, combo));
-            combo.TextChanged += (_, _) => Guard(() => FieldChanged(field, combo));
+            Combo combo = NewCombo(name, ComboBoxStyle.DropDown, width);
+            combo.SelectedIndexChanged += (_, _) => Guard(() => FieldChanged(row, field, combo));
+            combo.TextChanged += (_, _) => Guard(() => FieldChanged(row, field, combo));
+            SetCue(combo, field.Label);
             input = combo;
         }
         else if (field.Values != null || field.ValuesFrom != null)
         {
-            ComboBox combo = NewCombo("field." + field.Name, ComboBoxStyle.DropDownList);
-            combo.SelectedIndexChanged += (_, _) => Guard(() => FieldChanged(field, combo));
+            Combo combo = NewCombo(name, ComboBoxStyle.DropDownList, width);
+            combo.SelectedIndexChanged += (_, _) => Guard(() => FieldChanged(row, field, combo));
+            SetCue(combo, field.Label);
             input = combo;
         }
         else
         {
             var text = new TextBox
             {
-                Name = "field." + field.Name,
-                Width = InputWidth - 6,
+                Name = name,
+                Width = width,
+                Margin = new Padding(0, 0, 3, 0),
             };
-            text.TextChanged += (_, _) => Guard(() => FieldChanged(field, text));
+            text.TextChanged += (_, _) => Guard(() => FieldChanged(row, field, text));
+            SetCue(text, field.Label);
             input = text;
         }
 
-        var row = new FieldInput
-        {
-            Field = field,
-            Caption = NewCaption(field.Label, field.Description),
-            Input = input,
-        };
-        if (field.Description != null)
-        {
-            tips.SetToolTip(input, field.Description);
-        }
-
-        fieldInputs.Add(row);
-        AddRow(row.Caption, row.Input);
+        tips.SetToolTip(input, field.Description ?? field.Label);
+        return new FieldInput { Field = field, Input = input };
     }
 
     private void Guard(Action action)
@@ -325,6 +425,7 @@ internal sealed class SettingsEditor : UserControl
         {
             Log.Error(ex);
             status.Text = $"Something went wrong in the settings editor: {ex.GetType().Name}: {ex.Message}";
+            status.Visible = true;
         }
     }
 
@@ -341,15 +442,50 @@ internal sealed class SettingsEditor : UserControl
         cfg = SettingsXml.FindMap(map, "cfg");
         readOnly = schema.IsNewer(map);
 
-        rowIndex = Math.Max(0, Math.Min(rowIndex, RowCount() - 1));
-        Render();
+        if (IsHandleCreated)
+        {
+            ShowSettings();
+        }
     }
 
-    private int RowCount() => schema.Settings.Count(setting => setting.Type == "trigger") + SplitRowCount();
-
-    private int SplitRowCount()
+    protected override void OnHandleCreated(EventArgs e)
     {
-        return Math.Max(SettingsXml.Items(SplitsList()).Count(), state.Run?.Count ?? 0);
+        base.OnHandleCreated(e);
+        Guard(ShowSettings);
+    }
+
+    private void ShowSettings()
+    {
+        WithoutEvents(() =>
+        {
+            List<string> names = state.Run?.Select(segment => segment.Name).ToList() ?? [];
+            bool changed = !names.SequenceEqual(segmentNames);
+            if (changed)
+            {
+                ReplaceSplitRows(names);
+            }
+
+            RenderAll();
+            if (changed)
+            {
+                segments.Controls.AddRange(rows.Where(row => row.IsSplit).Select(row => (Control)row.Panel).ToArray());
+            }
+        });
+    }
+
+    private void ReplaceSplitRows(List<string> names)
+    {
+        segmentNames = names;
+        rows.RemoveAll(row => row.IsSplit);
+        foreach (Control old in segments.Controls.Cast<Control>().ToList())
+        {
+            old.Dispose();
+        }
+
+        for (int i = 0; i < names.Count; i++)
+        {
+            rows.Add(NewRow($"split.{i}", names[i], names[i], splitsSetting, i));
+        }
     }
 
     private XmlElement SplitsList()
@@ -362,26 +498,7 @@ internal sealed class SettingsEditor : UserControl
         ? value
         : everestSetting.Default is true;
 
-    private void BuildRows()
-    {
-        rows.Clear();
-        foreach (SchemaSetting setting in schema.Settings.Where(setting => setting.Type == "trigger"))
-        {
-            rows.Add(new Row { Name = setting.Label, Setting = setting });
-        }
-
-        int segments = state.Run?.Count ?? 0;
-        int count = SplitRowCount();
-        for (int i = 0; i < count; i++)
-        {
-            string name = i < segments ? state.Run[i].Name : "(no segment)";
-            rows.Add(new Row { Name = $"{i + 1}. {name}", Setting = splitsSetting, Index = i });
-        }
-    }
-
-    private Row SelectedRow => rowIndex >= 0 && rowIndex < rows.Count ? rows[rowIndex] : null;
-
-    private XmlElement TriggerOf(Row row)
+    private XmlElement TriggerOf(TriggerRow row)
     {
         if (row.IsSplit)
         {
@@ -420,33 +537,23 @@ internal sealed class SettingsEditor : UserControl
         }
     }
 
-    private void Render()
+    private void RenderAll()
     {
-        WithoutEvents(() =>
-        {
-            BuildRows();
-            RenderPresetItems();
-            RenderSettings();
-            RenderRows();
-            SyncInputsEnabled();
-            RenderDetail(null);
-            RenderWarnings();
-        });
+        presets.Enabled = !readOnly;
+        RenderSettings();
+        RenderRows();
+        RenderWarnings();
     }
 
-    private void RenderPresetItems()
+    private void RenderRows()
     {
-        if (preset.Items.Count == 0)
+        segments.SuspendLayout();
+        foreach (TriggerRow row in rows)
         {
-            foreach (SchemaPreset entry in schema.Presets)
-            {
-                preset.Items.Add(entry.Label);
-            }
-
-            preset.Items.Add(CustomPreset);
+            RenderRow(row, null);
         }
 
-        RenderPresetSelection();
+        segments.ResumeLayout();
     }
 
     private void RenderSettings()
@@ -455,24 +562,18 @@ internal sealed class SettingsEditor : UserControl
         {
             XmlElement element = SettingsXml.Find(cfg, pair.Key.Key);
             object value = SettingsXml.Value(element);
+            pair.Value.Enabled = !readOnly;
             if (pair.Value is CheckBox box)
             {
                 box.Checked = value is bool flag ? flag : pair.Key.Default is true;
             }
-            else if (pair.Value is ComboBox combo)
+            else
             {
-                var items = pair.Key.Values.Select(choice => new Choice { Label = choice.Label, Value = choice.Value }).ToList();
-                combo.Items.Clear();
                 object current = element == null ? pair.Key.Default : value;
-                Choice selected = items.FirstOrDefault(choice => Equals(choice.Value, current));
-                if (selected == null)
+                foreach (RadioButton radio in pair.Value.Controls.OfType<RadioButton>())
                 {
-                    selected = new Choice { Label = $"{RawText(element)} (invalid)", Value = Keep };
-                    items.Add(selected);
+                    radio.Checked = Equals(radio.Tag, current);
                 }
-
-                combo.Items.AddRange(items.Cast<object>().ToArray());
-                combo.SelectedItem = selected;
             }
         }
     }
@@ -485,32 +586,6 @@ internal sealed class SettingsEditor : UserControl
         }
 
         return element.GetAttribute("value") is { Length: > 0 } text ? text : element.InnerText;
-    }
-
-    private void RenderRows()
-    {
-        triggers.BeginUpdate();
-        int top = triggers.TopIndex;
-        triggers.Items.Clear();
-        foreach (Row row in rows)
-        {
-            triggers.Items.Add(RowText(row));
-        }
-
-        if (rowIndex < rows.Count)
-        {
-            triggers.SelectedIndex = rowIndex;
-        }
-
-        triggers.TopIndex = Math.Min(top, triggers.Items.Count - 1 < 0 ? 0 : triggers.Items.Count - 1);
-        triggers.EndUpdate();
-    }
-
-    private string RowText(Row row)
-    {
-        XmlElement trigger = TriggerOf(row);
-        string flag = RowProblem(trigger) != null ? Flag : "";
-        return $"{flag}{row.Name}: {Summary(row, trigger)}";
     }
 
     private string RowProblem(XmlElement trigger)
@@ -533,60 +608,6 @@ internal sealed class SettingsEditor : UserControl
         }
 
         return null;
-    }
-
-    private string Summary(Row row, XmlElement trigger)
-    {
-        string kindName = trigger == null ? DefaultKind(row.Setting) : KindName(trigger);
-        SchemaTrigger known = schema.Trigger(kindName);
-        if (known == null)
-        {
-            return kindName ?? "(invalid)";
-        }
-
-        var parts = new List<string>();
-        foreach (string name in known.Fields)
-        {
-            SchemaField field = schema.Field(name);
-            if (field.Everest && !Everest)
-            {
-                continue;
-            }
-
-            XmlElement element = SettingsXml.Find(trigger, name);
-            if (element == null)
-            {
-                continue;
-            }
-
-            parts.Add(FieldSummary(field, trigger, element));
-        }
-
-        return parts.Count > 0 ? $"{known.Label} ({string.Join(", ", parts)})" : known.Label;
-    }
-
-    private string FieldSummary(SchemaField field, XmlElement trigger, XmlElement element)
-    {
-        object value = SettingsXml.Value(element);
-        if (field.Values != null)
-        {
-            SchemaChoice choice = field.Values.FirstOrDefault(entry => Equals(entry.Value, value));
-            return choice != null ? choice.Label : RawText(element);
-        }
-
-        if (field.ValuesFrom == "chapters")
-        {
-            SchemaChapter chapter = value is long id ? schema.Chapters.FirstOrDefault(entry => entry.Id == id) : null;
-            return chapter != null ? chapter.Name : RawText(element);
-        }
-
-        if (field.ValuesFrom == "checkpoints")
-        {
-            string name = CheckpointChoices(trigger).FirstOrDefault(choice => Equals(choice.Value, value))?.Label;
-            return name ?? RawText(element);
-        }
-
-        return RawText(element);
     }
 
     private List<Choice> CheckpointChoices(XmlElement trigger)
@@ -615,65 +636,49 @@ internal sealed class SettingsEditor : UserControl
             lines.Add("These settings were saved by a newer version of the autosplitter, so they are read-only here. Update the component to edit them.");
         }
 
+        foreach (SchemaSetting setting in settingInputs.Keys.Where(setting => setting.Values != null))
+        {
+            XmlElement element = SettingsXml.Find(cfg, setting.Key);
+            if (element != null && !setting.Values.Any(choice => Equals(choice.Value, SettingsXml.Value(element))))
+            {
+                string fallback = setting.Values.First(choice => Equals(choice.Value, setting.Default)).Label;
+                lines.Add($"{setting.Label} \"{RawText(element)}\" isn't valid, so {fallback} is used.");
+            }
+        }
+
         if (rows.Any(row => RowProblem(TriggerOf(row)) != null))
         {
-            lines.Add("Triggers marked [!] are invalid or never fire.");
+            lines.Add("Some triggers below are invalid or never fire. Each one says why.");
         }
 
         warnings.Text = string.Join("\n", lines);
         warnings.Visible = lines.Count > 0;
     }
 
-    private void SyncInputsEnabled()
-    {
-        preset.Enabled = !readOnly;
-        foreach (Control input in settingInputs.Values)
-        {
-            input.Enabled = !readOnly;
-        }
-
-        kind.Enabled = !readOnly;
-        insertButton.Enabled = !readOnly && SelectedRow?.IsSplit == true;
-        removeButton.Enabled = insertButton.Enabled;
-        upButton.Enabled = insertButton.Enabled;
-        downButton.Enabled = insertButton.Enabled;
-    }
-
-    private void RowSelected()
-    {
-        rowIndex = triggers.SelectedIndex;
-        WithoutEvents(() =>
-        {
-            SyncInputsEnabled();
-            RenderDetail(null);
-        });
-    }
-
-    private void RenderDetail(Control except)
+    private void RenderRow(TriggerRow row, Control except)
     {
         WithoutEvents(() =>
         {
-            Row row = SelectedRow;
-            if (row == null)
-            {
-                return;
-            }
-
             XmlElement trigger = TriggerOf(row);
             string kindName = trigger == null ? DefaultKind(row.Setting) : KindName(trigger);
-            if (except != kind)
+            row.Kind.Enabled = !readOnly;
+            if (except != row.Kind)
             {
                 RenderKind(row, trigger, kindName);
             }
 
             SchemaTrigger known = schema.Trigger(kindName);
-            foreach (FieldInput input in fieldInputs)
+            List<SchemaField> shown = known == null
+                ? []
+                : known.Fields.Select(schema.Field).Where(field => !field.Everest || Everest).ToList();
+            if (!row.Inputs.Select(input => input.Field).SequenceEqual(shown))
             {
-                bool taken = known != null && known.Fields.Contains(input.Field.Name);
-                bool visible = taken && (!input.Field.Everest || Everest);
-                input.Caption.Visible = visible;
-                input.Input.Visible = visible;
-                if (visible && input.Input != except)
+                RebuildInputs(row, shown);
+            }
+
+            foreach (FieldInput input in row.Inputs)
+            {
+                if (input.Input != except)
                 {
                     RenderField(input, known, trigger);
                 }
@@ -682,9 +687,21 @@ internal sealed class SettingsEditor : UserControl
             }
 
             string message = RowProblem(trigger);
-            problem.Text = message ?? "";
-            problem.Visible = message != null;
+            row.Problem.Text = message ?? "";
+            row.Problem.Visible = message != null;
         });
+    }
+
+    private void RebuildInputs(TriggerRow row, List<SchemaField> shown)
+    {
+        foreach (FieldInput old in row.Inputs)
+        {
+            old.Input.Dispose();
+        }
+
+        row.Inputs = shown.Select(field => NewFieldInput(row, field)).ToList();
+        row.Fields.Controls.AddRange(row.Inputs.Select(input => input.Input).ToArray());
+        row.Fields.Visible = shown.Count > 0;
     }
 
     private bool IsReplaced(SchemaField field, SchemaTrigger known, XmlElement trigger)
@@ -696,7 +713,7 @@ internal sealed class SettingsEditor : UserControl
             && SettingsXml.Find(trigger, other.Name) != null);
     }
 
-    private void RenderKind(Row row, XmlElement trigger, string kindName)
+    private void RenderKind(TriggerRow row, XmlElement trigger, string kindName)
     {
         string context = row.Setting.Key;
         var items = schema.Triggers
@@ -709,9 +726,9 @@ internal sealed class SettingsEditor : UserControl
             items.Add(new Choice { Label = label, Value = kindName ?? Keep });
         }
 
-        kind.Items.Clear();
-        kind.Items.AddRange(items.Cast<object>().ToArray());
-        kind.SelectedItem = items.FirstOrDefault(item => Equals(item.Value, kindName ?? Keep));
+        row.Kind.Items.Clear();
+        row.Kind.Items.AddRange(items.Cast<object>().ToArray());
+        row.Kind.SelectedItem = items.FirstOrDefault(item => Equals(item.Value, kindName ?? Keep));
     }
 
     private void RenderField(FieldInput input, SchemaTrigger known, XmlElement trigger)
@@ -742,7 +759,7 @@ internal sealed class SettingsEditor : UserControl
         var items = new List<Choice>();
         if (!known.Required.Contains(field.Name) && field.Default == null)
         {
-            items.Add(new Choice { Label = "(any)", Value = null });
+            items.Add(new Choice { Label = AnyLabel(field), Value = null });
         }
 
         if (field.Values != null)
@@ -779,16 +796,8 @@ internal sealed class SettingsEditor : UserControl
         }
     }
 
-    private void PresetChanged()
+    private void ApplyPreset(SchemaPreset entry)
     {
-        int index = preset.SelectedIndex;
-        if (index < 0 || index >= schema.Presets.Count)
-        {
-            RenderPresetSelection();
-            return;
-        }
-
-        SchemaPreset entry = schema.Presets[index];
         EnsureCfg();
         foreach (SchemaSetting setting in schema.Settings)
         {
@@ -807,20 +816,16 @@ internal sealed class SettingsEditor : UserControl
             }
         }
 
-        foreach (Row row in rows)
+        foreach (TriggerRow row in rows)
         {
             ApplyTriggerFields(entry, TriggerOf(row));
         }
 
         Commit();
-        WithoutEvents(() =>
-        {
-            RenderSettings();
-            RenderDetail(null);
-        });
+        WithoutEvents(RenderAll);
     }
 
-    private void ApplyTrigger(Row row, Dictionary<string, object> expected)
+    private void ApplyTrigger(TriggerRow row, Dictionary<string, object> expected)
     {
         XmlElement trigger = EnsureTrigger(row);
         string kindName = (string)expected["kind"];
@@ -859,88 +864,6 @@ internal sealed class SettingsEditor : UserControl
         return new[] { "kind" }.Concat(trigger.Fields).ToList();
     }
 
-    private bool Matches(SchemaPreset entry)
-    {
-        foreach (KeyValuePair<string, object> pair in entry.Settings)
-        {
-            SchemaSetting setting = schema.Setting(pair.Key);
-            XmlElement element = SettingsXml.Find(cfg, pair.Key);
-            if (setting.Type == "trigger")
-            {
-                if (!TriggerMatches(setting, element, (Dictionary<string, object>)pair.Value))
-                {
-                    return false;
-                }
-            }
-            else if (!Equals(element == null ? setting.Default : SettingsXml.Value(element), pair.Value))
-            {
-                return false;
-            }
-        }
-
-        foreach (KeyValuePair<string, Dictionary<string, object>> kindFields in entry.TriggerFields)
-        {
-            foreach (Row row in rows)
-            {
-                XmlElement trigger = TriggerOf(row);
-                if (KindName(trigger) != kindFields.Key || schema.Problem(trigger, Everest) != null)
-                {
-                    continue;
-                }
-
-                foreach (KeyValuePair<string, object> field in kindFields.Value)
-                {
-                    XmlElement element = SettingsXml.Find(trigger, field.Key);
-                    object value = element == null ? schema.Field(field.Key).Default : SettingsXml.Value(element);
-                    if (!Equals(value, field.Value))
-                    {
-                        return false;
-                    }
-                }
-            }
-        }
-
-        return true;
-    }
-
-    private bool TriggerMatches(SchemaSetting setting, XmlElement element, Dictionary<string, object> expected)
-    {
-        string kindName = element == null ? DefaultKind(setting) : KindName(element);
-        if (kindName != (string)expected["kind"])
-        {
-            return false;
-        }
-
-        SchemaTrigger known = schema.Trigger(kindName);
-        if (known == null)
-        {
-            return false;
-        }
-
-        foreach (string fieldName in known.Fields)
-        {
-            SchemaField field = schema.Field(fieldName);
-            XmlElement fieldElement = SettingsXml.Find(element, fieldName);
-            object actual = fieldElement == null ? field.Default : SettingsXml.Value(fieldElement);
-            object wanted = expected.TryGetValue(fieldName, out object value) ? value : field.Default;
-            if (!Equals(actual, wanted))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private void RenderPresetSelection()
-    {
-        WithoutEvents(() =>
-        {
-            int match = schema.Presets.FindIndex(Matches);
-            preset.SelectedIndex = match >= 0 ? match : schema.Presets.Count;
-        });
-    }
-
     private void SettingChanged(SchemaSetting setting, object value)
     {
         EnsureCfg();
@@ -948,18 +871,12 @@ internal sealed class SettingsEditor : UserControl
         Commit();
         if (setting == everestSetting)
         {
-            RenderDetail(null);
+            WithoutEvents(RenderRows);
         }
     }
 
-    private void FieldChanged(SchemaField field, Control source)
+    private void FieldChanged(TriggerRow row, SchemaField field, Control source)
     {
-        Row row = SelectedRow;
-        if (row == null)
-        {
-            return;
-        }
-
         object value;
         if (source is TextBox text)
         {
@@ -969,14 +886,14 @@ internal sealed class SettingsEditor : UserControl
         {
             if (!TryParseChapter(editable, out value))
             {
-                problem.Text = $"\"{editable.Text}\" isn't a chapter.";
-                problem.Visible = true;
+                row.Problem.Text = $"\"{editable.Text}\" isn't a chapter.";
+                row.Problem.Visible = true;
                 return;
             }
 
             if (value == Keep)
             {
-                RenderDetail(source);
+                RenderRow(row, source);
                 return;
             }
         }
@@ -994,7 +911,7 @@ internal sealed class SettingsEditor : UserControl
         XmlElement existing = SettingsXml.Find(TriggerOf(row), field.Name);
         if (Equals(existing == null ? null : SettingsXml.Value(existing), value))
         {
-            RenderDetail(source);
+            RenderRow(row, source);
             return;
         }
 
@@ -1009,13 +926,13 @@ internal sealed class SettingsEditor : UserControl
         Commit();
         if (source is ComboBox changed)
         {
-            DropStaleChoices(changed);
+            DropStaleChoices(row, changed);
         }
 
-        RenderDetail(source);
+        RenderRow(row, source);
     }
 
-    private void DropStaleChoices(ComboBox combo)
+    private void DropStaleChoices(TriggerRow row, ComboBox combo)
     {
         WithoutEvents(() =>
         {
@@ -1025,7 +942,7 @@ internal sealed class SettingsEditor : UserControl
             }
         });
 
-        bool IsStale(Choice choice) => choice.Value == Keep || (combo == kind && schema.Trigger((string)choice.Value) == null);
+        bool IsStale(Choice choice) => choice.Value == Keep || (combo == row.Kind && schema.Trigger((string)choice.Value) == null);
     }
 
     private bool TryParseChapter(ComboBox combo, out object value)
@@ -1053,10 +970,9 @@ internal sealed class SettingsEditor : UserControl
         return false;
     }
 
-    private void KindChanged()
+    private void KindChanged(TriggerRow row)
     {
-        Row row = SelectedRow;
-        if (row == null || kind.SelectedItem is not Choice choice || choice.Value == Keep)
+        if (row.Kind.SelectedItem is not Choice choice || choice.Value == Keep)
         {
             return;
         }
@@ -1080,8 +996,8 @@ internal sealed class SettingsEditor : UserControl
 
         SettingsXml.Set(trigger, "kind", newKind, TriggerOrder(known));
         Commit();
-        DropStaleChoices(kind);
-        RenderDetail(kind);
+        DropStaleChoices(row, row.Kind);
+        RenderRow(row, row.Kind);
     }
 
     private void EnsureCfg()
@@ -1089,7 +1005,7 @@ internal sealed class SettingsEditor : UserControl
         cfg ??= SettingsXml.SetContainer(map, "cfg", "map", TopLevelOrder);
     }
 
-    private XmlElement EnsureTrigger(Row row)
+    private XmlElement EnsureTrigger(TriggerRow row)
     {
         EnsureCfg();
         XmlElement trigger = TriggerOf(row);
@@ -1124,17 +1040,12 @@ internal sealed class SettingsEditor : UserControl
         XmlElement list = SettingsXml.SetContainer(cfg, splitsSetting.Key, "list", cfgOrder);
         while (SettingsXml.Items(list).Count() < count)
         {
-            list.AppendChild(NewManual(list.OwnerDocument));
+            XmlElement item = SettingsXml.NewItem(list.OwnerDocument);
+            SettingsXml.Set(item, "kind", "manual", ["kind"]);
+            list.AppendChild(item);
         }
 
         return list;
-    }
-
-    private XmlElement NewManual(XmlDocument document)
-    {
-        XmlElement item = SettingsXml.NewItem(document);
-        SettingsXml.Set(item, "kind", "manual", ["kind"]);
-        return item;
     }
 
     private void Commit()
@@ -1151,94 +1062,6 @@ internal sealed class SettingsEditor : UserControl
 
         write(settings);
         cfg = SettingsXml.FindMap(map, "cfg");
-        RefreshAfterChange();
-    }
-
-    private void RefreshAfterChange()
-    {
-        WithoutEvents(() =>
-        {
-            BuildRows();
-            RenderRows();
-            RenderPresetSelection();
-            RenderWarnings();
-        });
-    }
-
-    private void InsertSplit()
-    {
-        Row row = SelectedRow;
-        if (row == null || !row.IsSplit)
-        {
-            return;
-        }
-
-        XmlElement list = EnsureSplits(row.Index);
-        XmlElement item = NewManual(list.OwnerDocument);
-        list.InsertBefore(item, SettingsXml.Items(list).ElementAtOrDefault(row.Index));
-        Commit();
-        ReselectDetail();
-    }
-
-    private void RemoveSplit()
-    {
-        Row row = SelectedRow;
-        if (row == null || !row.IsSplit)
-        {
-            return;
-        }
-
-        XmlElement list = SplitsList();
-        XmlElement item = SettingsXml.Items(list).ElementAtOrDefault(row.Index);
-        if (item != null)
-        {
-            list.RemoveChild(item);
-            Commit();
-            ReselectDetail();
-        }
-    }
-
-    private void MoveSplit(int delta)
-    {
-        Row row = SelectedRow;
-        if (row == null || !row.IsSplit)
-        {
-            return;
-        }
-
-        int other = row.Index + delta;
-        if (other < 0 || other >= SplitRowCount())
-        {
-            return;
-        }
-
-        XmlElement list = EnsureSplits(Math.Max(row.Index, other) + 1);
-        XmlElement current = SettingsXml.Items(list).ElementAt(row.Index);
-        XmlElement neighbour = SettingsXml.Items(list).ElementAt(other);
-        if (delta < 0)
-        {
-            list.RemoveChild(current);
-            list.InsertBefore(current, neighbour);
-        }
-        else
-        {
-            list.RemoveChild(current);
-            list.InsertAfter(current, neighbour);
-        }
-
-        rowIndex += delta;
-        Commit();
-        ReselectDetail();
-    }
-
-    private void ReselectDetail()
-    {
-        WithoutEvents(() =>
-        {
-            rowIndex = Math.Max(0, Math.Min(rowIndex, rows.Count - 1));
-            triggers.SelectedIndex = rowIndex;
-            SyncInputsEnabled();
-            RenderDetail(null);
-        });
+        WithoutEvents(RenderWarnings);
     }
 }

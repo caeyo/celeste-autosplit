@@ -33,7 +33,8 @@ building it.
 The settings map, how the module reads it, and the triggers are in
 [How it works](how-it-works.md#settings). This is what's left, for editors:
 
-- Presets exist only in editors. A configuration matching none is "Custom".
+- Presets exist only in editors, as actions: nothing shows whether the settings
+  match one.
 
 ### Rules
 
@@ -62,6 +63,11 @@ a short URL. On Windows they're never shown.
   schema, writes the map back in ASR's exact format, with `schema_version`,
   following the rules above, and downloads the `.lss` with only
   `<AutoSplitterSettings>` replaced.
+- It lays the settings out as [the component's editor](how-it-works.md#the-settings-editor)
+  does, in the same order: the booleans, the preset buttons, the timing method as
+  radio buttons, Reset, Start, visually separated, then under a "Segments" heading
+  one trigger per segment of the `.lss`, each a row with its name and kind above a
+  row of its fields.
 - It tells users to close the splits in their host first, or the host
   overwrites the edit.
 - It imports legacy settings with [the component's mapping](how-it-works.md#migration-from-livesplitceleste),

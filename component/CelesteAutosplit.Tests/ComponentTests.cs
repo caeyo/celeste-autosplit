@@ -49,7 +49,7 @@ public sealed class ComponentTests : IDisposable
     {
         IComponent component = Create();
 
-        Assert.StartsWith("Running ", Status(component));
+        Assert.Equal("", Status(component));
     }
 
     [Fact]

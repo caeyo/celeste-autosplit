@@ -534,23 +534,40 @@ edits that `CustomSettings` in place, so unknown keys stay and the XML is ASR's
 own. Each change calls `inner.SetSettings`, as
 [LiveSplit's settings dialog](livesplit-notes.md#settings-in-the-lss) needs.
 
-It is one panel, fitting the dialog's 460 px: the preset, the non-trigger
-settings, one list of triggers, Start, Reset, and one row for each segment of the
-run or entry of `splits`, and below it the fields of the selected row. A row past
-the run's segments reads `(no segment)`.
+It is one column, fitting the dialog's fixed width and scrolling with it: the
+booleans on one row, a row of preset buttons, the timing method as radio buttons
+on one row, then Reset, Start and, under a heading, the segments, separated by
+rules. Each trigger
+is a row with its name and its kind, and below it, when its kind takes any, one
+row of fields. The fields have no captions, since the worst case wouldn't fit:
+each says what it is by its choices (`Any chapter`) or its cue text (`Room`), and
+by its tooltip.
 
-- **Presets** match on what they set, with absent keys read as their defaults,
-  and a configuration matching none shows as Custom. Applying one rewrites its
-  settings, and each trigger of a kind its `trigger_fields` name, keeping unknown
-  keys.
+- **Segments**: there is one trigger for each segment of the run, so triggers
+  can't be added, removed or moved, and the count can't differ from the run's.
+  Setting one past the end of `splits` fills those before it with `manual`.
+  Entries past the run's last segment, which never fire, aren't shown and are
+  kept.
+- **Presets** are actions, not a state: applying one rewrites its settings, and
+  each trigger of a kind its `trigger_fields` name, keeping unknown keys. Nothing
+  shows whether the settings match one.
 - **Kinds** are offered per each kind's `offer`, plus the current one. Changing
   it drops the old kind's fields the new one doesn't take, but keeps unknown keys.
-  Editing a row past the end of `splits` fills the rows before it with `manual`.
-- **Flags**: a row is marked `[!]` for what the module reads as invalid, and
-  for `unknown`. The checks are the module's, as
+- **Flags**: a trigger says in red what the module reads as invalid, and `unknown`,
+  with a line at the top saying some do, as the list can be longer than the
+  dialog. An invalid `timing_method` has its own line there, and no radio button
+  selected. The checks are the module's, as
   [Reading them](#reading-them) describes.
 - **Everest-only fields** are hidden while `everest` is off, and kept.
 - A `schema_version` above the schema's opens read-only and is never written.
+- Dropdowns ignore the mouse wheel unless they're open, and pass it to the dialog,
+  so scrolling the list can't change a setting.
+- LiveSplit's splits editor calls `GetSettingsControl` just to enable its Settings
+  button, so the triggers are only built once the editor gets a window handle, and
+  kept while the segments' names stay the same. Each trigger's windows take time
+  to create, so a long run's dialog is slow to open: on the development machine,
+  4 s for 38 segments, and 17 s for a community run of 95 with fields on every
+  trigger, driven by UI automation.
 
 ### Game Time and priority
 
