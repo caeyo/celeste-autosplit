@@ -648,7 +648,7 @@ import, for runners taking old Windows files to other hosts: livesplit-core read
 only `CustomSettings`. [`site/legacy-import/`](../site/legacy-import/) is a small
 `net9.0` project on `Microsoft.NET.Sdk.WebAssembly`, which compiles
 `LegacyMigration.cs` itself, the component's source file, with one `[JSExport]`.
-`legacy.js` loads it only when importing: 16 files, 5.4 MB, 2.1 MB gzipped, from
+`legacy.js` loads it only when importing: 16 files, 5.6 MB, 2.1 MB gzipped, from
 `legacy/wwwroot/_framework/`. Publishing with the default trimming keeps
 `LegacyMigration`'s `Enum.TryParse` and `Enum.ToString` working: the site's
 checks run it in the browser on every `.lss` in `LegacySplits/`. Its output
