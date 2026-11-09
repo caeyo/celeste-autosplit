@@ -182,8 +182,23 @@ test("what the module reads as invalid is flagged", async ({ page }) => {
   await expect(control(page, "split.2.problem")).toHaveText("");
   await expect(control(page, "setting.timing_method.file")).not.toBeChecked();
   await control(page, "setting.everest").check();
-  await expect(control(page, "split.2.problem")).toHaveText("This trigger has an invalid chapter sid, so it behaves like manual.");
+  await expect(control(page, "split.2.problem")).toHaveText("This trigger has an invalid chapter SID, so it behaves like manual.");
   await expect(control(page, "split.3.problem")).toHaveText("");
+});
+
+test("an invalid split timing is named in words", async ({ page }, testInfo) => {
+  const path = testInfo.outputPath("timing.lss");
+  writeFileSync(path, '<Run><Segments><Segment><Name>A</Name></Segment></Segments><AutoSplitterSettings><CustomSettings><Setting id="cfg" type="map"><Setting id="splits" type="list"><Setting type="map"><Setting id="kind" type="string" value="chapter_complete" /><Setting id="timing" type="string" value="nonsense" /></Setting></Setting></Setting></CustomSettings></AutoSplitterSettings></Run>');
+  await openEditor(page, path);
+  await expect(control(page, "split.0.problem")).toHaveText("This trigger has an invalid split timing, so it behaves like manual.");
+});
+
+test("a required chapter doesn't offer any chapter", async ({ page }) => {
+  await openEditor(page, join(cases, "edit.lss"));
+  await chooseOption(page, "split.1.kind", "Checkpoint");
+  await expect(control(page, "split.1.field.chapter")).toHaveAttribute("placeholder", "Chapter");
+  await chooseOption(page, "split.1.kind", "Enter chapter");
+  await expect(control(page, "split.1.field.chapter")).toHaveAttribute("placeholder", "Any chapter");
 });
 
 for (const file of ["prologue.triggers", "prologue.triggers-everest"]) {

@@ -144,6 +144,10 @@ export function triggerOfKind(schema, kind) {
   return schema.triggers.find(trigger => trigger.kind === kind) ?? null;
 }
 
+const FIELD_WORDS = { timing: "split timing", sid: "chapter SID" };
+
+const fieldWord = (schema, name) => FIELD_WORDS[name] ?? schema.fields[name].label.toLowerCase();
+
 export function problem(schema, trigger, everest) {
   if (type(trigger) !== "map") {
     return "isn't a map";
@@ -173,7 +177,7 @@ export function problem(schema, trigger, everest) {
     }
 
     const fieldValue = value(element);
-    const invalid = `has an invalid ${field.label.toLowerCase()}`;
+    const invalid = `has an invalid ${fieldWord(schema, field.name)}`;
     if (type(element) !== field.type || fieldValue === null) {
       return invalid;
     }
@@ -200,7 +204,7 @@ export function problem(schema, trigger, everest) {
 
   const missing = kind.required.find(name => !present.has(name));
   if (missing !== undefined) {
-    return `has no ${schema.fields[missing].label.toLowerCase()}`;
+    return `has no ${fieldWord(schema, missing)}`;
   }
 
   if (checkpoint !== null) {

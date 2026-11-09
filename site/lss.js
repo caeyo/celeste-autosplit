@@ -3,7 +3,7 @@ export function openLss(bytes) {
   const text = new TextDecoder(format.encoding).decode(bytes);
   const document = new DOMParser().parseFromString(text, "text/xml");
   if (document.querySelector("parsererror") !== null) {
-    throw new Error("This file isn't valid XML, so it isn't a LiveSplit splits file.");
+    throw new Error("This file isn't a valid LiveSplit XML splits file.");
   }
 
   if (document.documentElement.nodeName !== "Run") {

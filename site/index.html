@@ -10,9 +10,8 @@
 <body>
   <main>
     <h1>Celeste Auto Splitter Settings</h1>
-    <p>Edit the auto splitter's settings in your splits file. The file stays in your browser and is never uploaded.</p>
 
-    <p class="notice"><strong>Close your splits in your LiveSplit host first</strong>, or the host overwrites the edit when it saves.</p>
+    <p class="notice"><strong>Close your splits in the LiveSplit app first</strong>, otherwise edits made on this site will be overwritten.</p>
 
     <div class="toolbar">
       <label for="file">Open a <code>.lss</code> file</label>
@@ -21,7 +20,7 @@
     </div>
 
     <section id="legacy" hidden>
-      <p>These splits have settings from the old LiveSplit.Celeste component. Importing converts them to this auto splitter's settings, the same way the LiveSplit component does. It loads a few megabytes once, and then runs in your browser.</p>
+      <p>These splits have settings from the legacy LiveSplit.Celeste auto splitter. Importing converts them to the new settings format.</p>
       <button id="import" type="button">Import the legacy settings</button>
     </section>
 
@@ -39,14 +38,10 @@
     </section>
 
     <section>
-      <h2>Getting the auto splitter</h2>
-      <p>LiveSplit, and livesplit-core hosts that read the auto splitter list, install it for you. For the others, download
-        <a href="https://github.com/caeyo/celeste-autosplit/releases/latest/download/celeste_autosplit.wasm">celeste_autosplit.wasm</a>, then:</p>
-      <ol>
-        <li>AlexKnauth's livesplit-one-druid: choose the file in its auto splitter settings.</li>
-        <li>CryZe's older desktop and Druid apps: put the path to the file in their config file.</li>
-      </ol>
-      <p class="hint">CryZe's newer desktop app reads the list.</p>
+      <h2>Using the auto splitter</h2>
+      <p>LiveSplit automatically downloads and manages this auto splitter - do not manually install it yourself.</p>
+      <p>Other livesplit-core apps, such as LiveSplit One, should read the global auto splitter list and install it for you as well. If you need to manually install it, download
+        <a href="https://github.com/caeyo/celeste-autosplit/releases/latest/download/celeste_autosplit.wasm">celeste_autosplit.wasm</a> and activate it via whatever means the app uses.</p>
     </section>
   </main>
 </body>

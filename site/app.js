@@ -290,7 +290,7 @@ function rowProblem(trigger) {
 function renderWarnings() {
   const lines = [];
   if (readOnly) {
-    lines.push("These settings were saved by a newer version of the auto splitter than this page knows, so they are read-only here.");
+    lines.push("This split file's settings use a newer version of the auto splitter that this page has not yet been updated to handle. This page will be updated soon. In the mean time, the settings are read-only here.");
   } else {
     for (const setting of settingInputs.keys()) {
       if (!setting.values) {
@@ -324,7 +324,7 @@ function renderRow(row, except) {
   const known = triggerOfKind(schema, name);
   const shown = known === null ? [] : fieldsOf(schema, known).filter(field => !field.everest || everest());
   if (row.inputs.map(input => input.field.name).join() !== shown.map(field => field.name).join()) {
-    row.inputs = shown.map(field => newFieldInput(row, field));
+    row.inputs = shown.map(field => newFieldInput(row, field, known));
     row.fields.replaceChildren(...row.inputs.map(input => input.input));
     row.fields.hidden = shown.length === 0;
   }
@@ -342,14 +342,14 @@ function renderRow(row, except) {
   row.problem.hidden = message === null;
 }
 
-function newFieldInput(row, field) {
+function newFieldInput(row, field, known) {
   const id = `${row.id}.field.${field.name}`;
   const title = field.description ?? field.label;
   let input;
   if (field.read_only) {
     input = tag("span", { id, title });
   } else if (field.values_from === "chapters") {
-    input = tag("input", { type: "text", id, title, placeholder: anyLabel(field) });
+    input = tag("input", { type: "text", id, title, placeholder: known.required.includes(field.name) ? field.label : anyLabel(field) });
     input.setAttribute("list", "chapters");
     input.addEventListener("input", () => chapterChanged(row, field, input));
   } else if (field.values || field.values_from) {

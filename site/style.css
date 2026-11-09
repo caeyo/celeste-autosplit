@@ -67,11 +67,6 @@ a {
   color: var(--problem);
 }
 
-.hint {
-  color: var(--muted);
-  font-size: 13px;
-}
-
 .row {
   display: flex;
   flex-wrap: wrap;
@@ -160,8 +155,4 @@ input:disabled {
 .toolbar input[type="file"] {
   display: block;
   margin: 4px 0 8px;
-}
-
-ol {
-  padding-left: 22px;
 }

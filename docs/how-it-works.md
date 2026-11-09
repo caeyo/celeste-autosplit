@@ -603,12 +603,9 @@ has to be closed first.
 [`site/`](../site/) is a static page on GitHub Pages: a `.lss` is edited in the
 browser and never uploaded. It opens a `.lss`, shows its settings from the schema
 as the component's editor does, and downloads the file with only
-`<AutoSplitterSettings>` replaced. It tells users to close their splits in their
-host first, or the host overwrites the edit, and it links the latest
-`celeste_autosplit.wasm`, with steps for hosts that don't read the list:
-AlexKnauth's livesplit-one-druid, which takes a path and renders title, bool,
-choice and file-select widgets, and CryZe's older desktop and Druid apps, which
-take a path in a config file. CryZe's newer, private desktop app reads the list.
+`<AutoSplitterSettings>` replaced. It tells users to close their splits in the
+LiveSplit app first, or the edit is overwritten, and it links the latest
+`celeste_autosplit.wasm` for apps that don't read the list.
 
 ### Reading and writing a `.lss`
 
