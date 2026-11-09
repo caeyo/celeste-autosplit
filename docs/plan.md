@@ -1,8 +1,8 @@
 # Plan
 
-What's left is the module's title widgets and the list entry, written before
-the code. What is built, the settings map, how the module reads it, splitting,
-the migration from the legacy component, the component and the website, is in
+What's left is the list entry, written before the code. What is built, the
+settings map, how the module reads it, its title widgets, splitting, the
+migration from the legacy component, the component and the website, is in
 [How it works](how-it-works.md).
 Check each part against the code before building it.
 
@@ -38,11 +38,6 @@ The settings map, how the module reads it, and the triggers are in
   `Map::store_if_unchanged`, retrying on `false`, never `Map::store`.
 - Later candidates: a level set filter, and a golden-grabbed trigger from
   Everest's chapter flags.
-
-## The module
-
-It registers title widgets only, plain text saying where the website is, with
-a short URL. On Windows they're never shown.
 
 ## Distribution
 

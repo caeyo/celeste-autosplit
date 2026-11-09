@@ -74,7 +74,14 @@ async fn init(process: &Process) -> Option<memory::GameState> {
     None
 }
 
+fn register_settings() {
+    asr::settings::gui::add_title("_ui_heading", "Configure this auto splitter at:", 0);
+    asr::settings::gui::add_title("_ui_url", "caeyo.github.io/celeste-autosplit", 1);
+}
+
 async fn main() {
+    register_settings();
+
     loop {
         asr::print_message("Waiting for Celeste");
         let process = memory::wait_attach().await;

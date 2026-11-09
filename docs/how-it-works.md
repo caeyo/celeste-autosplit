@@ -258,6 +258,15 @@ writes the map.
   fields a trigger's kind doesn't take. An Everest-only field, `sid`, is ignored
   while `everest` is off.
 
+### The module's widgets
+
+Hosts built on livesplit-core have no editor, so the module registers two title
+widgets, `_ui_heading` and `_ui_url`, that say where [the website](#the-website)
+is. It does so before it looks for the game, so they show without it. A title
+is plain text, so the address is short enough to type, and it holds no value, so
+nothing reaches the map. On Windows they're never shown, since
+[the component](#the-component) replaces ASR's settings UI with its own.
+
 ## Splitting
 
 [`splitter.rs`](../autosplitter/src/splitter.rs) runs each tick after the
@@ -720,6 +729,9 @@ root, and `Starting New File` 1 exactly when the save's `Time` is 0.
   Every number and string has a value of its own, spread over all its bytes, so
   reading the wrong field, or the wrong width, shows in every field. Two swapped
   flags would agree when flipped together, so each is also set alone.
+- **The widgets** the auto splitter registered with the auto splitting runtime
+  must be exactly its two titles, in order, with their heading levels, as written
+  by hand in the harness.
 - **The replay** then sends each line of each trace: its changes, over all the
   values before. A path that isn't in `PATHS` fails.
 - **The scenarios** follow each trace's replay, one per scenario file next to
