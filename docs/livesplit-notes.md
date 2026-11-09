@@ -149,7 +149,7 @@ component, without showing them, and check what reaches ASR against hand-written
 XML, that it's read again each time it opens, read-only, flags, presets and
 Cancel, and when the component switches to Game Time. Most of how the editor's
 controls behave is left to a hand check. For migration, they check each `.lss` in
-`CelesteAutosplit.Tests/LegacySplits/`, community files and `odd-values.lss`,
+[`legacy-splits/`](../legacy-splits/), community files and `odd-values.lss`,
 against its hand-written `.expected.xml`, that ASR writes the migrated XML back
 the same, all 71 types, integers and
 garbage, each case crossed with `FileTimeOffset` and `AutoReset`, odd area and

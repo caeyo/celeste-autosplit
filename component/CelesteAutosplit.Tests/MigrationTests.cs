@@ -346,7 +346,7 @@ public class MigrationTests
 
 public static class LegacyFiles
 {
-    private static readonly string Folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LegacySplits");
+    private static readonly string Folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "legacy-splits");
 
     public static IEnumerable<object[]> Names()
     {

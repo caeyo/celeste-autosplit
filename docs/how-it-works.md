@@ -3,7 +3,8 @@
 The auto splitter is a wasm module that attaches to Celeste, reads its memory
 each tick, publishes what it reads as debug variables, and starts, splits and
 resets the timer as its settings say. [The component](#the-component) adds its
-settings editor on Windows; the website is in the [plan](plan.md).
+settings editor on Windows, and [the website](#the-website) edits the settings of
+splits files for every other host.
 
 ## Terms
 
@@ -597,6 +598,59 @@ release. Once the list's first URL is that DLL, deleting it makes LiveSplit
 download both files on the next activation. LiveSplit holds the DLL open, so it
 has to be closed first.
 
+## The website
+
+[`site/`](../site/) is a static page on GitHub Pages: a `.lss` is edited in the
+browser and never uploaded. It opens a `.lss`, shows its settings from the schema
+as the component's editor does, and downloads the file with only
+`<AutoSplitterSettings>` replaced. It tells users to close their splits in the
+LiveSplit app first, or the edit is overwritten, and it links the latest
+`celeste_autosplit.wasm` for apps that don't read the list.
+
+### Reading and writing a `.lss`
+
+[`lss.js`](../site/lss.js) splices bytes, so nothing else in the file changes.
+
+- It reads the encoding from the byte order mark: UTF-16 with one, otherwise
+  UTF-8. A declared encoding that's neither is refused, with a message to save
+  the file as UTF-8: the editor has to write text back in the file's own
+  encoding, and these are the ones it can.
+- `DOMParser` reads the text, for the settings and the segments' names. A small
+  scanner finds the byte range of the `<AutoSplitterSettings>` directly under
+  `<Run>`, skipping comments, CDATA and attribute values, since `DOMParser` gives
+  no positions. If there's none, the new one goes before `</Run>`.
+- The new element is written as ASR writes it: each child on its own line, two
+  spaces per level, `<x />` for an empty element, the file's own line endings and
+  indentation, or no whitespace at all in a file without line breaks. Its text is
+  encoded back to the file's encoding, so a BOM and a UTF-16 file stay as they were.
+- A download without edits is the original bytes.
+
+### The editor
+
+[`app.js`](../site/app.js) and [`settings.js`](../site/settings.js) are the
+component's editor in JavaScript, working on the same XML, so
+[its rules](#the-settings-editor) apply: unknown keys stay, one trigger per
+segment of the file with entries past the last hidden and kept, presets as
+actions, kinds offered per `offer`, a newer `schema_version` read-only and never
+written, Everest-only fields hidden while `everest` is off and kept. The layout is
+its layout, with `high_priority` and `set_game_time` labelled "LiveSplit (Windows)
+only". `problem` in `settings.js` is the third copy of the module's
+[invalid-trigger rules](#reading-them), kept in step by the table in
+[What the tests prove](#what-the-tests-prove).
+
+### Importing legacy settings
+
+A `.lss` with a legacy node, as [the component](#mapping) defines one, offers an
+import, for runners taking old Windows files to other hosts: livesplit-core reads
+only `CustomSettings`. [`site/legacy-import/`](../site/legacy-import/) is a small
+`net9.0` project on `Microsoft.NET.Sdk.WebAssembly`, which compiles
+`LegacyMigration.cs` itself, the component's source file, with one `[JSExport]`.
+`legacy.js` loads it only when importing: 16 files, 5.6 MB, 2.1 MB gzipped, from
+`legacy/wwwroot/_framework/`. Publishing with the default trimming keeps
+`LegacyMigration`'s `Enum.TryParse` and `Enum.ToString` working: the site's
+tests run it in the browser on every `.lss` in `legacy-splits/`. Its output
+replaces the settings in the editor, and comes out as a normal download.
+
 ## The probe
 
 [`tools/probe/`](../tools/probe/) is installed as the game's `Celeste.exe`, runs
@@ -708,6 +762,43 @@ in one tick, none showing a prompt.
 The harness's test, `cargo test`, reads the same XML through livesplit-core's
 `StoredAutoSplitterSettings` and gets it back.
 
+The site's tests, `site/test/`, are [Playwright](https://playwright.dev/) on
+Node, in headless Chromium. `site/serve.mjs` serves the real page. Files are
+opened through a real file chooser, its controls are driven as a user would, and
+the bytes of what it downloads are read from a real download:
+
+- Each edit case in `site/test/cases/` must come out byte for byte as its
+  hand-written `.expected.lss`: UTF-8 with and without a BOM, CRLF and LF, UTF-16
+  in both byte orders, a file with no line breaks, a missing element, and a
+  comment, a CDATA section and an attribute holding text that looks like markup.
+  Unknown keys, also through a change of kind, an entry past the last segment, a
+  hidden `sid` and the file's other bytes all come through. An unedited download
+  equals the file opened, even with settings not as ASR writes them, and choosing
+  the same path again, after the file changed on disk, reopens it. Character
+  references in kept values survive a write, and a value that doesn't parse can
+  be cleared.
+- Importing runs the published browser build of `LegacyMigration.cs` on every
+  `.lss` in [`legacy-splits/`](../legacy-splits/), and the settings in the download
+  must equal its hand-written `.expected.xml`, ignoring only the whitespace between
+  tags. The component's tests and the harness's `cargo test` take those same files
+  through ASR and livesplit-core. So the browser build, with XPath, `Enum.TryParse`
+  and `Enum.ToString` after trimming, gives the component's results.
+- A table of 43 triggers, valid and invalid, is a scenario on `prologue`, once
+  with `everest` off and once on, with a hand-written `invalid` list: the triggers
+  the module logs as invalid. The Live check runs the real module and compares
+  its log with the list; the site's tests run `problem` in the page on the same
+  table and compare with the same list. The table is the only link between them,
+  so a change to either that disagrees with it fails its check.
+- A preset rewrites the fields its `trigger_fields` name. The two Windows-only
+  settings say "LiveSplit (Windows) only". A file that isn't a `<Run>`, or declares
+  another encoding, is refused.
+- A newer `schema_version` says so and disables every control, and invalid triggers
+  say what the module would read as invalid.
+
+A pass rests on the hand-written files, Playwright's driving of the browser, and
+that Chromium's `DOMParser`, on Windows or Linux. How a control looks, which kinds
+it offers, and focus and keyboard use, are left to a hand check.
+
 ### What they don't prove
 
 - Everest: no probe constructs it, and CI doesn't run it. Its offsets rest on
@@ -749,6 +840,12 @@ The harness's test, `cargo test`, reads the same XML through livesplit-core's
 - Splitting in LiveSplit: the component's tests don't run the game.
 - That a migrated list splits as legacy did: the mapping's expectations are
   hand-written from the audit of legacy's source, and no test runs legacy.
+- That a host reads what the site writes. The site's edit cases are only compared
+  with the hand-written `.expected.lss`, byte for byte. An import's settings reach
+  ASR and livesplit-core only through the `.expected.xml` it must equal, which
+  their own tests read.
+- A browser's save dialog, the site on GitHub Pages, and the hosts that don't read
+  the list.
 
 ## Known gaps
 
@@ -769,7 +866,6 @@ The harness's test, `cargo test`, reads the same XML through livesplit-core's
 - **Negative game time.** With a `*_since_start` method, a clock below its
   value at the start, as `ChapterTime` after restarting the chapter, makes game
   time negative, as legacy's custom-start case does.
-- **The website is a stub.**
 
 ## Supported versions
 

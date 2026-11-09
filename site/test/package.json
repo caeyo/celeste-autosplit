@@ -1,0 +1,8 @@
+{
+  "name": "celeste-autosplit-site-tests",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "1.65.0"
+  }
+}

@@ -92,6 +92,7 @@ struct Scenario {
     settings: settings::Map,
     segments: u64,
     events: Vec<String>,
+    invalid: Option<Vec<String>>,
 }
 
 fn main() -> ExitCode {
@@ -298,8 +299,27 @@ fn run_scenario(
         problems.extend(events.iter().map(|event| format!("  {event}")));
         return failed(&heading, &problems, &module);
     }
+    if let Some(expected) = &scenario.invalid {
+        let invalid = invalid_triggers(&module);
+        if invalid != *expected {
+            let problems = [
+                format!("expected invalid: {expected:?}"),
+                format!("read: {invalid:?}"),
+            ];
+            return failed(&heading, &problems, &module);
+        }
+    }
     println!("scenario: ok, the timer gets the events of {name}");
     Ok(true)
+}
+
+fn invalid_triggers(module: &Module) -> Vec<String> {
+    let invalid = module.timer.log().into_iter().filter_map(|line| {
+        let place = line.strip_prefix("cfg.")?;
+        place.strip_suffix(", so it's manual")?;
+        Some(place.split(' ').next()?.to_owned())
+    });
+    invalid.collect()
 }
 
 fn timer_events(module: &Module, frame: usize) -> Vec<String> {
@@ -447,6 +467,7 @@ fn read_scenario(file: &Path) -> Result<Scenario> {
     let mut settings = None;
     let mut segments = 1;
     let mut events = None;
+    let mut invalid = None;
     for (key, value) in &scenario {
         match key.as_str() {
             "settings" => settings = Some(setting(value)?),
@@ -464,6 +485,14 @@ fn read_scenario(file: &Path) -> Result<Scenario> {
                         .collect::<Result<Vec<_>>>()?,
                 );
             }
+            "invalid" => {
+                let list = value.as_array().context("invalid isn't a list")?;
+                let places = list.iter().map(|place| {
+                    let place = place.as_str().context("an invalid place that isn't text");
+                    place.map(str::to_owned)
+                });
+                invalid = Some(places.collect::<Result<Vec<_>>>()?);
+            }
             _ => bail!("unexpected {key}"),
         }
     }
@@ -475,6 +504,7 @@ fn read_scenario(file: &Path) -> Result<Scenario> {
         settings,
         segments,
         events: events.context("no events")?,
+        invalid,
     })
 }
 
@@ -646,7 +676,7 @@ mod tests {
 
     #[test]
     fn livesplit_core_reads_the_migrated_settings_back_the_same() {
-        let dir = Path::new(HARNESS_DIR).join("../component/CelesteAutosplit.Tests/LegacySplits");
+        let dir = Path::new(HARNESS_DIR).join("../legacy-splits");
         let mut checked = 0;
         for entry in fs::read_dir(dir).unwrap() {
             let file = entry.unwrap().path();

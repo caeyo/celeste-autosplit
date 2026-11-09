@@ -5,11 +5,44 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Celeste Auto Splitter Settings</title>
   <link rel="stylesheet" href="style.css">
-  <script src="app.js" defer></script>
+  <script src="app.js" type="module"></script>
 </head>
 <body>
   <main>
     <h1>Celeste Auto Splitter Settings</h1>
+
+    <p class="notice"><strong>Close your splits in the LiveSplit app first</strong>, otherwise edits made on this site will be overwritten.</p>
+
+    <div class="toolbar">
+      <label for="file">Open a <code>.lss</code> file</label>
+      <input id="file" type="file" accept=".lss">
+      <button id="download" type="button" hidden>Download the edited <code>.lss</code></button>
+      <p id="status" class="problem" hidden></p>
+    </div>
+
+    <section id="legacy" hidden>
+      <p>These splits have settings from the legacy LiveSplit.Celeste auto splitter. Importing converts them to the new settings format.</p>
+      <button id="import" type="button">Import the legacy settings</button>
+    </section>
+
+    <section id="editor" hidden>
+      <p id="warnings" class="problem" hidden></p>
+      <div id="flags" class="row"></div>
+      <div id="presets" class="row"></div>
+      <div id="settings"></div>
+      <div id="triggers"></div>
+      <hr>
+      <h2>Segments</h2>
+      <div id="segments"></div>
+      <datalist id="chapters"></datalist>
+    </section>
+
+    <section>
+      <h2>Using the auto splitter</h2>
+      <p>LiveSplit automatically downloads and manages this auto splitter - do not manually install it yourself.</p>
+      <p>Other livesplit-core apps, such as LiveSplit One, should read the global auto splitter list and install it for you as well. If you need to manually install it, download
+        <a href="https://github.com/caeyo/celeste-autosplit/releases/latest/download/celeste_autosplit.wasm">celeste_autosplit.wasm</a> and activate it via whatever means the app uses.</p>
+    </section>
   </main>
 </body>
 </html>
