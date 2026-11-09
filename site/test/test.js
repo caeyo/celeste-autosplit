@@ -140,6 +140,15 @@ function compare(a, b) {
   return a.findIndex((byte, index) => byte !== b[index]) === -1 ? 0 : 1;
 }
 
+async function characterReferenceCheck() {
+  const input = '<Run><AutoSplitterSettings><Note>a&#xD;b</Note><CustomSettings><Setting id="cfg" type="map"><Setting id="future" type="string" value="a&#xA;b&#x9;c&#xD;d" /></Setting></CustomSettings></AutoSplitterSettings></Run>';
+  await open("references.lss", new TextEncoder().encode(input));
+  check("setting.everest", true);
+  const output = new DOMParser().parseFromString(new TextDecoder().decode(await download()), "text/xml");
+  expectEqual("an attribute's line breaks and tabs are kept", "a\nb\tc\rd", output.querySelector('[id="future"]').getAttribute("value"));
+  expectEqual("a carriage return in text is kept", "a\rb", output.querySelector("Note").textContent);
+}
+
 async function readOnlyCheck() {
   const input = await bytesOf("cases/newer.lss");
   await open("newer.lss", input);
@@ -149,10 +158,8 @@ async function readOnlyCheck() {
   }
 
   expectEqual("no invalid timing method is flagged while read-only", false, warnings.includes("isn't valid"));
-  expectEqual("a newer schema_version disables Everest", true, control("setting.everest").disabled);
-  expectEqual("a newer schema_version disables the presets", true, control("preset.0").disabled);
-  expectEqual("a newer schema_version disables triggers", true, control("start.kind").disabled);
-  expectEqual("a newer schema_version disables the download", true, control("download").disabled);
+  const enabled = [...doc.querySelectorAll("#editor input, #editor select, #editor button")].filter(element => !element.disabled);
+  expectEqual("a newer schema_version disables every control", "", enabled.map(element => element.id).join());
 }
 
 async function flagChecks() {
@@ -238,6 +245,7 @@ async function main() {
   win.HTMLAnchorElement.prototype.click = function () {};
 
   await editChecks();
+  await characterReferenceCheck();
   await readOnlyCheck();
   await flagChecks();
   await triggerTable("prologue.triggers");

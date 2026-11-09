@@ -8,6 +8,9 @@ async function load() {
 }
 
 export async function migrate(xml) {
-  runtime ??= load();
+  runtime ??= load().catch(error => {
+    runtime = null;
+    throw error;
+  });
   return (await runtime).Migrate(xml);
 }

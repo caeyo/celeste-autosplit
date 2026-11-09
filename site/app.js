@@ -96,6 +96,9 @@ function buildStatic() {
     settings.append(group);
   }
 
+  page("file").addEventListener("click", () => {
+    page("file").value = "";
+  });
   page("file").addEventListener("change", openFile);
   page("import").addEventListener("click", importLegacy);
   page("download").addEventListener("click", download);
@@ -482,13 +485,13 @@ function applyTrigger(row, expected) {
 }
 
 function applyTriggerFields(preset, trigger) {
-  const name = trigger === null ? null : kindName(trigger);
-  const values = name === null ? undefined : preset.trigger_fields[name];
+  const known = trigger === null ? null : triggerOfKind(schema, kindName(trigger));
+  const values = known === null ? undefined : preset.trigger_fields[known.kind];
   if (values === undefined) {
     return;
   }
 
-  const order = triggerOrder(triggerOfKind(schema, name));
+  const order = triggerOrder(known);
   for (const [key, entry] of Object.entries(values)) {
     set(trigger, key, entry, order);
   }
@@ -510,7 +513,7 @@ function selectChanged(row, field, select) {
     return;
   }
 
-  fieldChanged(row, field, select, choice.value);
+  fieldChanged(row, field, null, choice.value);
 }
 
 function chapterChanged(row, field, input) {
@@ -535,7 +538,7 @@ function chapterChanged(row, field, input) {
 function fieldChanged(row, field, source, newValue) {
   const existing = find(triggerOf(row), field.name);
   const before = existing === null ? null : value(existing);
-  if (before === newValue && (existing !== null || newValue === null)) {
+  if (before === newValue) {
     renderRow(row, source);
     return;
   }

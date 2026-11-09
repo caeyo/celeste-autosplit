@@ -1,3 +1,7 @@
+[hidden] {
+  display: none !important;
+}
+
 :root {
   --text: #1c1c22;
   --muted: #5d5d68;

@@ -154,11 +154,11 @@ function encode(text, format) {
 }
 
 function escapeText(text) {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r/g, "&#xD;");
 }
 
 function escapeAttribute(text) {
-  return escapeText(text).replace(/"/g, "&quot;");
+  return escapeText(text).replace(/"/g, "&quot;").replace(/\t/g, "&#x9;").replace(/\n/g, "&#xA;");
 }
 
 function writeElement(element, indent, newline, unit) {

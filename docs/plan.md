@@ -1,8 +1,9 @@
 # Plan
 
-What's left is the list entry, written before the code. What is built, the
-settings map, how the module reads it, splitting, the migration from the legacy
-component, the component and the website, is in [How it works](how-it-works.md).
+What's left is the module's title widgets and the list entry, written before
+the code. What is built, the settings map, how the module reads it, splitting,
+the migration from the legacy component, the component and the website, is in
+[How it works](how-it-works.md).
 Check each part against the code before building it.
 
 ## The design
@@ -30,24 +31,13 @@ Check each part against the code before building it.
 ## Settings
 
 The settings map, how the module reads it, and the triggers are in
-[How it works](how-it-works.md#settings). This is what's left, for editors:
+[How it works](how-it-works.md#settings), and what editors do with them in
+[The settings editor](how-it-works.md#the-settings-editor). This is what's left:
 
-- Presets exist only in editors.
-
-### Rules
-
-1. Editors keep unknown keys in `cfg` and in triggers, so an older editor doesn't
-   delete newer settings, and open a newer `schema_version` read-only.
-2. The schema is the one definition: the component and the website render from
-   it, as the module's `build.rs` generates from it.
-3. The module writes the map only to migrate a schema, with
-   `Map::store_if_unchanged`, retrying on `false`, never `Map::store`.
-4. The website labels `high_priority` and `set_game_time` "LiveSplit (Windows)
-   only".
-5. Editors flag invalid triggers.
-6. Editors hide Everest-only fields while `everest` is off, but keep them. Later
-   candidates: a level set filter, and a golden-grabbed trigger from Everest's
-   chapter flags.
+- The module writes the map only to migrate a schema, with
+  `Map::store_if_unchanged`, retrying on `false`, never `Map::store`.
+- Later candidates: a level set filter, and a golden-grabbed trigger from
+  Everest's chapter flags.
 
 ## The module
 
