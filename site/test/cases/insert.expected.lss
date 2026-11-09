@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Run version="1.7.0">
+  <GameIcon />
+  <GameName>Celeste</GameName>
+  <CategoryName>Any%</CategoryName>
+  <Offset>00:00:00</Offset>
+  <AttemptCount>0</AttemptCount>
+  <AttemptHistory />
+  <Segments>
+    <Segment>
+      <Name>Only</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+  </Segments>
+  <AutoSplitterSettings>
+    <Version>1.0</Version>
+    <CustomSettings>
+      <Setting id="schema_version" type="i64">1</Setting>
+      <Setting id="cfg" type="map">
+        <Setting id="start" type="map">
+          <Setting id="kind" type="string" value="new_file" />
+        </Setting>
+        <Setting id="reset" type="map">
+          <Setting id="kind" type="string" value="new_file" />
+        </Setting>
+        <Setting id="timing_method" type="string" value="file" />
+      </Setting>
+    </CustomSettings>
+  </AutoSplitterSettings>
+</Run>

@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <None Update="LegacySplits/*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(RepoRoot)site/test/cases/*.expected.lss" Link="SiteCases/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="$(LiveSplitDir)Components/x64/asr_capi.dll" Link="Components/x64/asr_capi.dll" CopyToOutputDirectory="PreserveNewest" />
     <None Include="$(WasmPath)" Link="Components/celeste_autosplit.wasm" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(WasmPath)')" />
   </ItemGroup>

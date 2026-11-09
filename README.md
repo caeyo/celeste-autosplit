@@ -3,8 +3,8 @@
 An auto splitter for Celeste, for every LiveSplit host. It's a wasm module that
 attaches to the game, reads its memory, and publishes what it reads as debug
 variables, on vanilla Celeste 1.4.0.0 on Windows, Linux and macOS, and on
-Everest. It starts, splits and resets the timer as its settings say; the
-settings website is in the [plan](docs/plan.md).
+Everest. It starts, splits and resets the timer as its settings say, which
+the component and [the website](docs/how-it-works.md#the-website) edit.
 
 ## Folders
 
@@ -17,7 +17,7 @@ settings website is in the [plan](docs/plan.md).
 | [`traces/`](traces/) | The game's values, update by update, while a TAS plays, the TAS files, and the scenarios. |
 | [`tools/trace-recorder/`](tools/trace-recorder/) | The Everest mod and the script that record the traces. C#. |
 | [`schema/`](schema/) | `settings-schema.json`, the schema of the settings, which the wasm module's build reads. |
-| [`site/`](site/) | A stub of the planned settings website, deployed to GitHub Pages. |
+| [`site/`](site/) | The settings website, deployed to GitHub Pages, and its checks. |
 | [`docs/`](docs/) | How it all works, and how to maintain it. |
 | [`update.xml`](update.xml) | LiveSplit's update manifest for the component, empty until the first release. |
 
@@ -37,7 +37,9 @@ installs the pinned Rust on first use.
 | `(cd harness && cargo test)` | the harness's test, that livesplit-core reads the migrated settings back the same |
 | `dotnet build tools/probe -c Release` | the probe, in `tools/probe/bin/Release/net45/` |
 | `dotnet build tools/trace-recorder` | the trace recorder |
+| `dotnet publish site/legacy-import -c Release` | the site's legacy import, for the browser, in `site/legacy/` |
 | `node site/serve.mjs` | serves the site at http://localhost:8000 |
+| `site/test/run.sh` | the site's checks, in a pinned Chrome |
 
 The wasm module is built from inside `autosplitter/`, because cargo reads its
 wasm target from `autosplitter/.cargo/config.toml` only there. The component's

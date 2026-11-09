@@ -5,11 +5,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Celeste Auto Splitter Settings</title>
   <link rel="stylesheet" href="style.css">
-  <script src="app.js" defer></script>
+  <script src="app.js" type="module"></script>
 </head>
 <body>
   <main>
     <h1>Celeste Auto Splitter Settings</h1>
+    <p>Edit the auto splitter's settings in your splits file. The file stays in your browser and is never uploaded.</p>
+
+    <p class="notice"><strong>Close your splits in your LiveSplit host first</strong>, or the host overwrites the edit when it saves.</p>
+
+    <div class="toolbar">
+      <label for="file">Open a <code>.lss</code> file</label>
+      <input id="file" type="file" accept=".lss">
+      <p id="status" class="problem" hidden></p>
+    </div>
+
+    <section id="legacy" hidden>
+      <p>These splits have settings from the old LiveSplit.Celeste component. Importing converts them to this auto splitter's settings, the same way the LiveSplit component does. It loads about 2 MB once, and then runs in your browser.</p>
+      <button id="import" type="button">Import the legacy settings</button>
+    </section>
+
+    <section id="editor" hidden>
+      <p id="warnings" class="problem" hidden></p>
+      <div id="flags" class="row"></div>
+      <div id="presets" class="row"></div>
+      <div id="settings"></div>
+      <div id="triggers"></div>
+      <hr>
+      <h2>Segments</h2>
+      <div id="segments"></div>
+      <datalist id="chapters"></datalist>
+      <button id="download" type="button">Download the edited <code>.lss</code></button>
+    </section>
+
+    <section>
+      <h2>Getting the auto splitter</h2>
+      <p>LiveSplit, and livesplit-core hosts that read the auto splitter list, install it for you. For the others, download
+        <a href="https://github.com/caeyo/celeste-autosplit/releases/latest/download/celeste_autosplit.wasm">celeste_autosplit.wasm</a>, then:</p>
+      <ol>
+        <li>AlexKnauth's livesplit-one-druid: choose the file in its auto splitter settings.</li>
+        <li>CryZe's older desktop and Druid apps: put the path to the file in their config file.</li>
+      </ol>
+      <p class="hint">CryZe's newer desktop app reads the list.</p>
+    </section>
   </main>
 </body>
 </html>

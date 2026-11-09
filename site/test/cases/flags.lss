@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Run version="1.7.0">
+  <GameIcon />
+  <GameName>Celeste</GameName>
+  <CategoryName>Any%</CategoryName>
+  <Offset>00:00:00</Offset>
+  <AttemptCount>0</AttemptCount>
+  <AttemptHistory />
+  <Segments>
+    <Segment>
+      <Name>Bad room</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>Bad checkpoint</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>Sid</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>Fine</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+  </Segments>
+  <AutoSplitterSettings>
+    <Version>1.0</Version>
+    <CustomSettings>
+      <Setting id="schema_version" type="i64">1</Setting>
+      <Setting id="cfg" type="map">
+        <Setting id="timing_method" type="string" value="nonsense" />
+        <Setting id="start" type="map">
+          <Setting id="kind" type="string" value="unknown" />
+          <Setting id="raw" type="string" value="Bogus,x" />
+        </Setting>
+        <Setting id="splits" type="list">
+          <Setting type="map">
+            <Setting id="kind" type="string" value="room_enter" />
+          </Setting>
+          <Setting type="map">
+            <Setting id="kind" type="string" value="checkpoint" />
+            <Setting id="chapter" type="i64">0</Setting>
+            <Setting id="checkpoint" type="i64">1</Setting>
+          </Setting>
+          <Setting type="map">
+            <Setting id="kind" type="string" value="chapter_complete" />
+            <Setting id="chapter" type="i64">1</Setting>
+            <Setting id="sid" type="i64">5</Setting>
+          </Setting>
+          <Setting type="map">
+            <Setting id="kind" type="string" value="chapter_complete" />
+            <Setting id="chapter" type="i64">1</Setting>
+          </Setting>
+        </Setting>
+      </Setting>
+    </CustomSettings>
+  </AutoSplitterSettings>
+</Run>

@@ -11,3 +11,6 @@ site/settings-schema.json
 tools/trace-recorder/.deps/
 
 .claude/
+
+site/legacy/
+site/test/.deps/

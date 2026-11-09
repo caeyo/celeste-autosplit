@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <CompressionEnabled>false</CompressionEnabled>
+    <PublishDir>../legacy/</PublishDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../component/CelesteAutosplit/LegacyMigration.cs" Link="LegacyMigration.cs" />
+  </ItemGroup>
+
+</Project>

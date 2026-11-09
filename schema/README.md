@@ -6,8 +6,8 @@ It's written by hand. The wasm module's build reads it, as
 [How it works](../docs/how-it-works.md#settings) describes, with what the
 settings mean. The component embeds it as the resource
 `CelesteAutosplit.settings-schema.json`, and renders its settings editor from
-it. The website's deploy and `site/serve.mjs` copy it next to `index.html`, for
-the website, which doesn't use it yet.
+it. The website's deploy and `site/serve.mjs` copy it next to `index.html`, and
+the website renders from it too.
 
 ## Format
 

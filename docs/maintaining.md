@@ -85,6 +85,7 @@ To add a root:
 - **Rust, .NET, asr, livesplit-core:** `rust-toolchain.toml`, `global.json`, the
   `rev` in `autosplitter/Cargo.toml`, and the one `rev` of both crates in
   `harness/Cargo.toml`.
+- **Chrome, for the site's checks:** `chrome_version` in `site/test/run.sh`.
 
 ## Recording a trace
 
@@ -195,6 +196,13 @@ entry, finds it present, and activates the component for any Celeste splits. Its
 settings are the editor, or a status if ASR couldn't run the module, and
 DebugView shows the log.
 
+## The site's checks
+
+`site/test/run.sh`, in Git Bash or on Linux, fetches the pinned
+chrome-headless-shell into `site/test/.deps/`, builds the legacy import, and runs
+the harness's site test, which opens no window. To try the site by hand, build the
+legacy import, then `node site/serve.mjs`.
+
 ## CI
 
 | Workflow | Runs |
@@ -202,7 +210,7 @@ DebugView shows the log.
 | `ci.yml` | clippy and fmt on both crates, failing on any warning; on Windows, builds the wasm module and the component, and runs the component's tests; on Linux, runs the harness's tests and builds the trace recorder. On changes to `autosplitter/`, `harness/`, `component/`, `schema/`, `tools/trace-recorder/`, `rust-toolchain.toml` or `global.json`. |
 | `live-check.yml` | on each vanilla flavour: the live check, the replay of every trace with its scenarios, then the dump. On changes to `autosplitter/`, `harness/`, `schema/`, `tools/probe/`, `traces/`, `rust-toolchain.toml` or `global.json`, and on dispatch. |
 | `release.yml` | on a `v*` tag: both of the above, then the release. |
-| `site.yml` | on pushes to `master` that change `site/` or `schema/`, and on dispatch: deploys `site/`, with the schema, to GitHub Pages. |
+| `site.yml` | on pull requests and pushes to `master` that change `site/`, `schema/`, `harness/`, `LegacyMigration.cs`, `LegacySplits/`, the trigger table or the toolchains, and on dispatch: builds the site's legacy import and runs its checks in a pinned Chrome. Pushes to `master` and dispatch then deploy `site/`, with the schema and the legacy import, to GitHub Pages. |
 
 A change to Markdown files alone runs no workflow. In the Live check:
 
@@ -234,7 +242,9 @@ A change to Markdown files alone runs no workflow. In the Live check:
   the game's runtime: on Linux and macOS, the bundled Mono, which only has the
   4.5 profile. `Celeste.exe` is x86-only, so on Windows the probe is 32-bit too.
   Mono ignores the flag and runs 64-bit.
-- The site is plain HTML, CSS and JavaScript, with no build step. `site.yml` and
+- The site is plain HTML, CSS and JavaScript, with no bundler. Its one build step
+  is `dotnet publish site/legacy-import -c Release`, which compiles the legacy
+  import for the browser into the gitignored `site/legacy/`. `site.yml` and
   `serve.mjs` copy the schema next to `index.html`, where the copy is gitignored.
   The repository's Pages source has to be GitHub Actions.
 - `.gitattributes` keeps LF endings for shell scripts, which bash fails on with

@@ -1,10 +1,9 @@
 # Plan
 
-What's left is the website and the list entry, written before the code. What
-is built, the settings map, how the module reads it, splitting, the migration
-from the legacy component and the component, is in
-[How it works](how-it-works.md). Check each part against the code before
-building it.
+What's left is the list entry, written before the code. What is built, the
+settings map, how the module reads it, splitting, the migration from the legacy
+component, the component and the website, is in [How it works](how-it-works.md).
+Check each part against the code before building it.
 
 ## The design
 
@@ -54,26 +53,6 @@ The settings map, how the module reads it, and the triggers are in
 
 It registers title widgets only, plain text saying where the website is, with
 a short URL. On Windows they're never shown.
-
-## The website
-
-- Static, on GitHub Pages: the `.lss` is edited in the browser, never uploaded.
-- It opens a `.lss`, renders `<AutoSplitterSettings>/<CustomSettings>` from the
-  schema, writes the map back in ASR's exact format, with `schema_version`,
-  following the rules above, and downloads the `.lss` with only
-  `<AutoSplitterSettings>` replaced.
-- It lays the settings out as [the component's editor](how-it-works.md#the-settings-editor)
-  does, with one trigger per segment of the `.lss`.
-- It tells users to close the splits in their host first, or the host
-  overwrites the edit.
-- It imports legacy settings with [the component's mapping](how-it-works.md#migration-from-livesplitceleste),
-  compiling the same source file, for runners taking old Windows `.lss` files to
-  other hosts, since livesplit-core reads only `CustomSettings`.
-- It links the latest `celeste_autosplit.wasm`, with steps for hosts that don't
-  read the list: AlexKnauth's livesplit-one-druid, which takes a path and
-  renders title, bool, choice and file-select widgets, and CryZe's older desktop
-  and Druid apps, which take a path in a config file. CryZe's newer, private
-  desktop app reads the list.
 
 ## Distribution
 

@@ -141,6 +141,8 @@ auto splitter's output. It's an object with these keys:
   and the `game_time` in ticks of 100 ns, as the trace's times are, or `null`
   for none, as for every reset. Frame 0 also holds what happens while the auto
   splitter attaches.
+- `invalid`, optional, the triggers the module must log as invalid, in order,
+  as `start`, `reset` or `splits[i]`.
 
 All of `prologue`'s start a new file and split on completing chapter 0, unless
 the table says otherwise:
@@ -156,6 +158,7 @@ the table says otherwise:
 | `invalid-kind` | `kind: "Chapter_Complete"`, a kind that differs only in case, makes the split manual. |
 | `invalid-reset` | A `reset` of `chapter_exit` with `chapter: "0"`, a string, is manual, so the run the split ends doesn't reset on returning to the map, in frame 1974. |
 | `invalid-chapter` | `chapter_enter` with `chapter: -1`, which isn't a chapter, makes the split manual, so it doesn't split on returning to the map, in frame 1974. |
+| `triggers`, `triggers-everest` | Forty-three triggers, valid and invalid, that the module reads with `everest` off and on. The `invalid` list is what the harness checks the module's log against, and what [the website](../docs/how-it-works.md#what-the-tests-prove) checks its own copy of those rules against. |
 | `newer` | `schema_version` 2 neither starts nor splits. |
 | `sid-everest-off` | A `sid` of chapter 1, `Celeste/1-ForsakenCity`, with `everest` off, is ignored, so the split is any chapter's, in frame 1942. |
 | `sid-without-everest` | A `sid` of chapter 0, `Celeste/0-Intro`, with `everest` on, doesn't split without Everest. |

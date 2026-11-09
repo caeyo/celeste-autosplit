@@ -1,0 +1,60 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<Run version="1.7.0">
+  <GameIcon />
+  <GameName>Celeste</GameName>
+  <CategoryName>Any%</CategoryName>
+  <Offset>00:00:00</Offset>
+  <AttemptCount>0</AttemptCount>
+  <AttemptHistory />
+  <Segments>
+    <Segment>
+      <Name>Prologué &lt;1&gt;</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+    <Segment>
+      <Name>City</Name>
+      <Icon />
+      <SplitTimes>
+        <SplitTime name="Personal Best" />
+      </SplitTimes>
+      <BestSegmentTime />
+      <SegmentHistory />
+    </Segment>
+  </Segments>
+  <AutoSplitterSettings>
+    <Version>1.0</Version>
+    <ScriptPath>C:\celeste.wasm</ScriptPath>
+    <CustomSettings>
+      <Setting id="schema_version" type="i64">1</Setting>
+      <Setting id="cfg" type="map">
+        <Setting id="future_key" type="string" value="keep me" />
+        <Setting id="start" type="map">
+          <Setting id="kind" type="string" value="chapter_enter" />
+          <Setting id="chapter" type="i64">3</Setting>
+          <Setting id="sid" type="string" value="Celeste/3-CelestialResort" />
+          <Setting id="mystery" type="bool">True</Setting>
+        </Setting>
+        <Setting id="splits" type="list">
+          <Setting type="map">
+            <Setting id="kind" type="string" value="heart" />
+          </Setting>
+          <Setting type="map">
+            <Setting id="kind" type="string" value="manual" />
+          </Setting>
+          <Setting type="map">
+            <Setting id="kind" type="string" value="room_enter" />
+            <Setting id="room" type="string" value="past&amp;end" />
+          </Setting>
+        </Setting>
+      </Setting>
+      <Setting id="legacy" type="map">
+        <Setting id="AutoReset" type="string" value="True" />
+      </Setting>
+    </CustomSettings>
+  </AutoSplitterSettings>
+</Run>

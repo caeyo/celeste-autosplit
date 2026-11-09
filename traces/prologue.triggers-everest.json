@@ -1,0 +1,63 @@
+{
+  "settings": {
+    "schema_version": 1,
+    "cfg": {
+      "everest": true,
+      "splits": [
+        { "kind": "manual" },
+        { "kind": "new_file", "mystery": true },
+        { "kind": "chapter_start", "chapter": 200 },
+        { "kind": "chapter_enter" },
+        { "kind": "chapter_exit", "chapter": 0, "side": 2 },
+        { "kind": "chapter_complete", "timing": "chapter_exit" },
+        { "kind": "checkpoint", "chapter": 10, "checkpoint": 8 },
+        { "kind": "checkpoint", "chapter": 1, "checkpoint": 2, "side": 1 },
+        { "kind": "heart", "chapter": 9 },
+        { "kind": "cassette" },
+        { "kind": "room_enter", "room": "a-00" },
+        { "kind": "room_exit", "room": "" },
+        { "kind": "unknown", "raw": "Foo" },
+        { "kind": "manual", "chapter": "ignored" },
+        { "kind": "chapter_start", "sid": 5 },
+        { "kind": "chapter_start", "sid": "Celeste/1-ForsakenCity" },
+        { "kind": "chapter_start", "chapter": 1, "side": 2, "sid": "x" },
+        "not a map",
+        7,
+        [],
+        {},
+        { "kind": 5 },
+        { "kind": "nope" },
+        { "kind": "room_enter" },
+        { "kind": "unknown" },
+        { "kind": "checkpoint", "chapter": 1 },
+        { "kind": "checkpoint", "checkpoint": 1 },
+        { "kind": "chapter_start", "chapter": "1" },
+        { "kind": "chapter_start", "chapter": -1 },
+        { "kind": "chapter_start", "chapter": true },
+        { "kind": "heart", "side": 3 },
+        { "kind": "heart", "side": "1" },
+        { "kind": "chapter_complete", "timing": "soon" },
+        { "kind": "chapter_complete", "timing": 1 },
+        { "kind": "checkpoint", "chapter": 1, "checkpoint": 3 },
+        { "kind": "checkpoint", "chapter": 1, "checkpoint": 0 },
+        { "kind": "checkpoint", "chapter": 1, "checkpoint": -1 },
+        { "kind": "checkpoint", "chapter": 0, "checkpoint": 1 },
+        { "kind": "checkpoint", "chapter": 200, "checkpoint": 1 },
+        { "kind": "checkpoint", "chapter": 1, "checkpoint": "2" },
+        { "kind": "room_enter", "room": 5 },
+        { "kind": "room_enter", "chapter": -1, "room": "a" },
+        { "kind": "unknown", "raw": 5 }
+      ]
+    }
+  },
+  "events": [],
+  "invalid": [
+    "splits[14]",
+    "splits[17]", "splits[18]", "splits[19]", "splits[20]", "splits[21]",
+    "splits[22]", "splits[23]", "splits[24]", "splits[25]", "splits[26]",
+    "splits[27]", "splits[28]", "splits[29]", "splits[30]", "splits[31]",
+    "splits[32]", "splits[33]", "splits[34]", "splits[35]", "splits[36]",
+    "splits[37]", "splits[38]", "splits[39]", "splits[40]", "splits[41]",
+    "splits[42]"
+  ]
+}
