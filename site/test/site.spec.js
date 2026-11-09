@@ -157,6 +157,7 @@ for (const [name, content, message] of [
     await choosePath(page, path);
     await expect(control(page, "status")).toContainText(message);
     await expect(control(page, "editor")).toBeHidden();
+    await expect(control(page, "download")).toBeHidden();
   });
 }
 
@@ -169,6 +170,7 @@ test("a newer schema_version is read-only", async ({ page }) => {
     elements => elements.filter(element => !element.disabled).map(element => element.id),
   );
   expect(enabled).toEqual([]);
+  await expect(control(page, "download")).toBeDisabled();
 });
 
 test("what the module reads as invalid is flagged", async ({ page }) => {

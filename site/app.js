@@ -113,6 +113,7 @@ async function openFile() {
   fileName = file.name;
   showStatus(null);
   page("editor").hidden = true;
+  page("download").hidden = true;
   page("legacy").hidden = true;
   try {
     lss = openLss(new Uint8Array(await file.arrayBuffer()));
@@ -189,6 +190,7 @@ function startEditing(settings, alreadyDirty = false) {
 
   renderAll();
   page("editor").hidden = false;
+  page("download").hidden = false;
 }
 
 function newRow(id, label, description, setting, index) {

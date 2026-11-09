@@ -156,3 +156,11 @@ input:disabled {
   display: block;
   margin: 4px 0 8px;
 }
+
+#download {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--background);
+  font-weight: 600;
+  padding: 8px 18px;
+}
