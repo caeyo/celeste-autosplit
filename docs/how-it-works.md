@@ -771,12 +771,15 @@ opened through a real file chooser, its controls are driven as a user would, and
 the bytes of what it downloads are read from a real download:
 
 - Each edit case in `site/test/cases/` must come out byte for byte as its
-  hand-written `.expected.lss`: UTF-8 with and without a BOM, CRLF and LF, UTF-16,
-  a file with no line breaks, a missing element, and a comment and a CDATA section
-  holding the tag's text. Unknown keys, an entry past the last segment, a hidden
-  `sid` and the file's other bytes all come through. An unedited download equals
-  the file opened, and choosing the same path again, after the file changed on
-  disk, reopens it. Character references in kept values survive a write.
+  hand-written `.expected.lss`: UTF-8 with and without a BOM, CRLF and LF, UTF-16
+  in both byte orders, a file with no line breaks, a missing element, and a
+  comment, a CDATA section and an attribute holding text that looks like markup.
+  Unknown keys, also through a change of kind, an entry past the last segment, a
+  hidden `sid` and the file's other bytes all come through. An unedited download
+  equals the file opened, even with settings not as ASR writes them, and choosing
+  the same path again, after the file changed on disk, reopens it. Character
+  references in kept values survive a write, and a value that doesn't parse can
+  be cleared.
 - Importing runs the published browser build of `LegacyMigration.cs` on every
   `.lss` in [`legacy-splits/`](../legacy-splits/), and the settings in the download
   must equal its hand-written `.expected.xml`, ignoring only the whitespace between
@@ -789,12 +792,15 @@ the bytes of what it downloads are read from a real download:
   its log with the list; the site's tests run `problem` in the page on the same
   table and compare with the same list. The table is the only link between them,
   so a change to either that disagrees with it fails its check.
+- A preset rewrites the fields its `trigger_fields` name. The two Windows-only
+  settings say "LiveSplit (Windows) only". A file that isn't a `<Run>`, or declares
+  another encoding, is refused.
 - A newer `schema_version` says so and disables every control, and invalid triggers
   say what the module would read as invalid.
 
 A pass rests on the hand-written files, Playwright's driving of the browser, and
-that Chromium's `DOMParser`, on Windows or Linux. How a control looks, and focus
-and keyboard use, are left to a hand check.
+that Chromium's `DOMParser`, on Windows or Linux. How a control looks, which kinds
+it offers, and focus and keyboard use, are left to a hand check.
 
 ### What they don't prove
 
@@ -837,14 +843,12 @@ and keyboard use, are left to a hand check.
 - Splitting in LiveSplit: the component's tests don't run the game.
 - That a migrated list splits as legacy did: the mapping's expectations are
   hand-written from the audit of legacy's source, and no test runs legacy.
-- That a host reads what the site writes. The site's hand-written edit cases no
-  longer pass through livesplit-core or ASR automatically: they are only compared
-  with the hand-written `.expected.lss` byte for byte. An import's settings do reach
-  both, but only through the `.expected.xml` it must equal, which their own tests
-  read. `site/test/cases/` belongs to the site alone.
-- A real save dialog and a real host, the site on GitHub Pages, and the hosts that
-  don't read the list: a real download is caught and read, but nothing goes through
-  a browser's save dialog or opens the file in a host.
+- That a host reads what the site writes. The site's edit cases are only compared
+  with the hand-written `.expected.lss`, byte for byte. An import's settings reach
+  ASR and livesplit-core only through the `.expected.xml` it must equal, which
+  their own tests read.
+- A browser's save dialog, the site on GitHub Pages, and the hosts that don't read
+  the list.
 
 ## Known gaps
 

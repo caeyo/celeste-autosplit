@@ -47,6 +47,7 @@
             <Setting id="kind" type="string" value="chapter_complete" />
             <Setting id="chapter" type="i64">9</Setting>
             <Setting id="timing" type="string" value="chapter_exit" />
+            <Setting id="mystery" type="bool">True</Setting>
           </Setting>
           <Setting type="map">
             <Setting id="kind" type="string" value="checkpoint" />

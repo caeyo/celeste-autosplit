@@ -8,10 +8,10 @@
   <AttemptHistory />
   <Segments>
     <Segment>
-      <Name><![CDATA[Only <AutoSplitterSettings>]]></Name>
+      <Name><![CDATA[Only <AutoSplitterSettings> </Segment>]]></Name>
       <Icon />
       <SplitTimes>
-        <SplitTime name="Personal Best" />
+        <SplitTime name="Personal > Best" />
       </SplitTimes>
       <BestSegmentTime />
       <SegmentHistory />

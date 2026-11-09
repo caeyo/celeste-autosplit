@@ -42,6 +42,8 @@
         <Setting id="splits" type="list">
           <Setting type="map">
             <Setting id="kind" type="string" value="heart" />
+            <Setting id="room" type="string" value="old" />
+            <Setting id="mystery" type="bool">True</Setting>
           </Setting>
           <Setting type="map">
             <Setting id="kind" type="string" value="manual" />

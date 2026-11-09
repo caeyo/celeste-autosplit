@@ -137,6 +137,7 @@ function showStatus(message) {
 async function importLegacy() {
   const button = page("import");
   button.disabled = true;
+  showStatus(null);
   try {
     const { migrate } = await import("./legacy.js");
     const xml = new XMLSerializer().serializeToString(settingsElement);
@@ -538,7 +539,7 @@ function chapterChanged(row, field, input) {
 function fieldChanged(row, field, source, newValue) {
   const existing = find(triggerOf(row), field.name);
   const before = existing === null ? null : value(existing);
-  if (before === newValue) {
+  if (before === newValue && (existing === null || before !== null)) {
     renderRow(row, source);
     return;
   }

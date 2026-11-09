@@ -15,8 +15,13 @@ async function choosePath(page, path) {
   await (await chooser).setFiles(path);
 }
 
-async function openEditor(page, path) {
+async function openPage(page) {
   await page.goto("/");
+  await expect(control(page, "preset.0")).toBeAttached();
+}
+
+async function openEditor(page, path) {
+  await openPage(page);
   await choosePath(page, path);
   await expect(control(page, "editor")).toBeVisible();
 }
@@ -70,8 +75,9 @@ for (const [name, edit] of Object.entries(editCases)) {
   });
 }
 
-test("an unedited download equals the file opened", async ({ page }) => {
-  const path = join(cases, "edit.lss");
+test("an unedited download equals the file opened", async ({ page }, testInfo) => {
+  const path = testInfo.outputPath("unedited.lss");
+  writeFileSync(path, '<Run><AutoSplitterSettings><!-- kept --><CustomSettings/></AutoSplitterSettings></Run>');
   await openEditor(page, path);
   expect((await download(page)).equals(readFileSync(path))).toBe(true);
 });
@@ -108,6 +114,51 @@ test("character references in kept values survive a write", async ({ page }, tes
   }, output);
   expect(read).toEqual({ attribute: "a\nb\tc\rd", text: "a\rb" });
 });
+
+test("a big-endian UTF-16 file keeps its byte order", async ({ page }, testInfo) => {
+  const path = testInfo.outputPath("big-endian.lss");
+  writeFileSync(path, readFileSync(join(cases, "utf16.lss")).swap16());
+  await openEditor(page, path);
+  await editCases.utf16(page);
+  expect((await download(page)).equals(readFileSync(join(cases, "utf16.expected.lss")).swap16())).toBe(true);
+});
+
+test("a preset rewrites the fields its trigger_fields name", async ({ page }, testInfo) => {
+  const path = testInfo.outputPath("preset.lss");
+  writeFileSync(path, '<Run><Segments><Segment><Name>A</Name></Segment></Segments><AutoSplitterSettings><CustomSettings><Setting id="cfg" type="map"><Setting id="splits" type="list"><Setting type="map"><Setting id="kind" type="string" value="chapter_complete" /><Setting id="timing" type="string" value="chapter_exit" /></Setting></Setting></Setting></CustomSettings></AutoSplitterSettings></Run>');
+  await openEditor(page, path);
+  await control(page, "preset.1").click();
+  expect((await download(page)).toString("utf8")).toContain('<Setting id="timing" type="string" value="chapter_complete" />');
+});
+
+test("a value that doesn't parse can be cleared", async ({ page }, testInfo) => {
+  const path = testInfo.outputPath("unparseable.lss");
+  writeFileSync(path, '<Run><AutoSplitterSettings><CustomSettings><Setting id="cfg" type="map"><Setting id="start" type="map"><Setting id="kind" type="string" value="chapter_enter" /><Setting id="chapter" type="i64">abc</Setting></Setting></Setting></CustomSettings></AutoSplitterSettings></Run>');
+  await openEditor(page, path);
+  await control(page, "start.field.chapter").fill("");
+  expect((await download(page)).toString("utf8")).not.toContain("abc");
+});
+
+test("the settings only LiveSplit on Windows reads say so", async ({ page }) => {
+  await openPage(page);
+  await expect(control(page, "setting.set_game_time").locator("..")).toContainText("LiveSplit (Windows) only");
+  await expect(control(page, "setting.high_priority").locator("..")).toContainText("LiveSplit (Windows) only");
+  await expect(control(page, "setting.everest").locator("..")).not.toContainText("LiveSplit (Windows) only");
+});
+
+for (const [name, content, message] of [
+  ["root", "<Splits />", "isn't a LiveSplit splits file"],
+  ["encoding", '<?xml version="1.0" encoding="windows-1252"?><Run />', "encoding windows-1252"],
+]) {
+  test(`a file with the wrong ${name} is refused`, async ({ page }, testInfo) => {
+    const path = testInfo.outputPath(`${name}.lss`);
+    writeFileSync(path, content);
+    await openPage(page);
+    await choosePath(page, path);
+    await expect(control(page, "status")).toContainText(message);
+    await expect(control(page, "editor")).toBeHidden();
+  });
+}
 
 test("a newer schema_version is read-only", async ({ page }) => {
   await openEditor(page, join(cases, "newer.lss"));
@@ -206,7 +257,7 @@ test("the legacy files are there", () => {
 
 for (const name of legacyNames) {
   test(`importing ${name}.lss gives its expected settings`, async ({ page }) => {
-    await page.goto("/");
+    await openPage(page);
     await choosePath(page, join(legacySplits, `${name}.lss`));
     await expect(control(page, "legacy")).toBeVisible();
     await control(page, "import").click();
