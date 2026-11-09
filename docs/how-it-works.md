@@ -559,12 +559,13 @@ by its tooltip.
   selected. The checks are the module's, as
   [Reading them](#reading-them) describes.
 - **Everest-only fields** are hidden while `everest` is off, and kept.
-- A `schema_version` above the schema's opens read-only and is never written.
+- A `schema_version` above the schema's opens read-only and is never written, and
+  nothing in it is flagged, since the module ignores it.
 - Dropdowns ignore the mouse wheel unless they're open, and pass it to the dialog,
   so scrolling the list can't change a setting.
-- LiveSplit's splits editor calls `GetSettingsControl` just to enable its Settings
-  button, so the triggers are only built once the editor gets a window handle, and
-  kept while the segments' names stay the same. Each trigger's windows take time
+- The triggers are only built once the editor gets a window handle, since
+  LiveSplit [also calls `GetSettingsControl` without showing it](livesplit-notes.md#running-the-component),
+  and kept while the segments' names stay the same. Each trigger's windows take time
   to create, so a long run's dialog is slow to open: on the development machine,
   4 s for 38 segments, and 17 s for a community run of 95 with fields on every
   trigger, driven by UI automation.

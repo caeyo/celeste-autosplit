@@ -102,13 +102,14 @@ public sealed class EditorTests : IDisposable
         IComponent component = Create();
         string newer = Header
             + "<Setting id=\"schema_version\" type=\"i64\">99</Setting>"
-            + "<Setting id=\"cfg\" type=\"map\"><Setting id=\"everest\" type=\"bool\">True</Setting></Setting>"
+            + "<Setting id=\"cfg\" type=\"map\"><Setting id=\"timing_method\" type=\"string\" value=\"future\" /><Setting id=\"everest\" type=\"bool\">True</Setting></Setting>"
             + Footer;
         SetSettings(component, newer);
 
         Control editor = Open(component);
 
         Assert.Contains("newer", OnUi(() => Find<Label>(editor, "warnings").Text));
+        Assert.DoesNotContain("isn't valid", OnUi(() => Find<Label>(editor, "warnings").Text));
         Assert.False(OnUi(() => Find<CheckBox>(editor, "setting.everest").Enabled));
         Assert.False(OnUi(() => Find<Button>(editor, "preset.0").Parent.Enabled));
         Assert.False(OnUi(() => Find<ComboBox>(editor, "start.kind").Enabled));
@@ -137,7 +138,6 @@ public sealed class EditorTests : IDisposable
         Control editor = Open(component);
 
         Assert.Contains("wasn't recognised", Problem(editor, 0));
-        Assert.Contains("Bogus,x", Problem(editor, 0));
         Assert.Contains("has no room", Problem(editor, 1));
         Assert.Contains("invalid checkpoint", Problem(editor, 2));
         Assert.Contains("invalid side", Problem(editor, 3));

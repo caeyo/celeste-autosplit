@@ -24,8 +24,8 @@ internal sealed class SettingsEditor : UserControl
 
     private static readonly object Keep = new();
     private static readonly string[] TopLevelOrder = ["schema_version", "cfg"];
-    private static readonly string[] FlagSettings = ["set_game_time", "high_priority", "everest"];
-    private static readonly string[] TriggerSettings = ["reset", "start"];
+    private static readonly string[] FlagsFirst = ["set_game_time", "high_priority", "everest"];
+    private static readonly string[] TriggersFirst = ["reset", "start"];
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, string lParam);
@@ -138,9 +138,9 @@ internal sealed class SettingsEditor : UserControl
 
         FlowLayoutPanel flags = NewLine(FlowDirection.LeftToRight);
         flags.Margin = new Padding(0, 0, 0, RowGap);
-        foreach (string key in FlagSettings)
+        foreach (SchemaSetting setting in SettingsOfType("bool", FlagsFirst))
         {
-            flags.Controls.Add(NewCheckBox(schema.Setting(key)));
+            flags.Controls.Add(NewCheckBox(setting));
         }
 
         column.Controls.Add(flags);
@@ -167,10 +167,9 @@ internal sealed class SettingsEditor : UserControl
             column.Controls.Add(NewRadioButtons(setting));
         }
 
-        foreach (string key in TriggerSettings)
+        foreach (SchemaSetting setting in SettingsOfType("trigger", TriggersFirst))
         {
-            SchemaSetting setting = schema.Setting(key);
-            TriggerRow row = NewRow(key, setting.Label, setting.Description, setting, 0);
+            TriggerRow row = NewRow(setting.Key, setting.Label, setting.Description, setting, 0);
             rows.Add(row);
             column.Controls.Add(NewRule());
             column.Controls.Add(row.Panel);
@@ -185,6 +184,13 @@ internal sealed class SettingsEditor : UserControl
         });
         segments = NewLine(FlowDirection.TopDown);
         column.Controls.Add(segments);
+    }
+
+    private IEnumerable<SchemaSetting> SettingsOfType(string type, string[] first)
+    {
+        return schema.Settings
+            .Where(setting => setting.Type == type)
+            .OrderBy(setting => Array.IndexOf(first, setting.Key) is var index && index >= 0 ? index : first.Length);
     }
 
     private static FlowLayoutPanel NewLine(FlowDirection direction)
@@ -217,6 +223,7 @@ internal sealed class SettingsEditor : UserControl
             Name = name,
             ForeColor = color,
             AutoSize = true,
+            UseMnemonic = false,
             MaximumSize = new Size(ContentWidth, 0),
             Margin = new Padding(0, 0, 0, RowGap),
         };
@@ -349,6 +356,7 @@ internal sealed class SettingsEditor : UserControl
             Text = label,
             AutoSize = false,
             AutoEllipsis = true,
+            UseMnemonic = false,
             Size = new Size(ContentWidth - KindWidth - 3, RowHeight),
             TextAlign = ContentAlignment.MiddleLeft,
             Margin = new Padding(0),
@@ -375,6 +383,7 @@ internal sealed class SettingsEditor : UserControl
             {
                 Name = name,
                 AutoSize = true,
+                UseMnemonic = false,
                 MaximumSize = new Size(ContentWidth, 0),
             };
         }
@@ -433,12 +442,6 @@ internal sealed class SettingsEditor : UserControl
     {
         settings = read();
         map = settings["CustomSettings"];
-        if (map == null)
-        {
-            map = settings.OwnerDocument.CreateElement("CustomSettings");
-            settings.AppendChild(map);
-        }
-
         cfg = SettingsXml.FindMap(map, "cfg");
         readOnly = schema.IsNewer(map);
 
@@ -590,7 +593,7 @@ internal sealed class SettingsEditor : UserControl
 
     private string RowProblem(XmlElement trigger)
     {
-        if (trigger == null)
+        if (trigger == null || readOnly)
         {
             return null;
         }
@@ -603,8 +606,7 @@ internal sealed class SettingsEditor : UserControl
 
         if (KindName(trigger) == "unknown")
         {
-            string raw = SettingsXml.Value(SettingsXml.Find(trigger, "raw")) as string;
-            return $"This legacy split wasn't recognised, so it never fires: {raw}";
+            return "This legacy split wasn't recognised, so it never fires.";
         }
 
         return null;
@@ -633,10 +635,10 @@ internal sealed class SettingsEditor : UserControl
         var lines = new List<string>();
         if (readOnly)
         {
-            lines.Add("These settings were saved by a newer version of the autosplitter, so they are read-only here. Update the component to edit them.");
+            lines.Add("These settings were saved by a newer version of the autosplitter, so this version ignores them and they are read-only here. Update the component to use them.");
         }
 
-        foreach (SchemaSetting setting in settingInputs.Keys.Where(setting => setting.Values != null))
+        foreach (SchemaSetting setting in settingInputs.Keys.Where(setting => setting.Values != null && !readOnly))
         {
             XmlElement element = SettingsXml.Find(cfg, setting.Key);
             if (element != null && !setting.Values.Any(choice => Equals(choice.Value, SettingsXml.Value(element))))
@@ -916,13 +918,7 @@ internal sealed class SettingsEditor : UserControl
         }
 
         XmlElement trigger = EnsureTrigger(row);
-        SchemaTrigger known = schema.Trigger(KindName(trigger));
-        if (known == null)
-        {
-            return;
-        }
-
-        SettingsXml.Set(trigger, field.Name, value, TriggerOrder(known));
+        SettingsXml.Set(trigger, field.Name, value, TriggerOrder(schema.Trigger(KindName(trigger))));
         Commit();
         if (source is ComboBox changed)
         {
@@ -942,7 +938,8 @@ internal sealed class SettingsEditor : UserControl
             }
         });
 
-        bool IsStale(Choice choice) => choice.Value == Keep || (combo == row.Kind && schema.Trigger((string)choice.Value) == null);
+        bool IsStale(Choice choice) => choice.Value == Keep
+            || (combo == row.Kind && choice != combo.SelectedItem && schema.Trigger((string)choice.Value)?.Offer.Contains(row.Setting.Key) != true);
     }
 
     private bool TryParseChapter(ComboBox combo, out object value)
@@ -1028,7 +1025,7 @@ internal sealed class SettingsEditor : UserControl
 
         if (KindName(trigger) == null)
         {
-            SettingsXml.Set(trigger, "kind", row.IsSplit ? "manual" : DefaultKind(row.Setting), ["kind"]);
+            SettingsXml.Set(trigger, "kind", DefaultKind(row.Setting), ["kind"]);
         }
 
         return trigger;
@@ -1036,7 +1033,6 @@ internal sealed class SettingsEditor : UserControl
 
     private XmlElement EnsureSplits(int count)
     {
-        EnsureCfg();
         XmlElement list = SettingsXml.SetContainer(cfg, splitsSetting.Key, "list", cfgOrder);
         while (SettingsXml.Items(list).Count() < count)
         {
@@ -1061,7 +1057,6 @@ internal sealed class SettingsEditor : UserControl
         }
 
         write(settings);
-        cfg = SettingsXml.FindMap(map, "cfg");
         WithoutEvents(RenderWarnings);
     }
 }
