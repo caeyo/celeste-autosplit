@@ -651,7 +651,7 @@ only `CustomSettings`. [`site/legacy-import/`](../site/legacy-import/) is a smal
 `legacy.js` loads it only when importing: 16 files, 5.6 MB, 2.1 MB gzipped, from
 `legacy/wwwroot/_framework/`. Publishing with the default trimming keeps
 `LegacyMigration`'s `Enum.TryParse` and `Enum.ToString` working: the site's
-checks run it in the browser on every `.lss` in `LegacySplits/`. Its output
+tests run it in the browser on every `.lss` in `legacy-splits/`. Its output
 replaces the settings in the editor, and comes out as a normal download.
 
 ## The probe
@@ -765,35 +765,36 @@ in one tick, none showing a prompt.
 The harness's test, `cargo test`, reads the same XML through livesplit-core's
 `StoredAutoSplitterSettings` and gets it back.
 
-The site's checks, `site/test/run.sh`, run the real page in a pinned
-chrome-headless-shell, driving its controls, and post what it downloads to an
-ignored test in the harness, which also serves the page:
+The site's tests, `site/test/`, are [Playwright](https://playwright.dev/) on
+Node, in headless Chromium. `site/serve.mjs` serves the real page. Files are
+opened through a real file chooser, its controls are driven as a user would, and
+the bytes of what it downloads are read from a real download:
 
 - Each edit case in `site/test/cases/` must come out byte for byte as its
   hand-written `.expected.lss`: UTF-8 with and without a BOM, CRLF and LF, UTF-16,
   a file with no line breaks, a missing element, and a comment and a CDATA section
-  holding the tag's text. Those UTF-8 files livesplit-core can read then go through
-  its own `.lss` parser, and what it reads has to equal the expected file's
-  settings. Unknown keys, an entry past the last segment, a hidden `sid` and the
-  file's other bytes all come through. `dotnet test` also takes every
-  `.expected.lss` through the real ASR, which writes the same XML back.
-- Importing runs the browser's build of `LegacyMigration.cs` on every `.lss` in
-  `LegacySplits/`, and livesplit-core must read the download as its hand-written
-  `.expected.xml`, the files the component's tests use. So the browser build,
-  with XPath, `Enum.TryParse` and `Enum.ToString` after trimming, gives the
-  component's results.
+  holding the tag's text. Unknown keys, an entry past the last segment, a hidden
+  `sid` and the file's other bytes all come through. An unedited download equals
+  the file opened, and choosing the same path again, after the file changed on
+  disk, reopens it. Character references in kept values survive a write.
+- Importing runs the published browser build of `LegacyMigration.cs` on every
+  `.lss` in [`legacy-splits/`](../legacy-splits/), and the settings in the download
+  must equal its hand-written `.expected.xml`, ignoring only the whitespace between
+  tags. The component's tests and the harness's `cargo test` take those same files
+  through ASR and livesplit-core. So the browser build, with XPath, `Enum.TryParse`
+  and `Enum.ToString` after trimming, gives the component's results.
 - A table of 43 triggers, valid and invalid, is a scenario on `prologue`, once
   with `everest` off and once on, with a hand-written `invalid` list: the triggers
   the module logs as invalid. The Live check runs the real module and compares
-  its log with the list; the site's checks run `problem` on the same table and
-  compare with the same list. The table is the only link between them, so a
-  change to either that disagrees with it fails its check.
-- A newer `.lss` says so, disables every control and offers no download, and
-  invalid triggers say what the module would read as invalid.
+  its log with the list; the site's tests run `problem` in the page on the same
+  table and compare with the same list. The table is the only link between them,
+  so a change to either that disagrees with it fails its check.
+- A newer `schema_version` says so and disables every control, and invalid triggers
+  say what the module would read as invalid.
 
-A pass rests on the hand-written files and that browser's `DOMParser`, on Windows
-or Linux. How a control looks, focus and keyboard use, and a real download, are
-left to a hand check.
+A pass rests on the hand-written files, Playwright's driving of the browser, and
+that Chromium's `DOMParser`, on Windows or Linux. How a control looks, and focus
+and keyboard use, are left to a hand check.
 
 ### What they don't prove
 
@@ -836,8 +837,14 @@ left to a hand check.
 - Splitting in LiveSplit: the component's tests don't run the game.
 - That a migrated list splits as legacy did: the mapping's expectations are
   hand-written from the audit of legacy's source, and no test runs legacy.
-- The site's download in a real browser, on GitHub Pages, and the hosts that don't
-  read the list: the site's checks read the file before the browser would save it.
+- That a host reads what the site writes. The site's hand-written edit cases no
+  longer pass through livesplit-core or ASR automatically: they are only compared
+  with the hand-written `.expected.lss` byte for byte. An import's settings do reach
+  both, but only through the `.expected.xml` it must equal, which their own tests
+  read. `site/test/cases/` belongs to the site alone.
+- A real save dialog and a real host, the site on GitHub Pages, and the hosts that
+  don't read the list: a real download is caught and read, but nothing goes through
+  a browser's save dialog or opens the file in a host.
 
 ## Known gaps
 

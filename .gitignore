@@ -13,4 +13,6 @@ tools/trace-recorder/.deps/
 .claude/
 
 site/legacy/
-site/test/.deps/
+site/test/node_modules/
+site/test/.browsers/
+site/test/test-results/

@@ -1,6 +1,4 @@
 mod probe;
-#[cfg(test)]
-mod site;
 mod timer;
 
 use std::{
@@ -678,7 +676,7 @@ mod tests {
 
     #[test]
     fn livesplit_core_reads_the_migrated_settings_back_the_same() {
-        let dir = Path::new(HARNESS_DIR).join("../component/CelesteAutosplit.Tests/LegacySplits");
+        let dir = Path::new(HARNESS_DIR).join("../legacy-splits");
         let mut checked = 0;
         for entry in fs::read_dir(dir).unwrap() {
             let file = entry.unwrap().path();

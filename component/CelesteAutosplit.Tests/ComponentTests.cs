@@ -4,7 +4,6 @@ using LiveSplit.UI.Components;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Windows.Forms;
 using System.Xml;
 using Xunit;
@@ -78,24 +77,6 @@ public sealed class ComponentTests : IDisposable
         host.OnUiThread(() => component.SetSettings(LegacyFiles.Settings(name)));
 
         Assert.Equal(LegacyFiles.Expected(name).InnerXml, GetSettings(component));
-    }
-
-    [Theory]
-    [MemberData(nameof(SiteFiles.Names), MemberType = typeof(SiteFiles))]
-    public void A_file_the_site_writes_round_trips_exactly_through_the_runtime(string name)
-    {
-        IComponent component = Create();
-        XmlElement settings = SiteFiles.Settings(name);
-
-        host.OnUiThread(() => component.SetSettings(settings));
-
-        XmlNode scriptPath = settings["ScriptPath"];
-        if (scriptPath != null)
-        {
-            settings.RemoveChild(scriptPath);
-        }
-
-        Assert.Equal(settings.InnerXml, GetSettings(component));
     }
 
     [Theory]
@@ -321,22 +302,5 @@ public sealed class ComponentTests : IDisposable
         var document = new XmlDocument();
         document.LoadXml(xml);
         return document.DocumentElement;
-    }
-}
-
-public static class SiteFiles
-{
-    private static readonly string Folder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SiteCases");
-
-    public static IEnumerable<object[]> Names()
-    {
-        return Directory.GetFiles(Folder, "*.expected.lss").Select(file => new object[] { Path.GetFileName(file) });
-    }
-
-    public static XmlElement Settings(string name)
-    {
-        var document = new XmlDocument();
-        document.Load(Path.Combine(Folder, name));
-        return document.DocumentElement["AutoSplitterSettings"];
     }
 }

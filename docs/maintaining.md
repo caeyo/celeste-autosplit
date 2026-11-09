@@ -85,7 +85,10 @@ To add a root:
 - **Rust, .NET, asr, livesplit-core:** `rust-toolchain.toml`, `global.json`, the
   `rev` in `autosplitter/Cargo.toml`, and the one `rev` of both crates in
   `harness/Cargo.toml`.
-- **Chrome, for the site's checks:** `chrome_version` in `site/test/run.sh`.
+- **Playwright, for the site's tests:** `@playwright/test` in `site/test/package.json`,
+  an exact version, and `site/test/package-lock.json`, with `npm install` there. Its
+  browser comes with it.
+- **Node, for the site's tests:** `node-version` in `site.yml`.
 
 ## Recording a trace
 
@@ -198,19 +201,21 @@ DebugView shows the log.
 
 ## The site's checks
 
-`site/test/run.sh`, in Git Bash or on Linux, fetches the pinned
-chrome-headless-shell into `site/test/.deps/`, builds the legacy import, and runs
-the harness's site test, which opens no window. To try the site by hand, build the
+`site/test/run.sh`, in Git Bash or on Linux, needs Node 26 and the .NET SDK. It
+installs the Playwright that `site/test/package-lock.json` pins and its headless
+Chromium into `site/test/.browsers/`, builds the legacy import, and runs the tests,
+with `site/serve.mjs` serving the page, opening no window. To run one test, pass its
+name: `site/test/run.sh -g "byte for byte"`. To try the site by hand, build the
 legacy import, then `node site/serve.mjs`.
 
 ## CI
 
 | Workflow | Runs |
 |---|---|
-| `ci.yml` | clippy and fmt on both crates, failing on any warning; on Windows, builds the wasm module and the component, and runs the component's tests; on Linux, runs the harness's tests and builds the trace recorder. On changes to `autosplitter/`, `harness/`, `component/`, `schema/`, `site/test/cases/`, `tools/trace-recorder/`, `rust-toolchain.toml` or `global.json`. |
+| `ci.yml` | clippy and fmt on both crates, failing on any warning; on Windows, builds the wasm module and the component, and runs the component's tests; on Linux, runs the harness's tests and builds the trace recorder. On changes to `autosplitter/`, `harness/`, `component/`, `schema/`, `legacy-splits/`, `tools/trace-recorder/`, `rust-toolchain.toml` or `global.json`. |
 | `live-check.yml` | on each vanilla flavour: the live check, the replay of every trace with its scenarios, then the dump. On changes to `autosplitter/`, `harness/`, `schema/`, `tools/probe/`, `traces/`, `rust-toolchain.toml` or `global.json`, and on dispatch. |
 | `release.yml` | on a `v*` tag: both of the above, then the release. |
-| `site.yml` | on pull requests and pushes to `master` that change `site/`, `schema/`, `harness/`, `LegacyMigration.cs`, `LegacySplits/`, the trigger table or the toolchains, and on dispatch: builds the site's legacy import and runs its checks in a pinned Chrome. Pushes to `master`, and dispatch on `master`, then deploy `site/`, with the schema and the legacy import, to GitHub Pages. |
+| `site.yml` | on pull requests and pushes to `master` that change `site/`, `schema/`, `LegacyMigration.cs`, `legacy-splits/`, the trigger table or `global.json`, and on dispatch: builds the site's legacy import and runs its Playwright tests. Pushes to `master`, and dispatch on `master`, then deploy `site/`, with the schema and the legacy import, to GitHub Pages. |
 
 A change to Markdown files alone runs no workflow. In the Live check:
 
