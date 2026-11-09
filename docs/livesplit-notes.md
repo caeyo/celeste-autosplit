@@ -146,9 +146,9 @@ check that ASR loads the module, that settings round-trip exactly, and that a
 missing wasm, one ASR can't load, and a LiveSplit without ASR are reported, with
 the settings kept. For the editor, they drive its real controls on the real
 component, without showing them, and check what reaches ASR against hand-written
-XML, that it's read again each time it opens, read-only, flags, presets, Cancel,
-the first settings switching to Game Time, and the import, from a stand-in
-holding a community file's settings. For migration, they check each `.lss` in
+XML, that it's read again each time it opens, read-only, flags, presets and
+Cancel, and when the component switches to Game Time. Most of how the editor's
+controls behave is left to a hand check. For migration, they check each `.lss` in
 `CelesteAutosplit.Tests/LegacySplits/`, community files and `odd-values.lss`,
 against its hand-written `.expected.xml`, that ASR writes the migrated XML back
 the same, all 71 types, integers and

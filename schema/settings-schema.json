@@ -49,7 +49,7 @@
       "default": true,
       "host": "livesplit",
       "label": "High priority",
-      "description": "Set the Celeste process's priority to High."
+      "description": "Set the Celeste process's priority to High when the timer starts."
     },
     {
       "key": "set_game_time",

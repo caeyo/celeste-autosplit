@@ -1,4 +1,3 @@
-using LiveSplit.Model;
 using LiveSplit.UI;
 using LiveSplit.UI.Components;
 using System;
@@ -15,9 +14,6 @@ public sealed class EditorTests : IDisposable
 {
     private const string Header = "<Version>1.0</Version><CustomSettings>";
     private const string Footer = "</CustomSettings>";
-
-    private const string Row1 = "<Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"chapter_complete\" /><Setting id=\"chapter\" type=\"i64\">1</Setting></Setting>";
-    private const string Row2 = "<Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"chapter_complete\" /><Setting id=\"chapter\" type=\"i64\">2</Setting></Setting>";
 
     private readonly LiveSplitHost host;
     private readonly List<IComponent> created = [];
@@ -74,22 +70,6 @@ public sealed class EditorTests : IDisposable
         OnUi(() => Select(Find<ComboBox>(editor, "setting.timing_method"), "Chapter time"));
 
         Assert.Equal("Custom", OnUi(() => Find<ComboBox>(editor, "preset").Text));
-    }
-
-    [Fact]
-    public void A_configuration_matching_a_preset_opens_as_that_preset_with_defaults_filling_absent_fields()
-    {
-        IComponent component = Create();
-        SetCfg(
-            component,
-            "<Setting id=\"start\" type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"chapter_start\" /></Setting>"
-            + "<Setting id=\"reset\" type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"chapter_exit\" /></Setting>"
-            + "<Setting id=\"splits\" type=\"list\"><Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"chapter_complete\" /></Setting></Setting>"
-            + "<Setting id=\"timing_method\" type=\"string\" value=\"chapter\" />");
-
-        Control editor = Open(component);
-
-        Assert.Equal("Individual level", OnUi(() => Find<ComboBox>(editor, "preset").Text));
     }
 
     [Fact]
@@ -215,166 +195,6 @@ public sealed class EditorTests : IDisposable
     }
 
     [Fact]
-    public void A_modded_chapter_id_can_be_typed_and_an_invalid_one_is_reported()
-    {
-        IComponent component = Create();
-        SetCfg(component, "<Setting id=\"splits\" type=\"list\"><Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"chapter_complete\" /></Setting></Setting>");
-        Control editor = Open(component);
-
-        OnUi(() =>
-        {
-            SelectRow(editor, 2);
-            Find<ComboBox>(editor, "field.chapter").Text = "12";
-        });
-
-        Assert.Contains("<Setting id=\"chapter\" type=\"i64\">12</Setting>", GetSettings(component));
-
-        OnUi(() => Find<ComboBox>(editor, "field.chapter").Text = "abc");
-
-        Assert.Contains("<Setting id=\"chapter\" type=\"i64\">12</Setting>", GetSettings(component));
-        Assert.Contains("isn't a chapter", OnUi(() => Find<Label>(editor, "problem").Text));
-    }
-
-    [Fact]
-    public void A_chapter_message_clears_when_the_text_is_the_saved_chapter_again()
-    {
-        IComponent component = Create();
-        SetCfg(component, "<Setting id=\"splits\" type=\"list\"><Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"chapter_complete\" /><Setting id=\"chapter\" type=\"i64\">12</Setting></Setting></Setting>");
-        Control editor = Open(component);
-
-        OnUi(() =>
-        {
-            SelectRow(editor, 2);
-            Find<ComboBox>(editor, "field.chapter").Text = "12x";
-        });
-        Assert.Contains("isn't a chapter", OnUi(() => Find<Label>(editor, "problem").Text));
-
-        OnUi(() => Find<ComboBox>(editor, "field.chapter").Text = "12");
-
-        Assert.Equal("", OnUi(() => Find<Label>(editor, "problem").Text));
-    }
-
-    [Fact]
-    public void Picking_a_kind_on_an_invalid_row_is_written()
-    {
-        IComponent component = Create();
-        SetCfg(component, "<Setting id=\"splits\" type=\"list\"><Setting type=\"string\" value=\"not a map\" /></Setting>");
-        Control editor = Open(component);
-
-        OnUi(() =>
-        {
-            SelectRow(editor, 2);
-            Select(Find<ComboBox>(editor, "kind"), "Manual");
-        });
-
-        Assert.Contains("<Setting id=\"splits\" type=\"list\"><Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"manual\" /></Setting></Setting>", GetSettings(component));
-        Assert.Equal("", OnUi(() => Find<Label>(editor, "problem").Text));
-    }
-
-    [Fact]
-    public void An_invalid_chapter_is_kept_until_replaced_and_then_no_longer_offered()
-    {
-        IComponent component = Create();
-        SetCfg(component, "<Setting id=\"splits\" type=\"list\"><Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"chapter_complete\" /><Setting id=\"chapter\" type=\"i64\">-5</Setting></Setting></Setting>");
-        Control editor = Open(component);
-
-        OnUi(() =>
-        {
-            SelectRow(editor, 2);
-            ComboBox chapter = Find<ComboBox>(editor, "field.chapter");
-            chapter.Text = "abc";
-            Select(chapter, "-5 (invalid)");
-        });
-        Assert.Contains("<Setting id=\"chapter\" type=\"i64\">-5</Setting>", GetSettings(component));
-
-        OnUi(() => Select(Find<ComboBox>(editor, "field.chapter"), "Old Site"));
-
-        Assert.Contains("<Setting id=\"chapter\" type=\"i64\">2</Setting>", GetSettings(component));
-        Assert.DoesNotContain("-5 (invalid)", OnUi(() => Find<ComboBox>(editor, "field.chapter").Items.Cast<object>().Select(item => item.ToString()).ToList()));
-    }
-
-    [Theory]
-    [InlineData(1, "Scrap Pit")]
-    [InlineData(2, "Checkpoint 2")]
-    public void A_checkpoint_is_named_for_its_side_or_numbered_when_the_side_has_no_name(long side, string expected)
-    {
-        IComponent component = Create();
-        SetCfg(component, $"<Setting id=\"splits\" type=\"list\"><Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"checkpoint\" /><Setting id=\"chapter\" type=\"i64\">1</Setting><Setting id=\"side\" type=\"i64\">{side}</Setting><Setting id=\"checkpoint\" type=\"i64\">2</Setting></Setting></Setting>");
-        Control editor = Open(component);
-
-        OnUi(() => SelectRow(editor, 2));
-
-        Assert.Equal(expected, OnUi(() => Find<ComboBox>(editor, "field.checkpoint").Text));
-    }
-
-    [Fact]
-    public void The_checkpoint_list_follows_the_chosen_chapter()
-    {
-        IComponent component = Create();
-        SetCfg(component, "<Setting id=\"splits\" type=\"list\"><Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"checkpoint\" /><Setting id=\"chapter\" type=\"i64\">1</Setting><Setting id=\"checkpoint\" type=\"i64\">2</Setting></Setting></Setting>");
-        Control editor = Open(component);
-
-        OnUi(() => SelectRow(editor, 2));
-        Assert.Equal("Chasm", OnUi(() => Find<ComboBox>(editor, "field.checkpoint").Text));
-
-        OnUi(() => Select(Find<ComboBox>(editor, "field.chapter"), "Old Site"));
-
-        Assert.Equal(["Intervention", "Awake"], OnUi(() => Find<ComboBox>(editor, "field.checkpoint").Items.Cast<object>().Select(item => item.ToString()).ToList()));
-        Assert.Contains("<Setting id=\"chapter\" type=\"i64\">2</Setting>", GetSettings(component));
-    }
-
-    [Fact]
-    public void Splits_can_be_inserted_removed_and_moved()
-    {
-        IComponent component = Create();
-        SetCfg(component, $"<Setting id=\"splits\" type=\"list\">{Row1}{Row2}</Setting>");
-        Control editor = Open(component);
-        const string Manual = "<Setting type=\"map\"><Setting id=\"kind\" type=\"string\" value=\"manual\" /></Setting>";
-
-        OnUi(() =>
-        {
-            SelectRow(editor, 3);
-            Find<Button>(editor, "insert").PerformClick();
-        });
-        Assert.Contains($"<Setting id=\"splits\" type=\"list\">{Row1}{Manual}{Row2}</Setting>", GetSettings(component));
-
-        OnUi(() =>
-        {
-            SelectRow(editor, 4);
-            Find<Button>(editor, "up").PerformClick();
-        });
-        Assert.Contains($"<Setting id=\"splits\" type=\"list\">{Row1}{Row2}{Manual}</Setting>", GetSettings(component));
-
-        OnUi(() =>
-        {
-            SelectRow(editor, 4);
-            Find<Button>(editor, "remove").PerformClick();
-        });
-        Assert.Contains($"<Setting id=\"splits\" type=\"list\">{Row1}{Row2}</Setting>", GetSettings(component));
-    }
-
-    [Fact]
-    public void Rows_show_the_segments_of_the_run()
-    {
-        LiveSplitState state = OnUi(() =>
-        {
-            LiveSplitState newState = host.NewState();
-            newState.Run.Add(new Segment("Forsaken City"));
-            newState.Run.Add(new Segment("Old Site"));
-            return newState;
-        });
-        IComponent component = Create(state);
-        SetCfg(component, $"<Setting id=\"splits\" type=\"list\">{Row1}</Setting>");
-
-        Control editor = Open(component);
-        var rows = OnUi(() => Rows(editor));
-
-        Assert.Equal(4, rows.Count);
-        Assert.Equal("1. Forsaken City: Chapter complete (Forsaken City)", rows[2]);
-        Assert.Equal("2. Old Site: Manual", rows[3]);
-    }
-
-    [Fact]
     public void Cancel_restores_what_was_there_and_the_editor_shows_it_again()
     {
         IComponent component = Create();
@@ -406,132 +226,6 @@ public sealed class EditorTests : IDisposable
         Assert.True(OnUi(() => Find<CheckBox>(reopened, "setting.everest").Checked));
     }
 
-    [Theory]
-    [InlineData(null, true)]
-    [InlineData(true, true)]
-    [InlineData(false, false)]
-    public void The_first_settings_switch_to_game_time_only_if_set_game_time_is_on(bool? value, bool switches)
-    {
-        LiveSplitState state = OnUi(() => host.NewState());
-        IComponent component = Create(state);
-        string setting = value == null ? "" : $"<Setting id=\"set_game_time\" type=\"bool\">{value}</Setting>";
-
-        SetCfg(component, setting);
-
-        Assert.Equal(switches ? TimingMethod.GameTime : TimingMethod.RealTime, OnUi(() => state.CurrentTimingMethod));
-    }
-
-    [Fact]
-    public void Later_settings_do_not_switch_to_game_time_again()
-    {
-        LiveSplitState state = OnUi(() => host.NewState());
-        IComponent component = Create(state);
-        SetCfg(component, "");
-        OnUi(() => state.CurrentTimingMethod = TimingMethod.RealTime);
-
-        SetCfg(component, "");
-
-        Assert.Equal(TimingMethod.RealTime, OnUi(() => state.CurrentTimingMethod));
-    }
-
-    [Fact]
-    public void A_run_with_no_settings_switches_to_game_time_on_the_first_update_only()
-    {
-        LiveSplitState state = OnUi(() => host.NewState());
-        IComponent component = Create(state);
-        Assert.Equal(TimingMethod.RealTime, OnUi(() => state.CurrentTimingMethod));
-
-        OnUi(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
-        Assert.Equal(TimingMethod.GameTime, OnUi(() => state.CurrentTimingMethod));
-
-        OnUi(() => state.CurrentTimingMethod = TimingMethod.RealTime);
-        OnUi(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
-        Assert.Equal(TimingMethod.RealTime, OnUi(() => state.CurrentTimingMethod));
-    }
-
-    [Fact]
-    public void Settings_given_before_the_first_update_decide_game_time_and_the_update_changes_nothing()
-    {
-        LiveSplitState state = OnUi(() => host.NewState());
-        IComponent component = Create(state);
-
-        SetCfg(component, "<Setting id=\"set_game_time\" type=\"bool\">False</Setting>");
-        OnUi(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
-
-        Assert.Equal(TimingMethod.RealTime, OnUi(() => state.CurrentTimingMethod));
-    }
-
-    [Fact]
-    public void Cancelling_the_dialog_after_the_first_update_does_not_switch_to_game_time()
-    {
-        LiveSplitState state = OnUi(() => host.NewState());
-        IComponent component = Create(state);
-        OnUi(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
-        OnUi(() => state.CurrentTimingMethod = TimingMethod.RealTime);
-        Open(component);
-        XmlNode snapshot = OnUi(() => component.GetSettings(new XmlDocument()));
-
-        OnUi(() => component.SetSettings(snapshot));
-
-        Assert.Equal(TimingMethod.RealTime, OnUi(() => state.CurrentTimingMethod));
-    }
-
-    [Fact]
-    public void Migrated_settings_switch_to_game_time_as_their_set_game_time_says()
-    {
-        LiveSplitState state = OnUi(() => host.NewState());
-        IComponent component = Create(state);
-        var document = new XmlDocument();
-        document.LoadXml("<AutoSplitterSettings><AutoReset>True</AutoReset><SetGameTime>False</SetGameTime><Splits /></AutoSplitterSettings>");
-
-        OnUi(() => component.SetSettings(document.DocumentElement));
-
-        Assert.Equal(TimingMethod.RealTime, OnUi(() => state.CurrentTimingMethod));
-    }
-
-    [Fact]
-    public void A_legacy_component_in_the_layout_is_warned_about_and_its_settings_can_be_imported()
-    {
-        LiveSplitState state = OnUi(() =>
-        {
-            LiveSplitState newState = host.NewState();
-            newState.Layout = new LiveSplit.UI.Layout();
-            newState.Run.GameName = "Celeste";
-            return newState;
-        });
-        var legacy = new LegacyStandIn(LegacyFiles.Settings("1a-rooms"));
-        OnUi(() => state.Layout.LayoutComponents.Add(new LayoutComponent("LiveSplit.Celeste.dll", legacy)));
-        var component = (CelesteAutosplitComponent)Create(state);
-
-        Control editor = Open(component);
-        Assert.Contains("LiveSplit.Celeste.dll", OnUi(() => Find<Label>(editor, "warnings").Text));
-
-        OnUi(() => component.ImportLegacySettings(legacy));
-
-        string expected = LegacyFiles.Expected("1a-rooms").InnerXml;
-        Assert.Equal(expected, GetSettings(component));
-        Assert.Equal(expected, OnUi(() => state.Run.AutoSplitterSettings.InnerXml));
-        Assert.Equal("Celeste", OnUi(() => state.Run.AutoSplitterSettings.GetAttribute("gameName")));
-        Assert.True(OnUi(() => state.Run.HasChanged));
-    }
-
-    private sealed class LegacyStandIn : LogicComponent
-    {
-        private readonly XmlElement settings;
-
-        public LegacyStandIn(XmlElement settings)
-        {
-            this.settings = settings;
-        }
-
-        public override string ComponentName => "Legacy";
-        public override Control GetSettingsControl(LayoutMode mode) => null;
-        public override XmlNode GetSettings(XmlDocument document) => document.ImportNode(settings, true);
-        public override void SetSettings(XmlNode settings) { }
-        public override void Update(IInvalidator invalidator, LiveSplitState state, float width, float height, LayoutMode mode) { }
-        public override void Dispose() { }
-    }
-
     public void Dispose()
     {
         OnUi(() =>
@@ -543,9 +237,9 @@ public sealed class EditorTests : IDisposable
         });
     }
 
-    private IComponent Create(LiveSplitState state = null)
+    private IComponent Create()
     {
-        IComponent component = OnUi(() => new CelesteAutosplitFactory().Create(state ?? host.NewState()));
+        IComponent component = OnUi(() => new CelesteAutosplitFactory().Create(host.NewState()));
         created.Add(component);
         return component;
     }

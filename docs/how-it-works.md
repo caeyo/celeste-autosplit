@@ -507,6 +507,7 @@ Those of splitting itself are [above](#splitting). Those of the mapping:
 |---|---|---|
 | Always switches to Game Time | [Game Time](#game-time-and-priority) honours `set_game_time`, which keeps `SetGameTime` | Users who unchecked it. |
 | Unknown types silently manual | `unknown`, flagged by the [editor](#the-settings-editor) | Nobody, timing-wise. |
+| High priority set on hooking the game, and forced to Normal when turned off | [High](#game-time-and-priority) each time the timer starts, never lowered | Nobody, timing-wise. |
 | Case C's final split time is absolute | Consistent with the run | Custom-start runners. |
 | `FileTimeOffset` in C and E mixes clocks | `file_since_start` | A rare combination. |
 | No splits: start on any room change, split on room changes | Nothing automatic but the reset, with `AutoReset` | Users without splits, and single-room timers. |
@@ -561,24 +562,14 @@ missing, and neither under a newer `schema_version`:
   settings for this game, which never gets one, on the first `Update`, where
   the key's default applies. That also keeps a Cancel in the settings, which calls
   `SetSettings` much later, from switching anything.
-- **Priority**: [`GamePriority.cs`](../component/CelesteAutosplit/GamePriority.cs)
-  scans for `Celeste` processes on a background task, at most every 2 s, from
-  `Update`, and sets High once per process, or again after the setting goes off
-  and on. It sets Normal only for processes it raised and that are still High,
-  when the setting goes off or on `Dispose`. Failures are logged and skipped.
-  On the development machine, something outside the game saves a `Celeste.exe`
-  process's priority and sets Normal when it gains the foreground, and restores
-  it when it loses it; the game's own code doesn't, and the game renamed isn't
-  affected. The cause is inferred to be Windows' game recognition, not
-  confirmed. So a single set, like legacy's, may not hold during play.
-
-### The legacy component in the layout
-
-A `LiveSplit.Celeste.dll` in `state.Layout.LayoutComponents` is reported once per
-activation, while the timer isn't running, in a message box, and shown at the top
-of the settings for as long as it's there. If the splits have no settings, the
-box also offers to import the legacy component's settings through the migration
-and marks the run changed, since nothing else would save them.
+- **Priority**: each time the timer starts, if `high_priority` is on, a background
+  task sets every `Celeste` process to High, logging a failure. It's never
+  lowered. On the development machine, something outside the game saves a
+  `Celeste.exe` process's priority and sets Normal when it gains the foreground,
+  and restores it when it loses it; the game's own code doesn't, and the game
+  renamed isn't affected. The cause is inferred to be Windows' game recognition,
+  not confirmed. The game normally has the foreground when the timer starts, so
+  High then lasts until the next time it loses the foreground.
 
 ### A missing wasm module
 
@@ -692,11 +683,9 @@ The [component's tests](livesplit-notes.md#the-components-tests) prove that
 LiveSplit's ASR loads the wasm module and keeps its settings, that legacy
 settings migrate to hand-written XML, which round-trips through ASR unchanged,
 and that the editor's changes reach ASR as hand-written XML. The process
-priority and the message box for a legacy component in the layout have no test:
-they rest on a hand check in a copy of LiveSplit 1.8.37 on 2026-11-08. It also
-covered the settings dialog and Cancel, Game Time, a deleted wasm module, the
-layout editor, a real legacy component, v1.4.6.0, and, in the real game, the
-module's resets, alone, after a run that ended with new bests, and with a start
+priority has no test: it rests on a hand check in a copy of LiveSplit 1.8.37 on
+2026-11-08. It also covered the settings dialog and Cancel, Game Time, a deleted
+wasm module, the layout editor, and, in the real game, the module's resets, alone, after a run that ended with new bests, and with a start
 in one tick, none showing a prompt.
 The harness's test, `cargo test`, reads the same XML through livesplit-core's
 `StoredAutoSplitterSettings` and gets it back.

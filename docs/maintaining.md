@@ -195,12 +195,6 @@ entry, finds it present, and activates the component for any Celeste splits. Its
 settings are the editor, or a status if ASR couldn't run the module, and
 DebugView shows the log.
 
-To check a real legacy component, keep ours as `celeste-autosplit.dll` next to
-`LiveSplit.Celeste.dll`, add a `LiveSplit.AutoSplitters.xml` whose Celeste
-entry's first URL ends in `celeste-autosplit.dll`, and in this copy's
-`LiveSplit.exe.config` a `defaultProxy` pointing at a dead address, so that
-LiveSplit can't fetch the official list and reads the local one.
-
 ## CI
 
 | Workflow | Runs |

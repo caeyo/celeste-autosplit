@@ -49,7 +49,6 @@ internal sealed class SettingsEditor : UserControl
     private readonly SettingsSchema schema;
     private readonly Func<XmlElement> read;
     private readonly Action<XmlElement> write;
-    private readonly Func<string> legacyWarning;
     private readonly List<string> cfgOrder;
     private readonly SchemaSetting splitsSetting;
     private readonly SchemaSetting everestSetting;
@@ -77,13 +76,12 @@ internal sealed class SettingsEditor : UserControl
     private bool loading;
     private int rowIndex;
 
-    public SettingsEditor(LiveSplitState state, SettingsSchema schema, string statusText, Func<XmlElement> read, Action<XmlElement> write, Func<string> legacyWarning)
+    public SettingsEditor(LiveSplitState state, SettingsSchema schema, string statusText, Func<XmlElement> read, Action<XmlElement> write)
     {
         this.state = state;
         this.schema = schema;
         this.read = read;
         this.write = write;
-        this.legacyWarning = legacyWarning;
         cfgOrder = schema.Settings.Select(setting => setting.Key).ToList();
         splitsSetting = schema.Settings.First(setting => setting.Type == "list");
         everestSetting = schema.Setting("everest");
@@ -612,12 +610,6 @@ internal sealed class SettingsEditor : UserControl
     private void RenderWarnings()
     {
         var lines = new List<string>();
-        string legacy = legacyWarning();
-        if (legacy != null)
-        {
-            lines.Add(legacy);
-        }
-
         if (readOnly)
         {
             lines.Add("These settings were saved by a newer version of the autosplitter, so they are read-only here. Update the component to edit them.");

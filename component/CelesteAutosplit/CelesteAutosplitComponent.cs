@@ -4,9 +4,11 @@ using LiveSplit.Options;
 using LiveSplit.UI;
 using LiveSplit.UI.Components;
 using System;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml;
 
@@ -15,20 +17,17 @@ namespace CelesteAutosplit;
 public class CelesteAutosplitComponent : LogicComponent
 {
     public const string WasmFileName = "celeste_autosplit.wasm";
-    private const string LegacyFileName = "LiveSplit.Celeste.dll";
 
     private readonly LogicComponent inner;
     private readonly string status;
     private readonly LiveSplitState state;
     private readonly SettingsSchema schema;
-    private readonly GamePriority priority = new();
     private Control settingsControl;
     private SettingsEditor editor;
 
     private XmlNode heldSettings;
     private bool gameTimeSettled;
-    private bool legacyWarned;
-    private int lastUpdateCheck = Environment.TickCount;
+    private bool highPriority;
 
     public override string ComponentName => CelesteAutosplitFactory.Name;
 
@@ -101,6 +100,7 @@ public class CelesteAutosplitComponent : LogicComponent
         {
             schema = SettingsSchema.Load();
             ApplyHostSettings(false);
+            state.OnStart += RaisePriority;
         }
         catch (Exception ex)
         {
@@ -125,111 +125,37 @@ public class CelesteAutosplitComponent : LogicComponent
     public override void Update(IInvalidator invalidator, LiveSplitState state, float width, float height, LayoutMode mode)
     {
         inner?.Update(invalidator, state, width, height, mode);
-        if (inner == null)
-        {
-            return;
-        }
-
-        if (!gameTimeSettled)
+        if (inner != null && !gameTimeSettled)
         {
             ApplyHostSettings(true);
             gameTimeSettled = true;
         }
+    }
 
-        priority.Update();
-
-        int now = Environment.TickCount;
-        if (unchecked(now - lastUpdateCheck) < 2000)
+    private void RaisePriority(object sender, EventArgs e)
+    {
+        if (highPriority)
         {
-            return;
+            Task.Run(SetGameHighPriority);
         }
-
-        lastUpdateCheck = now;
-        CheckForLegacyComponent();
     }
 
-    private void CheckForLegacyComponent()
+    private static void SetGameHighPriority()
     {
-        if (legacyWarned || state.CurrentPhase != TimerPhase.NotRunning || FindLegacyComponent() == null)
+        foreach (Process process in Process.GetProcessesByName("Celeste"))
         {
-            return;
-        }
-
-        legacyWarned = true;
-        state.Form.BeginInvoke(new Action(() =>
-        {
-            ILayoutComponent legacy = FindLegacyComponent();
-            if (legacy != null)
+            using (process)
             {
-                WarnAboutLegacyComponent(legacy);
-            }
-        }));
-    }
-
-    private ILayoutComponent FindLegacyComponent()
-    {
-        return state.Layout?.LayoutComponents.FirstOrDefault(component =>
-            string.Equals(Path.GetFileName(component.Path ?? ""), LegacyFileName, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private string LegacyWarning()
-    {
-        return FindLegacyComponent() != null
-            ? $"The legacy {LegacyFileName} component is in your layout. Remove it in the layout editor, or both will split."
-            : null;
-    }
-
-    private void WarnAboutLegacyComponent(ILayoutComponent legacy)
-    {
-        try
-        {
-            bool offerImport = HasNoSettings();
-            string message = LegacyWarning();
-            if (offerImport)
-            {
-                message += "\n\nThese splits have no settings for this autosplitter yet. Import the legacy component's settings from the layout?";
-            }
-
-            DialogResult result = MessageBox.Show(
-                state.Form,
-                message,
-                ComponentName,
-                offerImport ? MessageBoxButtons.YesNo : MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-            if (offerImport && result == DialogResult.Yes)
-            {
-                ImportLegacySettings(legacy.Component);
+                try
+                {
+                    process.PriorityClass = ProcessPriorityClass.High;
+                }
+                catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or NotSupportedException)
+                {
+                    Log.Warning($"[{CelesteAutosplitFactory.Name}] Could not raise Celeste's priority: {ex.GetType().Name}: {ex.Message}");
+                }
             }
         }
-        catch (Exception ex)
-        {
-            Log.Error(ex);
-        }
-    }
-
-    private bool HasNoSettings()
-    {
-        return ReadSettings()["CustomSettings"]?.HasChildNodes != true;
-    }
-
-    internal void ImportLegacySettings(IComponent legacy)
-    {
-        inner.SetSettings(LegacyMigration.Migrate(legacy.GetSettings(new XmlDocument())));
-        ApplyHostSettings(false);
-
-        if (state.Run != null)
-        {
-            var document = new XmlDocument();
-            XmlElement autoSplitterSettings = document.CreateElement("AutoSplitterSettings");
-            autoSplitterSettings.InnerXml = inner.GetSettings(document).InnerXml;
-            XmlAttribute gameName = document.CreateAttribute("gameName");
-            gameName.Value = state.Run.GameName;
-            autoSplitterSettings.Attributes.Append(gameName);
-            state.Run.AutoSplitterSettings = autoSplitterSettings;
-            state.Run.HasChanged = true;
-        }
-
-        editor?.Reload();
     }
 
     private XmlElement ReadSettings()
@@ -253,7 +179,7 @@ public class CelesteAutosplitComponent : LogicComponent
         try
         {
             XmlElement map = ReadSettings()["CustomSettings"];
-            priority.Enabled = schema.Flag(map, "high_priority");
+            highPriority = schema.Flag(map, "high_priority");
             if (loading && !gameTimeSettled)
             {
                 gameTimeSettled = true;
@@ -303,7 +229,7 @@ public class CelesteAutosplitComponent : LogicComponent
             {
                 if (editor == null || editor.IsDisposed)
                 {
-                    editor = new SettingsEditor(state, schema, status, ReadSettings, WriteSettings, LegacyWarning);
+                    editor = new SettingsEditor(state, schema, status, ReadSettings, WriteSettings);
                 }
 
                 editor.Reload();
@@ -339,7 +265,7 @@ public class CelesteAutosplitComponent : LogicComponent
 
     public override void Dispose()
     {
-        priority.Dispose();
+        state.OnStart -= RaisePriority;
         inner?.Dispose();
     }
 }
