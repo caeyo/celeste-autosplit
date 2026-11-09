@@ -211,12 +211,41 @@ public class CelesteAutosplitComponent : LogicComponent
     {
         if (inner != null)
         {
-            inner.SetSettings(LegacyMigration.Migrate(settings));
+            XmlNode migrated = LegacyMigration.Migrate(settings);
+            if (migrated != settings)
+            {
+                BackUpSplits();
+            }
+
+            inner.SetSettings(migrated);
             ApplyHostSettings(true);
         }
         else
         {
             heldSettings = settings?.CloneNode(true);
+        }
+    }
+
+    private void BackUpSplits()
+    {
+        string path = state.Run?.FilePath;
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        try
+        {
+            string backup = Path.Combine(Path.GetDirectoryName(path), "[BACKUP]" + Path.GetFileName(path));
+            if (!File.Exists(backup))
+            {
+                File.Copy(path, backup);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[{ComponentName}] Could not back up the splits file");
+            Log.Error(ex);
         }
     }
 
