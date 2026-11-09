@@ -114,14 +114,14 @@
     { "kind": "unknown", "label": "Unrecognised legacy split", "required": ["raw"], "optional": [], "offer": [] },
     { "kind": "new_file", "label": "New file", "required": [], "optional": [], "offer": ["start", "reset"] },
     { "kind": "chapter_start", "label": "Chapter start", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "reset", "splits"] },
-    { "kind": "chapter_enter", "label": "Enter chapter", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "splits"] },
+    { "kind": "chapter_enter", "label": "Enter chapter", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "reset", "splits"] },
     { "kind": "chapter_exit", "label": "Exit chapter", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["start", "reset", "splits"] },
     { "kind": "chapter_complete", "label": "Chapter complete", "required": [], "optional": ["chapter", "side", "sid", "timing"], "offer": ["splits"] },
-    { "kind": "checkpoint", "label": "Checkpoint", "required": ["chapter", "checkpoint"], "optional": ["side"], "offer": ["start", "splits"] },
+    { "kind": "checkpoint", "label": "Checkpoint", "required": ["chapter", "checkpoint"], "optional": ["side"], "offer": ["start", "reset", "splits"] },
     { "kind": "heart", "label": "Crystal heart", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["splits"] },
     { "kind": "cassette", "label": "Cassette", "required": [], "optional": ["chapter", "side", "sid"], "offer": ["splits"] },
-    { "kind": "room_enter", "label": "Enter room", "required": ["room"], "optional": ["chapter", "side", "sid"], "offer": ["start", "splits"] },
-    { "kind": "room_exit", "label": "Exit room", "required": ["room"], "optional": ["chapter", "side", "sid"], "offer": ["start", "splits"] }
+    { "kind": "room_enter", "label": "Enter room", "required": ["room"], "optional": ["chapter", "side", "sid"], "offer": ["start", "reset", "splits"] },
+    { "kind": "room_exit", "label": "Exit room", "required": ["room"], "optional": ["chapter", "side", "sid"], "offer": ["start", "reset", "splits"] }
   ],
 
   "presets": [
