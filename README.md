@@ -4,14 +4,14 @@ An auto splitter for Celeste, for every LiveSplit host. It's a wasm module that
 attaches to the game, reads its memory, and publishes what it reads as debug
 variables, on vanilla Celeste 1.4.0.0 on Windows, Linux and macOS, and on
 Everest. It starts, splits and resets the timer as its settings say; the
-settings' editors are in the [plan](docs/plan.md).
+settings website is in the [plan](docs/plan.md).
 
 ## Folders
 
 | Folder | What |
 |---|---|
 | [`autosplitter/`](autosplitter/) | The auto splitter, in Rust, built to `celeste_autosplit.wasm`. `vanilla.rs` holds the layouts it reads vanilla with, kept by hand from the probe's dump, `everest.rs` Everest's struct, transcribed from Everest's source, and `memory.rs` the reading. `settings.rs` reads the settings, with the types `build.rs` generates from the schema, and `splitter.rs` starts, splits and resets. |
-| [`component/`](component/) | `celeste-autosplit.dll`, the LiveSplit component, in C#, which runs the wasm module in LiveSplit's auto splitting runtime and migrates `LiveSplit.Celeste` settings, and its tests. Its settings editor is planned. |
+| [`component/`](component/) | `celeste-autosplit.dll`, the LiveSplit component, in C#, which runs the wasm module in LiveSplit's auto splitting runtime, edits its settings, and migrates `LiveSplit.Celeste` settings, and its tests. |
 | [`tools/probe/`](tools/probe/) | Poses as the game, in the game's own runtime: `host` holds the real game for the harness, and `dump` prints the offsets and machine code the layouts are kept from. C#. |
 | [`harness/`](harness/) | The live check, the replay and the scenarios, which run the wasm module against the real game, held by the probe. Rust. |
 | [`traces/`](traces/) | The game's values, update by update, while a TAS plays, the TAS files, and the scenarios. |

@@ -2,8 +2,8 @@
 
 The auto splitter is a wasm module that attaches to Celeste, reads its memory
 each tick, publishes what it reads as debug variables, and starts, splits and
-resets the timer as its settings say. The settings' editors, the rest of the component and the
-website are in the [plan](plan.md).
+resets the timer as its settings say. [The component](#the-component) adds its
+settings editor on Windows; the website is in the [plan](plan.md).
 
 ## Terms
 
@@ -505,8 +505,9 @@ Those of splitting itself are [above](#splitting). Those of the mapping:
 
 | Legacy | Now | Who notices |
 |---|---|---|
-| Always switches to Game Time | `set_game_time` keeps `SetGameTime`, for the [planned](plan.md#the-component) switch to honour | Users who unchecked it. |
-| Unknown types silently manual | `unknown`, for editors to flag | Nobody, timing-wise. |
+| Always switches to Game Time | [Game Time](#game-time-and-priority) honours `set_game_time`, which keeps `SetGameTime` | Users who unchecked it. |
+| Unknown types silently manual | `unknown`, flagged by the [editor](#the-settings-editor) | Nobody, timing-wise. |
+| High priority set on hooking the game, and forced to Normal when turned off | [High](#game-time-and-priority) each time the timer starts, never lowered | Nobody, timing-wise. |
 | Case C's final split time is absolute | Consistent with the run | Custom-start runners. |
 | `FileTimeOffset` in C and E mixes clocks | `file_since_start` | A rare combination. |
 | No splits: start on any room change, split on room changes | Nothing automatic but the reset, with `AutoReset` | Users without splits, and single-room timers. |
@@ -516,6 +517,85 @@ Those of splitting itself are [above](#splitting). Those of the mapping:
 | `AreaOnEnter,Menu-None` and `AreaOnExit,Menu-None` fire on leaving and entering a chapter, since the side is -1 outside one | `unknown`, like any side of `Menu` | Nobody on purpose: legacy's value is typed by hand, and no list we've seen has one. |
 | `LevelExit,` with an empty value fires on entering a chapter, since the room reads empty at the map | `unknown`, like any empty value | Nobody: only editing the `.lss` by hand writes one. |
 | A boolean that doesn't parse throws from `SetSettings` | Its default | Nobody: only editing the `.lss` by hand writes one. |
+
+## The component
+
+[`CelesteAutosplitComponent`](../component/CelesteAutosplit/CelesteAutosplitComponent.cs)
+runs the wasm module in ASR. Without an ASR to run it, its settings show only a
+status and it keeps the settings it was given, so of what's below, only
+[a missing wasm module](#a-missing-wasm-module) applies.
+
+### The settings editor
+
+[`SettingsEditor.cs`](../component/CelesteAutosplit/SettingsEditor.cs) renders
+the schema, which the component reads with the framework's `JavaScriptSerializer`,
+so no parser ships with it. Each time it opens, it reads `inner.GetSettings`, and
+edits that `CustomSettings` in place, so unknown keys stay and the XML is ASR's
+own. Each change calls `inner.SetSettings`, as
+[LiveSplit's settings dialog](livesplit-notes.md#settings-in-the-lss) needs.
+
+It is one column, fitting the dialog's fixed width and scrolling with it: the
+booleans on one row, a row of preset buttons, the timing method as radio buttons
+on one row, then Reset, Start and, under a heading, the segments, separated by
+rules. Each trigger
+is a row with its name and its kind, and below it, when its kind takes any, one
+row of fields. The fields have no captions, since the worst case wouldn't fit:
+each says what it is by its choices (`Any chapter`) or its cue text (`Room`), and
+by its tooltip.
+
+- **Segments**: there is one trigger for each segment of the run, so triggers
+  can't be added, removed or moved, and the count can't differ from the run's.
+  Setting one past the end of `splits` fills those before it with `manual`.
+  Entries past the run's last segment, which never fire, aren't shown and are
+  kept.
+- **Presets** are actions, not a state: applying one rewrites its settings, and
+  each trigger of a kind its `trigger_fields` name, keeping unknown keys. Nothing
+  shows whether the settings match one.
+- **Kinds** are offered per each kind's `offer`, plus the current one. Changing
+  it drops the old kind's fields the new one doesn't take, but keeps unknown keys.
+- **Flags**: a trigger says in red what the module reads as invalid, and `unknown`,
+  with a line at the top saying some do, as the list can be longer than the
+  dialog. An invalid `timing_method` has its own line there, and no radio button
+  selected. The checks are the module's, as
+  [Reading them](#reading-them) describes.
+- **Everest-only fields** are hidden while `everest` is off, and kept.
+- A `schema_version` above the schema's opens read-only and is never written, and
+  nothing in it is flagged, since the module ignores it.
+- Dropdowns ignore the mouse wheel unless they're open, and pass it to the dialog,
+  so scrolling the list can't change a setting.
+- The triggers are only built once the editor gets a window handle, since
+  LiveSplit [also calls `GetSettingsControl` without showing it](livesplit-notes.md#running-the-component),
+  and kept while the segments' names stay the same. Each trigger's windows take time
+  to create, so a long run's dialog is slow to open: on the development machine,
+  4 s for 38 segments, and 17 s for a community run of 95 with fields on every
+  trigger, driven by UI automation.
+
+### Game Time and priority
+
+The two behaviours outside the module, each from `cfg`, a key's default when
+missing, and neither under a newer `schema_version`:
+
+- **Game Time**: once per activation, `state.CurrentTimingMethod` is set to Game
+  Time if `set_game_time` is on: on the first `SetSettings`, or, for a run with no
+  settings for this game, which never gets one, on the first `Update`, where
+  the key's default applies. That also keeps a Cancel in the settings, which calls
+  `SetSettings` much later, from switching anything.
+- **Priority**: each time the timer starts, if `high_priority` is on, a background
+  task sets every `Celeste` process to High, logging a failure. It's never
+  lowered. On the development machine, something outside the game saves a
+  `Celeste.exe` process's priority and sets Normal when it gains the foreground,
+  and restores it when it loses it; the game's own code doesn't, and the game
+  renamed isn't affected. The cause is inferred to be Windows' game recognition,
+  not confirmed. The game normally has the foreground when the timer starts, so
+  High then lasts until the next time it loses the foreground.
+
+### A missing wasm module
+
+Its status says to close LiveSplit, delete `celeste-autosplit.dll` from
+`Components\` and start it again, or to download the wasm module from the latest
+release. Once the list's first URL is that DLL, deleting it makes LiveSplit
+download both files on the next activation. LiveSplit holds the DLL open, so it
+has to be closed first.
 
 ## The probe
 
@@ -618,8 +698,13 @@ never fires on vanilla with it on. The other traces' scenarios add what
 [their tables](../traces/README.md#scenarios) list.
 
 The [component's tests](livesplit-notes.md#the-components-tests) prove that
-LiveSplit's ASR loads the wasm module and keeps its settings, and that legacy
-settings migrate to hand-written XML, which round-trips through ASR unchanged.
+LiveSplit's ASR loads the wasm module and keeps its settings, that legacy
+settings migrate to hand-written XML, which round-trips through ASR unchanged,
+and that the editor's changes reach ASR as hand-written XML. The process
+priority has no test: it rests on a hand check in a copy of LiveSplit 1.8.37 on
+2026-11-08. It also covered the settings dialog and Cancel, Game Time, a deleted
+wasm module, the layout editor, and, in the real game, the module's resets, alone, after a run that ended with new bests, and with a start
+in one tick, none showing a prompt.
 The harness's test, `cargo test`, reads the same XML through livesplit-core's
 `StoredAutoSplitterSettings` and gets it back.
 
@@ -684,8 +769,7 @@ The harness's test, `cargo test`, reads the same XML through livesplit-core's
 - **Negative game time.** With a `*_since_start` method, a clock below its
   value at the start, as `ChapterTime` after restarting the chapter, makes game
   time negative, as legacy's custom-start case does.
-- **No editors.** The component has no settings editor, and the website is a
-  stub.
+- **The website is a stub.**
 
 ## Supported versions
 

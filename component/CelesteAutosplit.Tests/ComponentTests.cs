@@ -4,6 +4,7 @@ using LiveSplit.UI.Components;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Windows.Forms;
 using System.Xml;
 using Xunit;
 
@@ -48,7 +49,7 @@ public sealed class ComponentTests : IDisposable
     {
         IComponent component = Create();
 
-        Assert.StartsWith("Running ", Status(component));
+        Assert.Equal("", Status(component));
     }
 
     [Fact]
@@ -97,6 +98,8 @@ public sealed class ComponentTests : IDisposable
         IComponent component = Create(host.MissingWasmBasePath);
 
         Assert.Contains("missing", Status(component));
+        Assert.Contains("delete celeste-autosplit.dll", Status(component));
+        Assert.Contains("https://github.com/caeyo/celeste-autosplit/releases/latest", Status(component));
         SetSettings(component, Settings);
         Assert.Equal(Parse(Settings).InnerXml, GetSettings(component));
     }
@@ -169,14 +172,97 @@ public sealed class ComponentTests : IDisposable
         });
     }
 
-    private IComponent Create(string basePath = null)
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public void The_first_settings_switch_to_game_time_only_if_set_game_time_is_on(bool? value, bool switches)
+    {
+        LiveSplitState state = host.OnUiThread(() => host.NewState());
+        IComponent component = Create(state: state);
+        string setting = value == null ? "" : $"<Setting id=\"set_game_time\" type=\"bool\">{value}</Setting>";
+
+        SetSettings(component, Cfg(setting));
+
+        Assert.Equal(switches ? TimingMethod.GameTime : TimingMethod.RealTime, host.OnUiThread(() => state.CurrentTimingMethod));
+    }
+
+    [Fact]
+    public void Later_settings_do_not_switch_to_game_time_again()
+    {
+        LiveSplitState state = host.OnUiThread(() => host.NewState());
+        IComponent component = Create(state: state);
+        SetSettings(component, Cfg(""));
+        host.OnUiThread(() => state.CurrentTimingMethod = TimingMethod.RealTime);
+
+        SetSettings(component, Cfg(""));
+
+        Assert.Equal(TimingMethod.RealTime, host.OnUiThread(() => state.CurrentTimingMethod));
+    }
+
+    [Fact]
+    public void A_run_with_no_settings_switches_to_game_time_on_the_first_update_only()
+    {
+        LiveSplitState state = host.OnUiThread(() => host.NewState());
+        IComponent component = Create(state: state);
+        Assert.Equal(TimingMethod.RealTime, host.OnUiThread(() => state.CurrentTimingMethod));
+
+        host.OnUiThread(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
+        Assert.Equal(TimingMethod.GameTime, host.OnUiThread(() => state.CurrentTimingMethod));
+
+        host.OnUiThread(() => state.CurrentTimingMethod = TimingMethod.RealTime);
+        host.OnUiThread(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
+        Assert.Equal(TimingMethod.RealTime, host.OnUiThread(() => state.CurrentTimingMethod));
+    }
+
+    [Fact]
+    public void Settings_given_before_the_first_update_decide_game_time_and_the_update_changes_nothing()
+    {
+        LiveSplitState state = host.OnUiThread(() => host.NewState());
+        IComponent component = Create(state: state);
+
+        SetSettings(component, Cfg("<Setting id=\"set_game_time\" type=\"bool\">False</Setting>"));
+        host.OnUiThread(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
+
+        Assert.Equal(TimingMethod.RealTime, host.OnUiThread(() => state.CurrentTimingMethod));
+    }
+
+    [Fact]
+    public void Cancelling_the_dialog_after_the_first_update_does_not_switch_to_game_time()
+    {
+        LiveSplitState state = host.OnUiThread(() => host.NewState());
+        IComponent component = Create(state: state);
+        host.OnUiThread(() => component.Update(null, state, 0, 0, LayoutMode.Vertical));
+        host.OnUiThread(() => state.CurrentTimingMethod = TimingMethod.RealTime);
+        host.OnUiThread(() => component.GetSettingsControl(LayoutMode.Vertical));
+        XmlNode snapshot = host.OnUiThread(() => component.GetSettings(new XmlDocument()));
+
+        host.OnUiThread(() => component.SetSettings(snapshot));
+
+        Assert.Equal(TimingMethod.RealTime, host.OnUiThread(() => state.CurrentTimingMethod));
+    }
+
+    [Fact]
+    public void Migrated_settings_switch_to_game_time_as_their_set_game_time_says()
+    {
+        LiveSplitState state = host.OnUiThread(() => host.NewState());
+        IComponent component = Create(state: state);
+        var document = new XmlDocument();
+        document.LoadXml("<AutoSplitterSettings><AutoReset>True</AutoReset><SetGameTime>False</SetGameTime><Splits /></AutoSplitterSettings>");
+
+        host.OnUiThread(() => component.SetSettings(document.DocumentElement));
+
+        Assert.Equal(TimingMethod.RealTime, host.OnUiThread(() => state.CurrentTimingMethod));
+    }
+
+    private IComponent Create(string basePath = null, LiveSplitState state = null)
     {
         IComponent component = host.OnUiThread(() =>
         {
             ComponentManager.BasePath = basePath ?? host.BasePath;
             try
             {
-                return new CelesteAutosplitFactory().Create(host.NewState());
+                return new CelesteAutosplitFactory().Create(state ?? host.NewState());
             }
             finally
             {
@@ -189,7 +275,16 @@ public sealed class ComponentTests : IDisposable
 
     private string Status(IComponent component)
     {
-        return host.OnUiThread(() => component.GetSettingsControl(LayoutMode.Vertical).Text);
+        return host.OnUiThread(() =>
+        {
+            Control control = component.GetSettingsControl(LayoutMode.Vertical);
+            return control is Label ? control.Text : control.Controls.Find("status", true)[0].Text;
+        });
+    }
+
+    private static string Cfg(string cfg)
+    {
+        return "<AutoSplitterSettings><Version>1.0</Version><CustomSettings><Setting id=\"schema_version\" type=\"i64\">1</Setting><Setting id=\"cfg\" type=\"map\">" + cfg + "</Setting></CustomSettings></AutoSplitterSettings>";
     }
 
     private void SetSettings(IComponent component, string xml)

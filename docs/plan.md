@@ -1,8 +1,8 @@
 # Plan
 
-None of this is built. It's the design for the component's editor and the
-website, written before the code. What is built, the settings map, how the
-module reads it, splitting and the migration from the legacy component, is in
+What's left is the website and the list entry, written before the code. What
+is built, the settings map, how the module reads it, splitting, the migration
+from the legacy component and the component, is in
 [How it works](how-it-works.md). Check each part against the code before
 building it.
 
@@ -33,9 +33,7 @@ building it.
 The settings map, how the module reads it, and the triggers are in
 [How it works](how-it-works.md#settings). This is what's left, for editors:
 
-- Presets exist only in editors. A configuration matching none is "Custom".
-- Editors warn about a reset the run passes, such as `chapter_exit` in a run
-  through several chapters.
+- Presets exist only in editors.
 
 ### Rules
 
@@ -57,32 +55,6 @@ The settings map, how the module reads it, and the triggers are in
 It registers title widgets only, plain text saying where the website is, with
 a short URL. On Windows they're never shown.
 
-## The component
-
-It runs the wasm module in ASR, and reports a 32-bit LiveSplit, a missing wasm,
-and ASR failing to be created or to load the module, keeping the settings. To
-add:
-
-- **The editor**: when it opens, it parses `inner.GetSettings`'s
-  `CustomSettings` and renders from the schema. On every change, it writes the
-  map in ASR's format and calls `inner.SetSettings`, because of
-  [LiveSplit's settings dialog](livesplit-notes.md#settings-in-the-lss). It reads
-  again each time it opens, so it sees a migration the module ran.
-- **Process priority**, `cfg.high_priority`, on by default: at most every 2 s,
-  from `Update`, find `Process.GetProcessesByName("Celeste")`, and set High once
-  per process ID, and again when the setting changes. Set Normal only if it
-  raised it, when the setting goes off or on `Dispose`. Log and carry on after
-  `Win32Exception`, `InvalidOperationException` or access denied, dispose each
-  `Process`, and never block the UI thread.
-- **Game Time**, `cfg.set_game_time`, on by default: on the first `SetSettings`,
-  when the real settings are first known, set `state.CurrentTimingMethod` to
-  Game Time if it's on. Neither ASR nor asr can.
-- **A legacy component in the layout**: look for `LiveSplit.Celeste.dll` in
-  `state.Layout.LayoutComponents`, warn to remove it, to avoid double splits,
-  and offer to import its settings through the migration if the `.lss` has none.
-- **A missing wasm**: download it again from the latest release, or keep saying
-  how to repair it, since LiveSplit never will.
-
 ## The website
 
 - Static, on GitHub Pages: the `.lss` is edited in the browser, never uploaded.
@@ -90,6 +62,8 @@ add:
   schema, writes the map back in ASR's exact format, with `schema_version`,
   following the rules above, and downloads the `.lss` with only
   `<AutoSplitterSettings>` replaced.
+- It lays the settings out as [the component's editor](how-it-works.md#the-settings-editor)
+  does, with one trigger per segment of the `.lss`.
 - It tells users to close the splits in their host first, or the host
   overwrites the edit.
 - It imports legacy settings with [the component's mapping](how-it-works.md#migration-from-livesplitceleste),
@@ -139,13 +113,7 @@ reads flat elements the new format lacks: release notes should say so.
 
 - The module: loading the settings again once a second and on a reset.
 - In LiveSplit, built with `AutoSplitterFactory.AutoSplittersXmlUrl` pointing at
-  a test copy of the list: a fresh install, a legacy user, a legacy component in
-  the layout, the layout editor, an update, a deleted wasm, Cancel in the
-  settings dialog, the priority, Game Time, and the module's resets, alone, as
-  after a run that ended with new bests, and with a start in one tick, which
-  LiveSplit's ASR has to apply without a prompt, the second in order, as only
-  livesplit-core is shown to. Those that download nothing can
-  use [a copy of LiveSplit](maintaining.md#trying-the-component-in-livesplit).
+  a test copy of the list: a fresh install, a legacy user, and an update.
 - Across hosts: a `.lss` saved on Windows opens in the Druid fork the same, one
   edited on the website opens on Windows the same, and the Druid fork shows the
   module's widgets.

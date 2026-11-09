@@ -70,7 +70,7 @@ To add a root:
 
 - **LiveSplit:** `LiveSplitVersion` in `component/Directory.Build.props`. Run
   `dotnet test component`, then [try it in LiveSplit](#trying-the-component-in-livesplit).
-  Last tried: LiveSplit 1.8.37, with ASR 0.0.12, on 2026-10-10.
+  Last tried: LiveSplit 1.8.37, with ASR 0.0.12, on 2026-11-08.
 - **Everest, for the recorder:** `EverestRelease` in
   `tools/trace-recorder/TraceRecorder.csproj`, and `EverestCore` in its
   `everest.yaml`. Then record every trace again.
@@ -192,7 +192,8 @@ take over the `.lss` and `.lsl` file associations. Copy `celeste-autosplit.dll`
 into `Components\` as `LiveSplit.Celeste.dll`, with `celeste_autosplit.wasm`.
 LiveSplit takes that name from the first URL of the official list's Celeste
 entry, finds it present, and activates the component for any Celeste splits. Its
-settings show its status, and DebugView shows the log.
+settings are the editor, or a status if ASR couldn't run the module, and
+DebugView shows the log.
 
 ## CI
 

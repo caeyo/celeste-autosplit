@@ -4,8 +4,11 @@ using LiveSplit.Options;
 using LiveSplit.UI;
 using LiveSplit.UI.Components;
 using System;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml;
 
@@ -17,14 +20,21 @@ public class CelesteAutosplitComponent : LogicComponent
 
     private readonly LogicComponent inner;
     private readonly string status;
+    private readonly LiveSplitState state;
+    private readonly SettingsSchema schema;
     private Control settingsControl;
+    private SettingsEditor editor;
 
     private XmlNode heldSettings;
+    private bool gameTimeSettled;
+    private bool highPriority;
 
     public override string ComponentName => CelesteAutosplitFactory.Name;
 
     public CelesteAutosplitComponent(LiveSplitState state)
     {
+        this.state = state;
+
         if (!Environment.Is64BitProcess)
         {
             status = "This autosplitter requires 64-bit Windows. If you need a 32-bit version, download the legacy LiveSplit.Celeste component and add it to your layout.";
@@ -36,7 +46,7 @@ public class CelesteAutosplitComponent : LogicComponent
 
         if (!File.Exists(wasmPath))
         {
-            status = $"The wasm module is missing. Expected it at:\n{wasmPath}";
+            status = $"The wasm module is missing. Expected it at:\n{wasmPath}\n\nTo repair it, close LiveSplit, delete celeste-autosplit.dll from its Components folder and start LiveSplit again, which downloads both files. Or download {WasmFileName} from https://github.com/caeyo/celeste-autosplit/releases/latest into that folder.";
             Log.Error($"[{ComponentName}] Wasm module not found: {wasmPath}");
             return;
         }
@@ -67,7 +77,6 @@ public class CelesteAutosplitComponent : LogicComponent
         switch (hasRuntime)
         {
             case true:
-                status = $"Running {wasmPath}";
                 Log.Info($"[{ComponentName}] Running {wasmPath}");
                 break;
             case false:
@@ -79,6 +88,24 @@ public class CelesteAutosplitComponent : LogicComponent
             default:
                 status = $"Loaded {wasmPath}, but could not confirm that the Auto Splitting Runtime is running it.";
                 break;
+        }
+
+        if (inner == null)
+        {
+            return;
+        }
+
+        try
+        {
+            schema = SettingsSchema.Load();
+            ApplyHostSettings(false);
+            state.OnStart += RaisePriority;
+        }
+        catch (Exception ex)
+        {
+            status = EditorUnavailable(ex);
+            Log.Error($"[{ComponentName}] Could not load the settings schema");
+            Log.Error(ex);
         }
     }
 
@@ -97,6 +124,75 @@ public class CelesteAutosplitComponent : LogicComponent
     public override void Update(IInvalidator invalidator, LiveSplitState state, float width, float height, LayoutMode mode)
     {
         inner?.Update(invalidator, state, width, height, mode);
+        if (inner != null && !gameTimeSettled)
+        {
+            ApplyHostSettings(true);
+            gameTimeSettled = true;
+        }
+    }
+
+    private void RaisePriority(object sender, EventArgs e)
+    {
+        if (highPriority)
+        {
+            Task.Run(SetGameHighPriority);
+        }
+    }
+
+    private static void SetGameHighPriority()
+    {
+        foreach (Process process in Process.GetProcessesByName("Celeste"))
+        {
+            using (process)
+            {
+                try
+                {
+                    process.PriorityClass = ProcessPriorityClass.High;
+                }
+                catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or NotSupportedException)
+                {
+                    Log.Warning($"[{CelesteAutosplitFactory.Name}] Could not raise Celeste's priority: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+        }
+    }
+
+    private XmlElement ReadSettings()
+    {
+        return (XmlElement)inner.GetSettings(new XmlDocument());
+    }
+
+    private void WriteSettings(XmlElement settings)
+    {
+        inner.SetSettings(settings);
+        ApplyHostSettings(false);
+    }
+
+    private void ApplyHostSettings(bool loading)
+    {
+        if (schema == null)
+        {
+            return;
+        }
+
+        try
+        {
+            XmlElement map = ReadSettings()["CustomSettings"];
+            highPriority = schema.Flag(map, "high_priority");
+            if (loading && !gameTimeSettled)
+            {
+                gameTimeSettled = true;
+                if (schema.Flag(map, "set_game_time"))
+                {
+                    state.CurrentTimingMethod = TimingMethod.GameTime;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[{ComponentName}] Could not read the settings");
+            Log.Error(ex);
+        }
     }
 
     public override XmlNode GetSettings(XmlDocument document)
@@ -116,6 +212,7 @@ public class CelesteAutosplitComponent : LogicComponent
         if (inner != null)
         {
             inner.SetSettings(LegacyMigration.Migrate(settings));
+            ApplyHostSettings(true);
         }
         else
         {
@@ -125,17 +222,55 @@ public class CelesteAutosplitComponent : LogicComponent
 
     public override Control GetSettingsControl(LayoutMode mode)
     {
-        return settingsControl ??= new Label
+        if (inner != null && schema != null)
         {
-            Text = status,
-            AutoSize = true,
-            MaximumSize = new System.Drawing.Size(460, 0),
-            Padding = new Padding(7),
-        };
+            try
+            {
+                if (editor == null || editor.IsDisposed)
+                {
+                    editor = new SettingsEditor(state, schema, status, ReadSettings, WriteSettings);
+                }
+
+                editor.Reload();
+                return editor;
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"[{ComponentName}] Could not open the settings editor");
+                Log.Error(ex);
+                editor = null;
+                return StatusLabel(EditorUnavailable(ex));
+            }
+        }
+
+        return StatusLabel(status);
+    }
+
+    private string EditorUnavailable(Exception ex)
+    {
+        string message = $"The settings editor is unavailable: {ex.GetType().Name}: {ex.Message}";
+        return status == null ? message : $"{status}\n\n{message}";
+    }
+
+    private Control StatusLabel(string text)
+    {
+        if (settingsControl == null || settingsControl.IsDisposed)
+        {
+            settingsControl = new Label
+            {
+                AutoSize = true,
+                MaximumSize = new System.Drawing.Size(460, 0),
+                Padding = new Padding(7),
+            };
+        }
+
+        settingsControl.Text = text;
+        return settingsControl;
     }
 
     public override void Dispose()
     {
+        state.OnStart -= RaisePriority;
         inner?.Dispose();
     }
 }
