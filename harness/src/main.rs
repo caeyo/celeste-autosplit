@@ -197,6 +197,18 @@ fn check(
         Ok(read) => read,
         Err(problem) => return failed("live check: FAILED", &[problem], &module),
     };
+    let widgets = widgets(&module);
+    if widgets != WIDGETS {
+        let problems = [
+            format!("expected: {WIDGETS:?}"),
+            format!("read: {widgets:?}"),
+        ];
+        return failed("settings widgets: FAILED", &problems, &module);
+    }
+    println!(
+        "settings widgets: ok, the auto splitter registers its {} titles",
+        WIDGETS.len()
+    );
     let problems = differences(&expected(&held), &read);
     if !problems.is_empty() {
         return failed("live check: FAILED", &problems, &module);
@@ -424,6 +436,25 @@ impl Module {
             )),
         }
     }
+}
+
+const WIDGETS: [&str; 2] = [
+    "title 0, _ui_heading: Configure this auto splitter at:",
+    "title 1, _ui_url: caeyo.github.io/celeste-autosplit",
+];
+
+fn widgets(module: &Module) -> Vec<String> {
+    let widgets = module.auto_splitter.settings_widgets();
+    let describe = |widget: &settings::Widget| match widget.kind {
+        settings::WidgetKind::Title { heading_level } => {
+            format!(
+                "title {heading_level}, {}: {}",
+                widget.key, widget.description
+            )
+        }
+        _ => format!("not a title, {}", widget.key),
+    };
+    widgets.iter().map(describe).collect()
 }
 
 fn attach(module: &Module) -> Result<BTreeMap<String, String>, String> {
