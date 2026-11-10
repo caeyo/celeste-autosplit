@@ -11,14 +11,33 @@ There are a few components to this repo:
     - The traces and TAS files themselves are stored in [traces](https://github.com/caeyo/celeste-autosplit/tree/master/traces).
 - [legacy-splits](https://github.com/caeyo/celeste-autosplit/tree/master/legacy-splits) - copies of splits saved under the legacy LiveSplit.Celeste component for testing migration.
 
+# Releasing
+
+1. Set `<Version>` in `component/CelesteAutosplit/CelesteAutosplit.csproj.`
+2. Push a matching tag on master. `release.yml` runs CI then publishes `celeste-autosplit.dll` and `celeste_autosplit.wasm` to releases.
+3. Once the release is published, add its entry to the top of `update.xml` and commit it to master.
+
 # Building and Running
 
 This repo expects system installations of Rust, the .NET SDK and Node.js. Versions should be pinned in the relevant places, and all other dependencies for running/testing should be downloaded automatically when needed. All commands below assume you're at the repo root.
+
+## autosplitter
 
 Before anything, build the auto splitter, which will be in `autosplitter/target/wasm32-unknown-unknown/release/`:
 ```
 cd autosplitter && cargo b --release
 ```
+
+The `asr-debugger` is the best way to quickly test auto splitter changes:
+
+```
+cargo install --locked --git https://github.com/LiveSplit/asr-debugger
+asr-debugger autosplitter/target/wasm32-unknown-unknown/release/celeste_autosplit.wasm
+```
+
+You will need to run `asr-debugger` with `sudo` on macOS.
+
+In VS Code, the `Debug Auto Splitter` launch configuration builds the debug wasm module, runs the debugger on it, and reloads it whenever the `Build Auto Splitter (Debug)` task builds it again.
 
 ## component
 
@@ -60,4 +79,25 @@ Commit the TAS file and the trace together in `traces`. If you rerecord an exist
 
 ## harness and probe
 
-Honestly, these aren't worth building and running locally - run them in CI 
+Honestly, these aren't worth building and running locally - they're meant for CI.
+
+# Maintaining the Memory Layouts
+
+## Vanilla
+
+For vanilla, the `Live check` CI run prints a dump of all the information you should need from the game in order to add to the memory layout. To run it for a branch: `gh workflow run live-check.yml --ref <branch>`.
+
+To add a value of an existing root:
+1. Find its offset in the dump.
+2. Add it to `Layout`, `CLR32` and `MONO64` in `vanilla.rs`; to `Values` and `Vanilla::read` in `memory.rs` (as an `Option` if it can be missing); and to `set_debug_info` in `lib.rs`.
+3. Add its information to `PATHS` in `harness/src/main.rs`.
+
+To add a new root:
+1. Add its anchor and static field to `Anchors` in `tools/probe/Game.cs` as `Namespace.Type::Name()` and `Namespace.Type::Field`. The dump then shows its code and where the slot's address is in it.
+2. Write a signature for each runtime's code before the address and reference patterns for the instruction holding it. On Mono you need one for each width (Linux and macOS differ here).
+3. Add an `Anchor` to `Layout`, `CLR32` and `MONO64` in `vanilla.rs`; and a `scan!` of it in each `Runtime` plus a search like `find_save_data` in `memory.rs`.
+4. Add the size of the root's type to `Layout`, `CLR32` and `MONO64` in `vanilla.rs`. You can find this in the dump at the end of its last field. A wrong size shows in the live check as the root's values missing.
+
+## Everest
+
+Everest (very kindly) maintains its own struct for communicating info to the auto splitter. The `everest.rs` layout is transcribed from the [source file](https://github.com/EverestAPI/Everest/blob/dev/Celeste.Mod.mm/Mod/Everest/AutoSplitter.cs).
