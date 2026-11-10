@@ -16,3 +16,5 @@ site/legacy/
 site/test/node_modules/
 site/test/.browsers/
 site/test/test-results/
+
+docs/
