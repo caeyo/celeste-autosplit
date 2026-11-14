@@ -1,3 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <updates>
+  <update version="0.1.0">
+    <files>
+      <file path="latest/download/celeste-autosplit.dll" localPath="Components/celeste-autosplit.dll" status="changed"/>
+      <file path="latest/download/celeste_autosplit.wasm" localPath="Components/celeste_autosplit.wasm" status="changed"/>
+    </files>
+    <changelog>
+      <change>Initial beta release.</change>
+    </changelog>
+  </update>
 </updates>
