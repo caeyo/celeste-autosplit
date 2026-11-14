@@ -1,3 +1,4 @@
 *.sh text eol=lf
 traces/** text eol=lf
 site/test/cases/** -text
+*.cmd text eol=crlf
