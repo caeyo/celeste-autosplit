@@ -10,9 +10,7 @@ A website for editing the auto splitter settings in your splits file is availabl
 
 ## Installing
 
-On LiveSplit (Windows) a component automatically downloads and manages this auto splitter - do not manually install it yourself.
-
-Other livesplit-core apps, such as LiveSplit One, should read the global auto splitter list and install it for you as well. If you need to manually install it, download [celeste_autosplit.wasm](https://github.com/caeyo/celeste-autosplit/releases/latest/download/celeste_autosplit.wasm) and activate it via whatever means the app uses.
+This project is currently in beta. See the [beta instructions](beta-instructions.md) for how to install and help test.
 
 ## Migrating from LiveSplit.Celeste
 
@@ -22,6 +20,6 @@ If you are using LiveSplit on Windows, the component will automatically migrate 
 
 Otherwise, legacy splits files can be migrated by opening them on the [splits editor website](https://caeyo.github.io/celeste-autosplit), clicking migrate when prompted, then saving the new file.
 
-## Building, Contributiing
+## Building, Contributing
 
 See the [maintaining doc](https://github.com/caeyo/celeste-autosplit/blob/master/maintaining.md).
